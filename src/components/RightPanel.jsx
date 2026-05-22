@@ -4,10 +4,10 @@ import React from 'react'
 const s = {
   panel: {
     background: 'var(--panel)', borderLeft: '1px solid var(--border)',
-    display: 'flex', flexDirection: 'column', overflow: 'hidden',
+    display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%',
   },
   section: { display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-  sectionPad: { padding: '14px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 },
+  sectionPad: { padding: '14px 14px', flexShrink: 0 },
   title: {
     fontFamily: 'var(--sans)', fontSize: 10, textTransform: 'uppercase',
     letterSpacing: 2, color: 'var(--muted)', marginBottom: 10,
@@ -82,7 +82,7 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
     <div style={s.panel}>
 
       {/* ── ACTIVE FLIGHTS ────────────────────────────────────────────── */}
-      <div style={{ ...s.sectionPad, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ ...s.sectionPad, flex: '0 0 50%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <span style={s.title}>Vuelos activos</span>
         <div style={s.scrollable}>
           {activeFlights.map((f) => {
@@ -110,7 +110,7 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
       </div>
 
       {/* ── WAREHOUSE PER AIRPORT ─────────────────────────────────────── */}
-      <div style={{ ...s.sectionPad, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ ...s.sectionPad, flex: '0 0 50%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderTop: '1px solid var(--border)' }}>
         <span style={s.title}>Warehouse por aeropuerto</span>
         <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 8 }}>
         {occupiedAirports.map((ap) => {

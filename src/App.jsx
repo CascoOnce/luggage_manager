@@ -526,7 +526,7 @@ export default function App() {
             </div>
 
             {/* Right Panel Container */}
-            <div style={{ overflow: 'hidden', borderLeft: rightOpen ? '1px solid var(--border)' : 'none', background: 'var(--panel)' }}>
+            <div style={{ overflow: 'hidden', height: '100%', borderLeft: rightOpen ? '1px solid var(--border)' : 'none', background: 'var(--panel)' }}>
               <RightPanel
                 flights={backendFlights}
                 airports={normalizedAirports}
