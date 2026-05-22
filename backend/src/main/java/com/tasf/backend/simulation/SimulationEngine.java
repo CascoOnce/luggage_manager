@@ -273,10 +273,15 @@ public class SimulationEngine {
             // ─────────────────────────────────────────────────────────────────────────
 
             addOperationLog("Simulation completed - Day " + diaActual);
-            
-            // Fase 6: Persistir resultados finales en DB
-            persistenceService.persistSimulationResults(planes, metricas, logOperaciones, envios);
-            
+
+            // Persistir en hilo aparte para no bloquear la respuesta al usuario
+            persistenceService.persistSimulationResults(
+                List.copyOf(planes),
+                List.copyOf(metricas),
+                List.copyOf(logOperaciones),
+                List.copyOf(envios)
+            );
+
             return getEstado();
         }
 
