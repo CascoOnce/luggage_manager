@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Polyline, Tooltip, Marker, useMap } from 'react-leaflet'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { MapContainer, TileLayer, Polyline, Tooltip, Marker, useMap } from 'react-leaflet'
 import L from 'leaflet'
-import { getWarehouseStatus, STATUS_COLOR } from '../simulation/statusRules.js'
+import { CiAirportSign1 } from 'react-icons/ci'
+import { FaMapMarker } from 'react-icons/fa'
+import { STATUS_COLOR } from '../simulation/statusRules.js'
 
 const AIRPORT_BOUNDS = [[-40, -85], [60, 82]]
 
@@ -47,13 +50,37 @@ function MapResizer() {
 const airportIndex = (airports) =>
   Object.fromEntries(airports.map((a) => [a.id, a]))
 
-function warehouseStatus(ap, threshold) {
-  const pct = (ap.currentOccupation / ap.warehouseCapacity) * 100
-  return getWarehouseStatus(pct, threshold)
-}
-
 function occupancyPct(ap) {
   return Math.round((ap.currentOccupation / ap.warehouseCapacity) * 100)
+}
+
+const airportIconCache = {}
+function makeAirportIcon(theme) {
+  if (airportIconCache[theme]) return airportIconCache[theme]
+  const pinColor  = theme === 'light' ? '#1a6fd4' : '#4d9fff'
+  const signColor = theme === 'light' ? '#fff'    : '#fff'
+  const markerSvg = renderToStaticMarkup(
+    React.createElement(FaMapMarker, { size: 27, color: pinColor })
+  )
+  const signSvg = renderToStaticMarkup(
+    React.createElement(CiAirportSign1, { size: 17, color: signColor })
+  )
+  const html = `
+    <div style="position:relative;width:36px;height:44px;">
+      ${markerSvg}
+      <div style="position:absolute;top:2px;left:38%;transform:translateX(-50%);">
+        ${signSvg}
+      </div>
+    </div>
+  `
+  const icon = L.divIcon({
+    className: '',
+    html,
+    iconSize: [36, 44],
+    iconAnchor: [18, 44],
+  })
+  airportIconCache[theme] = icon
+  return icon
 }
 
 // Linearly interpolate position along origin→destination
@@ -234,28 +261,19 @@ export default function MapView({
 
       {/* ── AIRPORT NODES ─────────────────────────────────────────────────── */}
       {airportList.map((ap) => {
-        const status = warehouseStatus(ap, threshold)
-        const color  = STATUS_COLOR[status]
-        const pct    = occupancyPct(ap)
+        const pct = occupancyPct(ap)
         return (
-          <CircleMarker
+          <Marker
             key={ap.id}
-            center={[ap.lat, ap.lng]}
-            radius={6}
-            pathOptions={{
-              color: theme === 'light' ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.15)', weight: 1.5,
-              fillColor: color, fillOpacity: 0.88,
-            }}
+            position={[ap.lat, ap.lng]}
+            icon={makeAirportIcon(theme)}
             eventHandlers={{ click: () => onAirportClick && onAirportClick(ap) }}
           >
-            <Tooltip className="tasf-tooltip" direction="top" offset={[0, -8]}>
+            <Tooltip className="tasf-tooltip" direction="top" offset={[0, -46]}>
               <strong>{ap.id}</strong> — {ap.name}<br />
-              Warehouse: <span style={{ color }}><strong>{pct}%</strong></span> ({ap.currentOccupation} / {ap.warehouseCapacity})<br />
-              Estado: <span style={{ color }}>
-                {status === 'green' ? '● Normal' : status === 'amber' ? '● Alto' : '● Crítico'}
-              </span>
+              Warehouse: <strong>{pct}%</strong> ({ap.currentOccupation} / {ap.warehouseCapacity})
             </Tooltip>
-          </CircleMarker>
+          </Marker>
         )
       })}
     </MapContainer>
