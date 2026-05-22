@@ -3,29 +3,35 @@ import { MapContainer, TileLayer, CircleMarker, Polyline, Tooltip, Marker, useMa
 import L from 'leaflet'
 import { getWarehouseStatus, STATUS_COLOR } from '../simulation/statusRules.js'
 
-function FitBounds() {
+const AIRPORT_BOUNDS = [[-40, -85], [60, 82]]
+
+// Keeps the airport bounding box always filling the container.
+// On each resize: invalidate size, recalculate the minimum zoom so the
+// bounds fit exactly, then clamp current zoom if needed.
+function FitAirportBounds() {
   const map = useMap()
   useEffect(() => {
     const container = map.getContainer()
-    const updateZoom = () => {
-      const w = container.clientWidth
-      if (w === 0) return
-      // Calculate zoom needed to make world (256px at z=0) fill width w
-      const idealZoom = Math.log2(w / 256)
-      map.setMinZoom(idealZoom)
-      if (map.getZoom() < idealZoom) {
-        map.setZoom(idealZoom)
+
+    const fit = () => {
+      map.invalidateSize()
+      if (container.clientWidth === 0 || container.clientHeight === 0) return
+      const minZ = map.getBoundsZoom(AIRPORT_BOUNDS, false)
+      if (!isFinite(minZ) || minZ <= 0) return
+      map.setMinZoom(minZ)
+      if (map.getZoom() < minZ) {
+        map.fitBounds(AIRPORT_BOUNDS, { animate: false })
       }
     }
-    const observer = new ResizeObserver(updateZoom)
+
+    const t = setTimeout(fit, 0)
+    const observer = new ResizeObserver(fit)
     observer.observe(container)
-    updateZoom()
-    return () => observer.disconnect()
+    return () => { clearTimeout(t); observer.disconnect() }
   }, [map])
   return null
 }
 
-// Automatically invalidate map size whenever its container is resized
 function MapResizer() {
   const map = useMap()
   useEffect(() => {
@@ -121,14 +127,14 @@ export default function MapView({
 
   return (
     <MapContainer
-      center={[20, 10]} zoom={2.2} minZoom={2}
-      zoomSnap={0.1}
-      maxBounds={[[-90, -180], [90, 180]]}
+      center={[20, 0]} zoom={3} minZoom={1}
+      zoomSnap={0.1} zoomDelta={0.5}
+      maxBounds={[[-50, -90], [65, 90]]}
       maxBoundsViscosity={1.0}
       style={{ width: '100%', height: '100%', background: '#060606' }}
       zoomControl={false} attributionControl={false}
     >
-      <FitBounds />
+      <FitAirportBounds />
       <MapResizer />
       <TileLayer
         url={theme === 'light'
