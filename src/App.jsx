@@ -33,7 +33,6 @@ export default function App() {
   })
 
   const [selectedFlight, setSelectedFlight] = useState(null)
-  const [selectedRoute, setSelectedRoute] = useState(null)
   const [mapSelectedAirport, setMapSelectedAirport] = useState(null)
   const [mapSelectedVuelo, setMapSelectedVuelo] = useState(null)
   const [simClockMinutes, setSimClockMinutes] = useState(0)
@@ -98,7 +97,6 @@ export default function App() {
     accumulatedRealMsRef.current = 0
     setRealElapsedSeconds(0)
     setSelectedFlight(null)
-    setSelectedRoute(null)
     setConfigOpen(false)
     setScreen('main')
   }
@@ -324,36 +322,6 @@ export default function App() {
     }))
     : (simState?.routes || [])
 
-  const backendRoutes = useMemo(() => {
-    if (!backendState?.envios) return []
-    return backendState.envios
-      .filter((e) => e.planResumen)
-      .map((e) => {
-        const legs = (e.planResumen || '')
-          .split('|')
-          .map((leg) => leg.trim())
-          .filter(Boolean)
-          .map((leg) => {
-            const [origin, destination] = leg.split('->')
-            return { origin: origin?.trim(), destination: destination?.trim() }
-          })
-          .filter((l) => l.origin && l.destination)
-
-        const status =
-          e.estado === 'ENTREGADO' ? 'green' :
-          e.estado === 'RETRASADO' ? 'red' : 'amber'
-
-        return {
-          id: e.idEnvio,
-          status,
-          type: e.sla === 1 ? 'same' : 'inter',
-          bags: e.cantidadMaletas,
-          flightLegs: legs,
-          replanified: false,
-        }
-      })
-      .filter((r) => r.flightLegs.length > 0)
-  }, [backendState?.envios])
 
   const backendFlights = useMemo(() => {
     if (!backendState?.vuelos) return []
@@ -486,17 +454,9 @@ export default function App() {
 
               <MapView
                 airports={normalizedAirports}
-                routes={backendRoutes}
                 flights={backendFlights}
-                filters={filters}
-                threshold={threshold}
-                simHour={simHour}
-                simMin={simMin}
-                selectedRoute={selectedRoute}
-                setSelectedRoute={setSelectedRoute}
                 selectedFlight={selectedFlight}
                 setSelectedFlight={setSelectedFlight}
-                onFlightFromRoute={setMapSelectedVuelo}
                 onAirportClick={setMapSelectedAirport}
                 theme={theme}
               />
