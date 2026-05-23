@@ -10,6 +10,8 @@ import com.tasf.backend.service.DataLoaderService;
 import com.tasf.backend.simulation.SimulationEngine;
 import com.tasf.backend.repository.EnvioRepository;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -105,6 +107,11 @@ public class SimulationController {
     @GetMapping("/airports")
     public ResponseEntity<List<AeropuertoDTO>> airports() {
         return ResponseEntity.ok(simulationEngine.getAeropuertosEstado());
+    }
+
+    @GetMapping("/airports/graph")
+    public ResponseEntity<Map<String, Set<String>>> airportGraph() {
+        return ResponseEntity.ok(dataLoaderService.getAirportGraph());
     }
 
     @GetMapping("/flights")

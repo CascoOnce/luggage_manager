@@ -10,6 +10,7 @@ import DashboardScreen from './screens/DashboardScreen.jsx'
 import ResultadosScreen from './screens/ResultadosScreen.jsx'
 import DrawerAeropuerto from './drawers/DrawerAeropuerto.jsx'
 import DrawerVuelo from './drawers/DrawerVuelo.jsx'
+import AirportFilterPanel from './components/AirportFilterPanel.jsx'
 
 export default function App() {
   const ALGORITHM = 'SIMULATED_ANNEALING'
@@ -26,6 +27,9 @@ export default function App() {
   const [configOpen, setConfigOpen] = useState(false)
   const [backendState, setBackendState] = useState(null)
   const [staticAirports, setStaticAirports] = useState([])
+  const [airportGraph, setAirportGraph] = useState(null)
+  const [originIds, setOriginIds] = useState(null)
+  const [destIds, setDestIds] = useState(null)
 
   const [filters, setFilters] = useState({
     status: ['green', 'amber', 'red'],
@@ -47,6 +51,7 @@ export default function App() {
   const [autoStep, setAutoStep] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   const [leftOpen, setLeftOpen] = useState(true)
+  const [filterOpen, setFilterOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
 
   useEffect(() => {
@@ -146,6 +151,10 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    api.getAirportGraph().then(setAirportGraph).catch(() => {})
+  }, [])
 
   useEffect(() => {
     api.getAirports()
@@ -310,6 +319,19 @@ export default function App() {
     }))
     : (simState?.flights || [])
 
+  const originSet = useMemo(() => originIds ? new Set(originIds) : null, [originIds])
+  const destSet = useMemo(() => destIds ? new Set(destIds) : null, [destIds])
+
+  const visibleAirports = useMemo(() => {
+    if (!originSet && !destSet) return normalizedAirports
+    const visible = new Set()
+    for (const ap of normalizedAirports) {
+      if (!originSet || originSet.has(ap.id)) visible.add(ap.id)
+      if (!destSet || destSet.has(ap.id)) visible.add(ap.id)
+    }
+    return normalizedAirports.filter((a) => visible.has(a.id))
+  }, [normalizedAirports, originSet, destSet])
+
   const normalizedRoutes = simState?.envios
     ? simState.envios.map((envio, idx) => ({
       id: envio.idEnvio || `RT-${idx}`,
@@ -343,7 +365,11 @@ export default function App() {
         }
       })
       .filter(Boolean)
-  }, [backendState?.vuelos, simClockMinutes])
+      .filter((f) =>
+        (!originSet || originSet.has(f.origin)) &&
+        (!destSet || destSet.has(f.destination))
+      )
+  }, [backendState?.vuelos, simClockMinutes, originSet, destSet])
 
   const fechaSimuladaDisplay = useMemo(() => {
     if (!backendState?.fechaSimulada) return null
@@ -427,7 +453,7 @@ export default function App() {
         {(screen === 'main' && !configOpen) && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: `${leftOpen ? '220px' : '0px'} 1fr ${rightOpen ? '300px' : '0px'}`,
+            gridTemplateColumns: `${leftOpen ? '220px' : '0px'} ${filterOpen ? '232px' : '0px'} 1fr ${rightOpen ? '300px' : '0px'}`,
             height: '100%',
             overflow: 'hidden',
             transition: 'grid-template-columns 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
@@ -437,9 +463,20 @@ export default function App() {
               <LeftPanel filters={filters} setFilters={setFilters} threshold={threshold} setThreshold={setThreshold} />
             </div>
 
+            {/* Filter Panel Container */}
+            <div style={{ overflow: 'hidden', height: '100%', borderRight: filterOpen ? '1px solid var(--border)' : 'none', background: 'var(--panel)' }}>
+              <AirportFilterPanel
+                airports={normalizedAirports}
+                originIds={originIds}
+                setOriginIds={setOriginIds}
+                destIds={destIds}
+                setDestIds={setDestIds}
+              />
+            </div>
+
             {/* Center Map Container */}
             <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
-              {/* Floating Toggle Buttons */}
+              {/* Left toggle (LeftPanel) */}
               <button
                 onClick={() => setLeftOpen(!leftOpen)}
                 style={{
@@ -452,26 +489,43 @@ export default function App() {
                 {leftOpen ? '‹' : '›'}
               </button>
 
+              {/* Filter toggle */}
+              <button
+                onClick={() => setFilterOpen(!filterOpen)}
+                style={{
+                  position: 'absolute', left: 0, top: 'calc(50% + 56px)', transform: 'translateY(-50%)',
+                  zIndex: 1000, width: 24, height: 48, background: 'rgba(13, 17, 23, 0.85)',
+                  border: '1px solid var(--border)', borderLeft: 'none', borderRadius: '0 8px 8px 0',
+                  color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11,
+                }}
+              >
+                {filterOpen ? '‹' : '›'}
+              </button>
+
               <MapView
-                airports={normalizedAirports}
+                airports={visibleAirports}
                 flights={backendFlights}
                 selectedFlight={selectedFlight}
                 setSelectedFlight={setSelectedFlight}
+                selectedFlightData={mapSelectedVuelo}
                 onAirportClick={setMapSelectedAirport}
                 theme={theme}
               />
 
-              <button
-                onClick={() => setRightOpen(!rightOpen)}
-                style={{
-                  position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
-                  zIndex: 1000, width: 24, height: 48, background: 'rgba(13, 17, 23, 0.85)',
-                  border: '1px solid var(--border)', borderRight: 'none', borderRadius: '8px 0 0 8px',
-                  color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}
-              >
-                {rightOpen ? '›' : '‹'}
-              </button>
+              {!mapSelectedVuelo && !mapSelectedAirport && (
+                <button
+                  onClick={() => setRightOpen(!rightOpen)}
+                  style={{
+                    position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
+                    zIndex: 1000, width: 24, height: 48, background: 'rgba(13, 17, 23, 0.85)',
+                    border: '1px solid var(--border)', borderRight: 'none', borderRadius: '8px 0 0 8px',
+                    color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  }}
+                >
+                  {rightOpen ? '›' : '‹'}
+                </button>
+              )}
 
               {/* Detail Drawers */}
               <DrawerAeropuerto
@@ -489,7 +543,7 @@ export default function App() {
             <div style={{ overflow: 'hidden', height: '100%', borderLeft: rightOpen ? '1px solid var(--border)' : 'none', background: 'var(--panel)' }}>
               <RightPanel
                 flights={backendFlights}
-                airports={normalizedAirports}
+                airports={visibleAirports}
                 threshold={threshold}
                 selectedFlight={selectedFlight}
                 setSelectedFlight={setSelectedFlight}
