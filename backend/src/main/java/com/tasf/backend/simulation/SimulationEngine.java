@@ -204,92 +204,14 @@ public class SimulationEngine {
         if (diaActual >= params.getDiasSimulacion()) {
             this.finalizada = true;
             this.enEjecucion = false;
-
-            // Only mark RETRASADO for shipments whose SLA deadline falls within the
-            // simulation window. A shipment whose deadline is after the last simulated
-            // day is "in progress" — its deadline has not been reached, so penalising it
-            // would distort the SLA metric.
-            //
-            // simulationEndDate = fechaInicio + (diasSimulacion - 1) because day 1 IS
-            // fechaInicio, day 2 is +1, …, day n is +(n-1).
-            LocalDate simulationEndDate = params.getFechaInicio().plusDays(params.getDiasSimulacion() - 1);
-            envios.stream()
-                .filter(e -> e.getEstado() != EstadoEnvio.ENTREGADO && e.getEstado() != EstadoEnvio.RETRASADO)
-                .forEach(e -> {
-                    LocalDate deadline = e.getFechaHoraIngreso().plusDays(e.getSla()).toLocalDate();
-                    if (!deadline.isAfter(simulationEndDate)) {
-                        // Deadline was within the simulation window and the bag was not
-                        // delivered → genuine SLA violation.
-                        e.setEstado(EstadoEnvio.RETRASADO);
-                    }
-                    // else: deadline is beyond simulationEndDate → bag is still "in
-                    // progress"; leave its current state so buildKpis() can distinguish it.
-                });
-
-            // Clear warehouse display: mark every bag that is still physically in a
-            // warehouse (EN_ALMACEN) as RETRASADA so the occupation counters return 0
-            // once the simulation ends. The SLA metric is derived from Envio states,
-            // not Maleta states, so this does not affect KPI calculations.
-            maletas.stream()
-                .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN || m.getEstado() == EstadoMaleta.EN_VUELO)
-                .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
-
-            // ── SLA AUDIT ────────────────────────────────────────────────────────────
-            // Denominator = shipments whose SLA deadline falls on or before
-            // simulationEndDate. A shipment whose deadline is after the last simulated
-            // day could not physically be delivered within the window; counting it as a
-            // failure would distort the SLA metric.
-            //
-            // deadline = fechaIngreso + sla (days)
-            // included = !deadline.isAfter(simulationEndDate)
-            //
-            // For a 3-day run (Jan-2 → Jan-4):
-            //   Envio Jan-2 SLA=1 → deadline Jan-3 ≤ Jan-4 → included
-            //   Envio Jan-4 SLA=1 → deadline Jan-5 > Jan-4 → excluded
-            log.info("SLA FILTER: total envios={} simulationEndDate={}", envios.size(), simulationEndDate);
-            for (Envio e : envios) {
-                LocalDate deadline = e.getFechaHoraIngreso().toLocalDate().plusDays(e.getSla());
-                boolean included = !deadline.isAfter(simulationEndDate);
-                log.info("SLA FILTER: envio {} included={} reason=!deadline({}).isAfter(simulationEndDate({}))",
-                    e.getIdEnvio(), included, deadline, simulationEndDate);
-            }
-            long auditTotalWindow = envios.stream()
-                .filter(e -> !e.getFechaHoraIngreso().toLocalDate().isAfter(simulationEndDate))
-                .count();
-            long auditEvaluable = envios.stream()
-                .filter(e -> !e.getFechaHoraIngreso().toLocalDate().plusDays(e.getSla()).isAfter(simulationEndDate))
-                .count();
-            long auditEntregado = envios.stream()
-                .filter(e -> e.getEstado() == EstadoEnvio.ENTREGADO)
-                .filter(e -> !e.getFechaHoraIngreso().toLocalDate().plusDays(e.getSla()).isAfter(simulationEndDate))
-                .count();
-            long auditRetrasado = envios.stream()
-                .filter(e -> e.getEstado() == EstadoEnvio.RETRASADO)
-                .filter(e -> !e.getFechaHoraIngreso().toLocalDate().plusDays(e.getSla()).isAfter(simulationEndDate))
-                .count();
-            long auditInProgress = envios.stream()
-                .filter(e -> e.getEstado() != EstadoEnvio.ENTREGADO && e.getEstado() != EstadoEnvio.RETRASADO)
-                .filter(e -> !e.getFechaHoraIngreso().toLocalDate().plusDays(e.getSla()).isAfter(simulationEndDate))
-                .count();
-            double auditSla = auditEvaluable == 0 ? 0.0
-                : Math.round(auditEntregado * 1000.0 / auditEvaluable) / 10.0;
-            log.info("[SLA AUDIT] Total in window: {} | Deliverable: {} | ENTREGADO: {} | RETRASADO: {} | IN_PROGRESS: {} | SLA%: {}% | Denominador: {}",
-                auditTotalWindow, auditEvaluable, auditEntregado, auditRetrasado, auditInProgress, auditSla, auditEvaluable);
-            addOperationLog(String.format(
-                "[SLA AUDIT] period=%d ENTREGADO=%d RETRASADO=%d IN_PROGRESS=%d SLA=%.1f%%",
-                auditEvaluable, auditEntregado, auditRetrasado, auditInProgress, auditSla));
-            // ─────────────────────────────────────────────────────────────────────────
-
+            applySimulationEnd(params.getFechaInicio().plusDays(params.getDiasSimulacion() - 1));
             addOperationLog("Simulation completed - Day " + diaActual);
-
-            // Persistir en hilo aparte para no bloquear la respuesta al usuario
             persistenceService.persistSimulationResults(
                 List.copyOf(planes),
                 List.copyOf(metricas),
                 List.copyOf(logOperaciones),
                 List.copyOf(envios)
             );
-
             return getEstado();
         }
 
@@ -298,6 +220,96 @@ public class SimulationEngine {
         this.fechaSimulada = this.fechaSimulada.plusDays(1);
 
         return getEstado();
+    }
+
+    public synchronized SimulationStateDTO reiniciar() {
+        if (params == null) {
+            return getEstado();
+        }
+        // Reset aeropuertos and vuelos to clean state (clears accumulated stats/loads)
+        this.aeropuertos = deepCopyAeropuertos(dataLoaderService.getAeropuertos());
+        this.vuelos = deepCopyVuelos(dataLoaderService.getVuelos());
+
+        // Reset envio states to PLANIFICADO
+        this.envios.forEach(e -> e.setEstado(EstadoEnvio.PLANIFICADO));
+
+        // Rebuild maletas from envios (resets ubicacion to origin and estado to EN_ALMACEN)
+        this.maletas = generarMaletas(this.envios);
+
+        // planes unchanged — reuse existing routes, no re-planning needed
+
+        // Reset runtime tracking
+        this.metricas = new ArrayList<>();
+        this.cancelaciones = new ArrayList<>();
+        this.maletaVueloActual.clear();
+        this.logBuffer.clear();
+        this.logOperaciones = new ArrayList<>();
+        this.throughputHistorial.clear();
+
+        // Reset simulation clock
+        this.diaActual = 1;
+        this.fechaSimulada = params.getFechaInicio().atStartOfDay();
+        this.enEjecucion = true;
+        this.finalizada = false;
+
+        updateWarehouseOccupation();
+        addOperationLog("Simulation restarted - Day 1 - reusing previous plans");
+        return getEstado();
+    }
+
+    public synchronized SimulationStateDTO detener() {
+        if (params == null || finalizada) {
+            return getEstado();
+        }
+        this.enEjecucion = false;
+        this.finalizada = true;
+        applySimulationEnd(fechaSimulada.toLocalDate());
+        addOperationLog("Simulation stopped manually - Day " + diaActual);
+        persistenceService.persistSimulationResults(
+            List.copyOf(planes),
+            List.copyOf(metricas),
+            List.copyOf(logOperaciones),
+            List.copyOf(envios)
+        );
+        return getEstado();
+    }
+
+    private void applySimulationEnd(LocalDate simulationEndDate) {
+        envios.stream()
+            .filter(e -> e.getEstado() != EstadoEnvio.ENTREGADO && e.getEstado() != EstadoEnvio.RETRASADO)
+            .forEach(e -> {
+                LocalDate deadline = e.getFechaHoraIngreso().plusDays(e.getSla()).toLocalDate();
+                if (!deadline.isAfter(simulationEndDate)) {
+                    e.setEstado(EstadoEnvio.RETRASADO);
+                }
+            });
+
+        maletas.stream()
+            .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN || m.getEstado() == EstadoMaleta.EN_VUELO)
+            .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
+
+        long auditEvaluable = envios.stream()
+            .filter(e -> !e.getFechaHoraIngreso().toLocalDate().plusDays(e.getSla()).isAfter(simulationEndDate))
+            .count();
+        long auditEntregado = envios.stream()
+            .filter(e -> e.getEstado() == EstadoEnvio.ENTREGADO)
+            .filter(e -> !e.getFechaHoraIngreso().toLocalDate().plusDays(e.getSla()).isAfter(simulationEndDate))
+            .count();
+        long auditRetrasado = envios.stream()
+            .filter(e -> e.getEstado() == EstadoEnvio.RETRASADO)
+            .filter(e -> !e.getFechaHoraIngreso().toLocalDate().plusDays(e.getSla()).isAfter(simulationEndDate))
+            .count();
+        long auditInProgress = envios.stream()
+            .filter(e -> e.getEstado() != EstadoEnvio.ENTREGADO && e.getEstado() != EstadoEnvio.RETRASADO)
+            .filter(e -> !e.getFechaHoraIngreso().toLocalDate().plusDays(e.getSla()).isAfter(simulationEndDate))
+            .count();
+        double auditSla = auditEvaluable == 0 ? 0.0
+            : Math.round(auditEntregado * 1000.0 / auditEvaluable) / 10.0;
+        log.info("[SLA AUDIT] simulationEndDate={} Evaluable={} ENTREGADO={} RETRASADO={} IN_PROGRESS={} SLA={}%",
+            simulationEndDate, auditEvaluable, auditEntregado, auditRetrasado, auditInProgress, auditSla);
+        addOperationLog(String.format(
+            "[SLA AUDIT] period=%d ENTREGADO=%d RETRASADO=%d IN_PROGRESS=%d SLA=%.1f%%",
+            auditEvaluable, auditEntregado, auditRetrasado, auditInProgress, auditSla));
     }
 
     public synchronized void replanificar(List<Maleta> affectedMaletas) {
