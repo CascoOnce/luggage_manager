@@ -40,6 +40,7 @@ logs/
 .env
 .env.*
 !.env.example
+application-local*
 
 # ─── Archivos temporales / generados ───────────────────────────────
 *.class
@@ -50,3 +51,5 @@ logs/
 *.zip
 *.tar.gz
 *.rar
+.claude/
+CLAUDE.md
