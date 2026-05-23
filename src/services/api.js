@@ -99,6 +99,14 @@ export const api = {
     return request('/simulation/step', { method: 'POST' })
   }),
 
+  stopSimulation: async () => withHandling('stopSimulation', async () => {
+    return request('/simulation/stop', { method: 'POST' })
+  }),
+
+  restartSimulation: async () => withHandling('restartSimulation', async () => {
+    return request('/simulation/restart', { method: 'POST' })
+  }),
+
   resetSimulation: async () => withHandling('resetSimulation', async () => {
     await request('/simulation/reset', { method: 'POST' })
   }),
