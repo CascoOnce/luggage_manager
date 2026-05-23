@@ -107,6 +107,10 @@ export const api = {
     return request('/airports')
   }),
 
+  getAirportGraph: async () => withHandling('getAirportGraph', async () => {
+    return request('/airports/graph')
+  }),
+
   getFlights: async () => withHandling('getFlights', async () => {
     return request('/flights')
   }),
