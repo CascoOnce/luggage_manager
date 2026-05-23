@@ -26,6 +26,8 @@ export default function App() {
   const [screen, setScreen] = useState('main')
   const [configOpen, setConfigOpen] = useState(false)
   const [backendState, setBackendState] = useState(null)
+  const [lastParams, setLastParams] = useState(null)
+  const [isRestarting, setIsRestarting] = useState(false)
   const [staticAirports, setStaticAirports] = useState([])
   const [airportGraph, setAirportGraph] = useState(null)
   const [originIds, setOriginIds] = useState(null)
@@ -421,6 +423,40 @@ export default function App() {
     setBackendState(null)
   }
 
+  async function handleStop() {
+    try {
+      const state = await api.stopSimulation()
+      if (state) setBackendState(state)
+    } catch (err) {
+      console.error('Stop backend error:', err)
+    }
+    stopPolling()
+    setAutoStep(false)
+    clearInterval(autoStepRef.current)
+    setScreen('resultados')
+  }
+
+  async function handleRestart() {
+    if (!backendState) return
+    stopPolling()
+    setAutoStep(false)
+    clearInterval(autoStepRef.current)
+    setSimClockMinutes(0)
+    setIsRestarting(true)
+    try {
+      const state = await api.restartSimulation()
+      if (state) {
+        setBackendState(state)
+        setScreen('main')
+        startPolling()
+      }
+    } catch (err) {
+      console.error('Restart backend error:', err)
+    } finally {
+      setIsRestarting(false)
+    }
+  }
+
   return (
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
@@ -436,7 +472,10 @@ export default function App() {
         running={running}
         backendState={backendState}
         onToggleSim={onToggleSim}
+        onStop={handleStop}
+        onRestart={handleRestart}
         onReset={handleReset}
+        canRestart={Boolean(backendState)}
         theme={theme}
         onToggleTheme={onToggleTheme}
         onNavigate={(next) => {
@@ -583,9 +622,10 @@ export default function App() {
                   setScreen('main')
                   setConfigOpen(false)
                 }}
-                onSimulationStarted={(state) => {
+                onSimulationStarted={(state, params) => {
                   setConfigOpen(false)
                   setBackendState(state)
+                  setLastParams(params)
                   setSimClockMinutes(0)
                   setScreen('main')
                   startPolling()
@@ -631,6 +671,15 @@ export default function App() {
         </div>
       )
     })()}
+    {isRestarting && (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(13,17,23,0.88)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
+        <div style={{ width: 52, height: 52, borderRadius: '50%', border: '3px solid rgba(88,166,255,0.15)', borderTopColor: 'var(--blue)', animation: 'spin 0.75s linear infinite' }} />
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)', letterSpacing: 1, marginBottom: 6 }}>Reiniciando simulación…</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>Reutilizando rutas planificadas</div>
+        </div>
+      </div>
+    )}
   </>
   )
 }

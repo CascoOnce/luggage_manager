@@ -86,6 +86,16 @@ public class SimulationController {
         return ResponseEntity.ok(simulationEngine.getEstado());
     }
 
+    @PostMapping("/simulation/stop")
+    public ResponseEntity<SimulationStateDTO> stop() {
+        return ResponseEntity.ok(simulationEngine.detener());
+    }
+
+    @PostMapping("/simulation/restart")
+    public ResponseEntity<SimulationStateDTO> restart() {
+        return ResponseEntity.ok(simulationEngine.reiniciar());
+    }
+
     @PostMapping("/simulation/reset")
     public ResponseEntity<Void> reset() {
         simulationEngine.reset();
