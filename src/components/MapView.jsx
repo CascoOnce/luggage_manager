@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MapContainer, TileLayer, Tooltip, Marker, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Tooltip, Marker, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { CiAirportSign1 } from 'react-icons/ci'
 import { FaMapMarker } from 'react-icons/fa'
@@ -136,38 +136,99 @@ function lerpPos(originAp, destAp, fraction) {
   ]
 }
 
-function flightBearing(originAp, destAp) {
-  if (!originAp || !destAp) return 0
-  const lat1 = (originAp.lat * Math.PI) / 180
-  const lat2 = (destAp.lat * Math.PI) / 180
-  const dLng = ((destAp.lng - originAp.lng) * Math.PI) / 180
-
-  const y = Math.sin(dLng) * Math.cos(lat2)
-  const x =
-    Math.cos(lat1) * Math.sin(lat2) -
-    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
-
-  const bearingFromNorth = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
-  // SVG points north (up), rotation = bearing from north directly.
-  return bearingFromNorth
-}
+const PLANE_SIZE = 30  // change this one value to resize the plane icon
 
 function makeDivIcon(selected, angle, theme) {
   const color = selected
     ? (theme === 'light' ? '#0553b1' : '#74b3ff')
     : (theme === 'light' ? '#0969da' : '#4d9fff')
   const shadow = selected ? `drop-shadow(0 0 4px ${color})` : 'none'
+  const s = PLANE_SIZE
+  // Body centerline of this SVG path is at x=11.5/24 of viewBox (not perfectly centered).
+  // cx/cy must match transform-origin and iconAnchor so rotation keeps the fuselage on the route line.
+  const cx = Math.round(s * 11.5 / 24)
+  const cy = Math.round(s / 2)
   return L.divIcon({
     className: '',
-    html: `<div class="flight-plane${selected ? ' flight-plane-selected' : ''}" style="transform:rotate(${angle}deg);filter:${shadow};transition:filter 0.2s"><svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg"><path fill="${color}" d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg></div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+    html: `<div class="flight-plane${selected ? ' flight-plane-selected' : ''}" style="width:${s}px;height:${s}px;transform:rotate(${angle}deg);transform-origin:${cx}px ${cy}px;filter:${shadow};transition:filter 0.2s"><svg viewBox="0 0 24 24" width="${s}" height="${s}" xmlns="http://www.w3.org/2000/svg"><path fill="${color}" d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg></div>`,
+    iconSize: [s, s],
+    iconAnchor: [cx, cy],
   })
+}
+
+// Calculates screen-space angle and position in Mercator so the plane sits exactly on the route line
+function screenAngle(map, originAp, destAp) {
+  if (!originAp || !destAp) return 0
+  const pA = map.latLngToContainerPoint([originAp.lat, originAp.lng])
+  const pB = map.latLngToContainerPoint([destAp.lat, destAp.lng])
+  const dx = pB.x - pA.x
+  const dy = pB.y - pA.y
+  return (Math.atan2(dx, -dy) * 180) / Math.PI
+}
+
+// Interpolate position along the visual line in screen pixels, then convert back to lat/lng.
+// This places the plane exactly on the Mercator-projected line instead of off it.
+function mercatorLerp(map, originAp, destAp, fraction) {
+  if (!originAp || !destAp) return null
+  const pA = map.latLngToContainerPoint([originAp.lat, originAp.lng])
+  const pB = map.latLngToContainerPoint([destAp.lat, destAp.lng])
+  const px = pA.x + (pB.x - pA.x) * fraction
+  const py = pA.y + (pB.y - pA.y) * fraction
+  const latlng = map.containerPointToLatLng(L.point(px, py))
+  return [latlng.lat, latlng.lng]
+}
+
+function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData, setSelectedFlight, theme }) {
+  const map = useMap()
+  const [, forceUpdate] = useState(0)
+
+  useEffect(() => {
+    const update = () => forceUpdate((n) => n + 1)
+    map.on('zoom zoomend move moveend', update)
+    return () => map.off('zoom zoomend move moveend', update)
+  }, [map])
+
+  // Draw route line for selected flight even if it's no longer in activeFlights
+  const selectedRouteEl = useMemo(() => {
+    if (!selectedFlightData) return null
+    const a = apIdx[selectedFlightData.origin], b = apIdx[selectedFlightData.destination]
+    if (!a || !b) return null
+    return (
+      <Polyline
+        key={`route-${selectedFlightData.id}`}
+        positions={[[a.lat, a.lng], [b.lat, b.lng]]}
+        pathOptions={{ color: theme === 'light' ? '#0969da' : '#4d9fff', weight: 1.5, opacity: 0.7, dashArray: '6 5' }}
+      />
+    )
+  }, [selectedFlightData, apIdx, theme])
+
+  return (
+    <>
+      {selectedRouteEl}
+      {activeFlights.map((flight) => {
+        const a = apIdx[flight.origin], b = apIdx[flight.destination]
+        const pos = mercatorLerp(map, a, b, flight.fraction)
+        if (!pos) return null
+        const isSelected = selectedFlight === flight.id
+        const angle = screenAngle(map, a, b)
+        const icon = makeDivIcon(isSelected, angle, theme)
+        return (
+          <Marker
+            key={`fm2-${flight.id}-${isSelected ? 'sel' : 'norm'}-${Math.round(angle)}`}
+            position={pos}
+            icon={icon}
+            eventHandlers={{ click: () => setSelectedFlight(isSelected ? null : flight.id) }}
+          />
+        )
+      })}
+    </>
+  )
 }
 
 export default function MapView({
   airports, flights,
   selectedFlight, setSelectedFlight,
+  selectedFlightData,
   onAirportClick,
   theme = 'dark',
 }) {
@@ -199,22 +260,14 @@ export default function MapView({
         subdomains="abcd" maxZoom={19} noWrap={true}
       />
 
-      {/* ── ANIMATED FLIGHT MARKERS ──────────────────────────────────────── */}
-      {activeFlights.map((flight) => {
-        const a = apIdx[flight.origin], b = apIdx[flight.destination]
-        const pos = lerpPos(a, b, flight.fraction)
-        if (!pos) return null
-        const isSelected = selectedFlight === flight.id
-        const icon = makeDivIcon(isSelected, flightBearing(a, b), theme)
-        return (
-          <Marker
-            key={`fm-${flight.id}-${isSelected ? 'sel' : 'norm'}`}
-            position={pos}
-            icon={icon}
-            eventHandlers={{ click: () => setSelectedFlight(isSelected ? null : flight.id) }}
-          />
-        )
-      })}
+      <FlightLayer
+        activeFlights={activeFlights}
+        apIdx={apIdx}
+        selectedFlight={selectedFlight}
+        selectedFlightData={selectedFlightData}
+        setSelectedFlight={setSelectedFlight}
+        theme={theme}
+      />
 
       {/* ── AIRPORT NODES ─────────────────────────────────────────────────── */}
       {airportList.map((ap) => {
