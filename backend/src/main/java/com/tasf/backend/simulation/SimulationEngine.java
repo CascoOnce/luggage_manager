@@ -226,6 +226,14 @@ public class SimulationEngine {
                     // progress"; leave its current state so buildKpis() can distinguish it.
                 });
 
+            // Clear warehouse display: mark every bag that is still physically in a
+            // warehouse (EN_ALMACEN) as RETRASADA so the occupation counters return 0
+            // once the simulation ends. The SLA metric is derived from Envio states,
+            // not Maleta states, so this does not affect KPI calculations.
+            maletas.stream()
+                .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN || m.getEstado() == EstadoMaleta.EN_VUELO)
+                .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
+
             // ── SLA AUDIT ────────────────────────────────────────────────────────────
             // Denominator = shipments whose SLA deadline falls on or before
             // simulationEndDate. A shipment whose deadline is after the last simulated
@@ -875,8 +883,10 @@ public class SimulationEngine {
     }
 
     private void updateWarehouseOccupation() {
+        LocalDate today = fechaSimulada == null ? null : fechaSimulada.toLocalDate();
         Map<String, Long> counts = maletas.stream()
             .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN)
+            .filter(m -> today == null || m.getFechaIngreso() == null || !m.getFechaIngreso().isAfter(today))
             .collect(Collectors.groupingBy(Maleta::getUbicacionActual, Collectors.counting()));
 
         for (Aeropuerto aeropuerto : aeropuertos) {
@@ -954,8 +964,10 @@ public class SimulationEngine {
                 .average()
                 .orElse(0.0d);
         } else {
+            LocalDate kpiToday = fechaSimulada == null ? null : fechaSimulada.toLocalDate();
             Map<String, Long> liveOcupacion = maletas.stream()
                 .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN)
+                .filter(m -> kpiToday == null || m.getFechaIngreso() == null || !m.getFechaIngreso().isAfter(kpiToday))
                 .collect(Collectors.groupingBy(Maleta::getUbicacionActual, Collectors.counting()));
             ocupacionPromedio = aeropuertos.stream()
                 .mapToDouble(a -> {
@@ -979,9 +991,11 @@ public class SimulationEngine {
 
     private AeropuertoDTO toAeropuertoDto(Aeropuerto airport) {
         int capacidad = airport.getCapacidadAlmacen();
+        LocalDate today = fechaSimulada == null ? null : fechaSimulada.toLocalDate();
         int ocupacion = (int) maletas.stream()
             .filter(m -> m.getUbicacionActual().equals(airport.getCodigoIATA()) &&
-                m.getEstado() == EstadoMaleta.EN_ALMACEN)
+                m.getEstado() == EstadoMaleta.EN_ALMACEN &&
+                (today == null || m.getFechaIngreso() == null || !m.getFechaIngreso().isAfter(today)))
             .count();
 
         String semaforo;
@@ -1180,6 +1194,7 @@ public class SimulationEngine {
                     .idEnvio(envio.getIdEnvio())
                     .ubicacionActual(envio.getAeropuertoOrigen())
                     .estado(EstadoMaleta.EN_ALMACEN)
+                    .fechaIngreso(envio.getFechaHoraIngreso().toLocalDate())
                     .build());
             }
         }
