@@ -1,5 +1,5 @@
 
-import React from 'react'
+import React, { useMemo } from 'react'
 
 const s = {
   panel: {
@@ -67,16 +67,17 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
   const flightList = flights || []
   const airportList = airports || []
   const activeFlights = flightList.filter((f) => f.status === 'active')
-  const sortedAirports = [...airportList]
-    .sort((a, b) => {
+  const { occupiedAirports, hiddenCount } = useMemo(() => {
+    const sorted = [...airportList].sort((a, b) => {
       const aOcc = a.currentOccupation ?? a.ocupacionActual ?? 0
       const aCap = a.warehouseCapacity ?? a.capacidadAlmacen ?? 600
       const bOcc = b.currentOccupation ?? b.ocupacionActual ?? 0
       const bCap = b.warehouseCapacity ?? b.capacidadAlmacen ?? 600
       return (bOcc / bCap) - (aOcc / aCap)
     })
-  const occupiedAirports = sortedAirports.filter((ap) => (ap.currentOccupation ?? ap.ocupacionActual ?? 0) > 0)
-  const hiddenCount = sortedAirports.length - occupiedAirports.length
+    const occupied = sorted.filter((ap) => (ap.currentOccupation ?? ap.ocupacionActual ?? 0) > 0)
+    return { occupiedAirports: occupied, hiddenCount: sorted.length - occupied.length }
+  }, [airportList])
 
   return (
     <div style={s.panel}>

@@ -1,11 +1,11 @@
 const BASE_URL = 'http://localhost:8080/api'
+const IS_DEV = import.meta.env.DEV
 
 function debugLog(message, details) {
-  if (details !== undefined) {
-    console.info(`[api] ${message}`, details)
-    return
-  }
-  console.info(`[api] ${message}`)
+  if (!IS_DEV) return
+  details !== undefined
+    ? console.info(`[api] ${message}`, details)
+    : console.info(`[api] ${message}`)
 }
 
 function toErrorMessage(error) {
@@ -39,22 +39,34 @@ async function toApiError(response) {
   return `HTTP ${response.status} ${response.statusText} - ${textBody}`
 }
 
-async function request(path, options = {}) {
+async function request(path, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   const method = options.method || 'GET'
   debugLog(`request ${method} ${path} -> ${BASE_URL}${path}`)
-  const response = await fetch(`${BASE_URL}${path}`, {
-    mode: 'cors',
-    credentials: 'omit',
-    ...options,
-  })
-  debugLog(`response ${method} ${path}`, { status: response.status, ok: response.ok })
-  if (response.status === 204) {
-    return null
+  try {
+    const response = await fetch(`${BASE_URL}${path}`, {
+      mode: 'cors',
+      credentials: 'omit',
+      signal: controller.signal,
+      ...options,
+    })
+    clearTimeout(timer)
+    debugLog(`response ${method} ${path}`, { status: response.status, ok: response.ok })
+    if (response.status === 204) {
+      return null
+    }
+    if (!response.ok) {
+      throw new Error(await toApiError(response))
+    }
+    return response.json()
+  } catch (error) {
+    clearTimeout(timer)
+    if (error.name === 'AbortError') {
+      throw new Error(`${path} timed out after ${timeoutMs}ms`)
+    }
+    throw error
   }
-  if (!response.ok) {
-    throw new Error(await toApiError(response))
-  }
-  return response.json()
 }
 
 export async function startSimulation(params) {
@@ -63,7 +75,7 @@ export async function startSimulation(params) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
-    })
+    }, 180000)  // 3 min — planning (SA/Tabu) can take 60–120s
   )
 }
 
@@ -96,7 +108,7 @@ export const api = {
   }),
 
   stepSimulation: async () => withHandling('stepSimulation', async () => {
-    return request('/simulation/step', { method: 'POST' })
+    return request('/simulation/step', { method: 'POST' }, 60000)  // 1 min — día completo
   }),
 
   stopSimulation: async () => withHandling('stopSimulation', async () => {
@@ -104,7 +116,7 @@ export const api = {
   }),
 
   restartSimulation: async () => withHandling('restartSimulation', async () => {
-    return request('/simulation/restart', { method: 'POST' })
+    return request('/simulation/restart', { method: 'POST' }, 180000)  // 3 min — replanning
   }),
 
   resetSimulation: async () => withHandling('resetSimulation', async () => {
