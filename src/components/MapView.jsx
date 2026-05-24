@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MapContainer, TileLayer, Tooltip, Marker, Polyline, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Tooltip, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 import { CiAirportSign1 } from 'react-icons/ci'
 import { FaMapMarker } from 'react-icons/fa'
@@ -66,6 +66,11 @@ function IconScaler() {
     update()
     return () => { map.off('zoom', update); map.off('zoomend', update) }
   }, [map])
+  return null
+}
+
+function MapClickDeselect({ onDeselect }) {
+  useMapEvents({ click: () => onDeselect() })
   return null
 }
 
@@ -181,6 +186,14 @@ function mercatorLerp(map, originAp, destAp, fraction) {
 function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData, setSelectedFlight, theme }) {
   const map = useMap()
   const [, forceUpdate] = useState(0)
+  const iconCache = useRef(new Map())
+
+  // Invalidate icon cache when theme changes so colors rebuild correctly.
+  const prevThemeRef = useRef(theme)
+  if (prevThemeRef.current !== theme) {
+    iconCache.current.clear()
+    prevThemeRef.current = theme
+  }
 
   useEffect(() => {
     const update = () => forceUpdate((n) => n + 1)
@@ -211,7 +224,11 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
         if (!pos) return null
         const isSelected = selectedFlight === flight.id
         const angle = screenAngle(map, a, b)
-        const icon = makeDivIcon(isSelected, angle, theme)
+        const cacheKey = `${isSelected ? 1 : 0}-${Math.round(angle)}-${theme}`
+        if (!iconCache.current.has(cacheKey)) {
+          iconCache.current.set(cacheKey, makeDivIcon(isSelected, angle, theme))
+        }
+        const icon = iconCache.current.get(cacheKey)
         return (
           <Marker
             key={`fm2-${flight.id}-${isSelected ? 'sel' : 'norm'}-${Math.round(angle)}`}
@@ -230,6 +247,7 @@ export default function MapView({
   selectedFlight, setSelectedFlight,
   selectedFlightData,
   onAirportClick,
+  onMapClick,
   theme = 'dark',
 }) {
   const airportList = airports || []
@@ -253,6 +271,7 @@ export default function MapView({
       <MapResizer />
       <IconScaler />
       <ZoomSnapper airportList={airportList} />
+      {onMapClick && <MapClickDeselect onDeselect={onMapClick} />}
       <TileLayer
         url={theme === 'light'
           ? 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png'
