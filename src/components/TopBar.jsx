@@ -234,11 +234,18 @@ export default function TopBar({
           </>
         )}
 
-        {/* Simulación finalizada: solo Empezar de nuevo */}
-        {isBackendFinished && !isBackendRunning && canRestart && (
-          <button style={s.btnStart(false)} onClick={onRestart}>
-            ↺ EMPEZAR DE NUEVO
-          </button>
+        {/* Simulación finalizada: Empezar de nuevo + Configurar */}
+        {isBackendFinished && !isBackendRunning && (
+          <>
+            {canRestart && (
+              <button style={s.btnStart(false)} onClick={onRestart}>
+                ↺ EMPEZAR DE NUEVO
+              </button>
+            )}
+            <button style={s.btnReset} onClick={() => onNavigate('config')}>
+              CONFIGURAR
+            </button>
+          </>
         )}
 
         <button style={s.btnReset} onClick={onReset}>Reset</button>
