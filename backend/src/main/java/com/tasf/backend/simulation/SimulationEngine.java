@@ -184,13 +184,8 @@ public class SimulationEngine {
             processDepartures(envioById, vueloByCode, airportByCode, maletasByEnvio);
             processArrivals(vueloByCode, airportByCode, maletasByEnvio);
         }
-        log.info("After arrivals: total maletas={}, EN_ALMACEN={}, EN_VUELO={}",
-            maletas.size(),
-            maletas.stream().filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN).count(),
-            maletas.stream().filter(m -> m.getEstado() == EstadoMaleta.EN_VUELO).count());
         DeliveryStats deliveryStats = processDeliveries(envioById, airportByCode, maletasByEnvio);
         checkSlaViolations();
-        updateWarehouseOccupation();
 
         throughputHistorial.add(ThroughputDiaDTO.builder()
             .dia(diaActual)
@@ -200,6 +195,7 @@ public class SimulationEngine {
             .build());
 
         if (diaActual >= params.getDiasSimulacion()) {
+            updateWarehouseOccupation();
             this.finalizada = true;
             this.enEjecucion = false;
             applySimulationEnd(params.getFechaInicio().plusDays(params.getDiasSimulacion() - 1));
@@ -216,6 +212,10 @@ public class SimulationEngine {
         // Advance AFTER processing current day so day-1 departures are not skipped
         diaActual++;
         this.fechaSimulada = this.fechaSimulada.plusDays(1);
+        // Recompute warehouse occupation AFTER date advance so that bags of the
+        // upcoming day (fechaIngreso == new today) become visible during the
+        // polling window before the next avanzarDia() runs.
+        updateWarehouseOccupation();
 
         return getEstado();
     }
@@ -673,7 +673,7 @@ public class SimulationEngine {
                 if (envio.getEstado() != EstadoEnvio.ENTREGADO) {
                     envio.setEstado(EstadoEnvio.ENTREGADO);
                     entregadosEstePaso++;
-                    log.info("Envio {} entregado en {}", envio.getIdEnvio(), envio.getAeropuertoDestino());
+                    log.debug("Envio {} entregado en {}", envio.getIdEnvio(), envio.getAeropuertoDestino());
                 }
                 Aeropuerto destino = airportByCode.get(maleta.getUbicacionActual());
                 if (destino != null) {
@@ -698,7 +698,7 @@ public class SimulationEngine {
             if (allDelivered) {
                 envio.setEstado(EstadoEnvio.ENTREGADO);
                 entregadosEstePaso++;
-                log.info("Envio {} entregado en {}", envio.getIdEnvio(), envio.getAeropuertoDestino());
+                log.debug("Envio {} entregado en {}", envio.getIdEnvio(), envio.getAeropuertoDestino());
             }
         }
         log.info("processDeliveries: {} envios entregados this pass", entregadosEstePaso);
@@ -721,7 +721,6 @@ public class SimulationEngine {
 
                 long exceeded = Duration.between(deadline, fechaSimulada).toHours();
                 String message = "SLA exceeded for envio " + envio.getIdEnvio() + " by " + exceeded + " sim-hours";
-                log.warn(message);
                 addOperationLog("WARNING " + message);
             }
         }
@@ -892,7 +891,7 @@ public class SimulationEngine {
             if (count > 0) {
                 int cap = aeropuerto.getCapacidadAlmacen();
                 double pct = cap > 0 ? (count * 100.0 / cap) : 0.0;
-                log.info("[OCUPACION] Airport: {} | Bags in warehouse: {} | Capacity: {} | Occupation: {}%",
+                log.debug("[OCUPACION] Airport: {} | Bags in warehouse: {} | Capacity: {} | Occupation: {}%",
                     aeropuerto.getCodigoIATA(), count, cap, String.format("%.1f", pct));
             }
         }
