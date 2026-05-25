@@ -17,7 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class SimulationPersistenceService {
@@ -52,24 +54,24 @@ public class SimulationPersistenceService {
         
         log.info("Persisting simulation results to database...");
 
-        // 1. Persistir Itinerarios y Escalas
+        // 1. Persistir Itinerarios y Escalas — batch para evitar N roundtrips individuales
+        List<ItinerarioEntity> itinerarios = new ArrayList<>();
+        List<EscalaEntity> todasLasEscalas = new ArrayList<>();
+
         for (PlanDeViaje plan : planes) {
-            ItinerarioEntity itinerario = ItinerarioEntity.builder()
-                .idItinerario(plan.getIdEnvio() + "-v" + plan.getVersion())
+            String idItinerario = plan.getIdEnvio() + "-v" + plan.getVersion();
+            itinerarios.add(ItinerarioEntity.builder()
+                .idItinerario(idItinerario)
                 .idPedido(plan.getIdEnvio())
                 .version(plan.getVersion())
-                .esActivo(true) // Asumimos que el persistido al final es el activo
+                .esActivo(true)
                 .fechaCreacion(LocalDateTime.now())
-                .build();
-            
-            itinerarioRepository.save(itinerario);
-            
-            // Escalas
-            List<EscalaEntity> escalas = new ArrayList<>();
+                .build());
+
             for (int i = 0; i < plan.getEscalas().size(); i++) {
                 var esc = plan.getEscalas().get(i);
-                escalas.add(EscalaEntity.builder()
-                    .idItinerario(itinerario.getIdItinerario())
+                todasLasEscalas.add(EscalaEntity.builder()
+                    .idItinerario(idItinerario)
                     .orden(i + 1)
                     .codigoVuelo(esc.getCodigoVuelo())
                     .iataEscala(esc.getCodigoAeropuerto())
@@ -78,21 +80,23 @@ public class SimulationPersistenceService {
                     .completada(true)
                     .build());
             }
-            escalaRepository.saveAll(escalas);
         }
 
-        // 2. Persistir Métricas
-        for (MetricaAlgoritmo m : metricas) {
-            MetricaEjecucionEntity entity = MetricaEjecucionEntity.builder()
+        itinerarioRepository.saveAll(itinerarios);
+        escalaRepository.saveAll(todasLasEscalas);
+
+        // 2. Persistir Métricas — batch
+        List<MetricaEjecucionEntity> metricaEntities = metricas.stream()
+            .map(m -> MetricaEjecucionEntity.builder()
                 .idMetrica("MET-" + System.nanoTime())
-                .idItinerario(null) // Opcional vincular
+                .idItinerario(null)
                 .rutasEvaluadas(m.getRutasEvaluadas())
                 .tiempoMs(m.getTiempoEjecucionMs())
                 .exito(true)
                 .fechaEjecucion(LocalDateTime.now())
-                .build();
-            metricaRepository.save(entity);
-        }
+                .build())
+            .toList();
+        metricaRepository.saveAll(metricaEntities);
 
         // 3. Persistir Logs
         List<LogOperacionEntity> logEntities = logOperaciones.stream()
@@ -104,19 +108,22 @@ public class SimulationPersistenceService {
             .toList();
         logRepository.saveAll(logEntities);
 
-        // 4. Actualizar estado de los envíos en la DB
-        for (com.tasf.backend.domain.Envio de : domainEnvios) {
-            Optional<EnvioEntity> existing = envioRepository.findAll().stream()
-                .filter(e -> e.getIdPedido().equals(de.getIdEnvio()))
-                .findFirst();
+        // 4. Actualizar estado de los envíos en la DB — un SELECT con IN + saveAll
+        Set<String> ids = domainEnvios.stream()
+            .map(com.tasf.backend.domain.Envio::getIdEnvio)
+            .collect(Collectors.toSet());
 
-            if (existing.isPresent()) {
-                EnvioEntity entity = existing.get();
+        Map<String, EnvioEntity> existingByPedido = envioRepository.findByIdPedidoIn(ids)
+            .stream()
+            .collect(Collectors.toMap(EnvioEntity::getIdPedido, e -> e));
+
+        List<EnvioEntity> toSave = new ArrayList<>();
+        for (com.tasf.backend.domain.Envio de : domainEnvios) {
+            EnvioEntity entity = existingByPedido.get(de.getIdEnvio());
+            if (entity != null) {
                 entity.setEstado(de.getEstado().name());
-                envioRepository.save(entity);
             } else {
-                // Si es un envío nuevo (subido por UI), lo insertamos
-                EnvioEntity newEntity = EnvioEntity.builder()
+                entity = EnvioEntity.builder()
                     .idPedido(de.getIdEnvio())
                     .codigoAerolinea(de.getCodigoAerolinea())
                     .iataOrigen(de.getAeropuertoOrigen())
@@ -126,9 +133,10 @@ public class SimulationPersistenceService {
                     .sla(de.getSla())
                     .estado(de.getEstado().name())
                     .build();
-                envioRepository.save(newEntity);
             }
+            toSave.add(entity);
         }
+        envioRepository.saveAll(toSave);
 
         log.info("Simulation results persisted successfully.");
     }
