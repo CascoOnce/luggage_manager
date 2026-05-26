@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import LeftPanel from './components/LeftPanel.jsx'
 import MapView from './components/MapView.jsx'
 import RightPanel from './components/RightPanel.jsx'
@@ -10,14 +10,11 @@ import DashboardScreen from './screens/DashboardScreen.jsx'
 import ResultadosScreen from './screens/ResultadosScreen.jsx'
 import DrawerAeropuerto from './drawers/DrawerAeropuerto.jsx'
 import DrawerVuelo from './drawers/DrawerVuelo.jsx'
+import AirportFilterPanel from './components/AirportFilterPanel.jsx'
 
 export default function App() {
   const ALGORITHM = 'SIMULATED_ANNEALING'
-  const SIM_MINUTES_PER_REAL_SECOND = 120 // ~12s per simulated day
-  const [simDay, setSimDay] = useState(1)
-  const [simHour, setSimHour] = useState(6)
-  const [simMin, setSimMin] = useState(0)
-  const [running, setRunning] = useState(false)
+  const SIM_MINUTES_PER_REAL_SECOND = 30 // ~48s per simulated day
   const [realElapsedSeconds, setRealElapsedSeconds] = useState(0)
 
   const [threshold, setThreshold] = useState(80)
@@ -25,7 +22,12 @@ export default function App() {
   const [screen, setScreen] = useState('main')
   const [configOpen, setConfigOpen] = useState(false)
   const [backendState, setBackendState] = useState(null)
+  const [lastParams, setLastParams] = useState(null)
+  const [isRestarting, setIsRestarting] = useState(false)
   const [staticAirports, setStaticAirports] = useState([])
+  const [airportGraph, setAirportGraph] = useState(null)
+  const [originIds, setOriginIds] = useState(null)
+  const [destIds, setDestIds] = useState(null)
 
   const [filters, setFilters] = useState({
     status: ['green', 'amber', 'red'],
@@ -33,21 +35,25 @@ export default function App() {
   })
 
   const [selectedFlight, setSelectedFlight] = useState(null)
-  const [selectedRoute, setSelectedRoute] = useState(null)
   const [mapSelectedAirport, setMapSelectedAirport] = useState(null)
   const [mapSelectedVuelo, setMapSelectedVuelo] = useState(null)
   const [simClockMinutes, setSimClockMinutes] = useState(0)
 
-  const intervalRef = useRef(null)
   const realStartRef = useRef(null)
   const accumulatedRealMsRef = useRef(0)
   const pollingRef = useRef(null)
   const autoStepRef = useRef(null)
-  const maxDay = 5
+  const pollingErrorsRef = useRef(0)
+  const stepInProgressRef = useRef(false)
+  const nextDayStateRef = useRef(null)
+  const prefetchFiredRef = useRef(false)
+
+  const [pollingError, setPollingError] = useState(null)
 
   const [autoStep, setAutoStep] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   const [leftOpen, setLeftOpen] = useState(true)
+  const [filterOpen, setFilterOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
 
   useEffect(() => {
@@ -71,10 +77,11 @@ export default function App() {
 
   function isActiveAtMinute(nowMin, depMin, arrMin) {
     if (depMin == null || arrMin == null) return false
+    const m = nowMin >= 1440 ? 1439 : nowMin
     if (arrMin > depMin) {
-      return nowMin >= depMin && nowMin < arrMin
+      return m >= depMin && m < arrMin
     }
-    return nowMin >= depMin || nowMin < arrMin
+    return m >= depMin || m < arrMin
   }
 
   function flightFractionAtMinute(nowMin, depMin, arrMin) {
@@ -89,35 +96,34 @@ export default function App() {
   }
 
   function onReset() {
-    setRunning(false)
     setAutoStep(false)
-    setSimDay(1)
-    setSimHour(6)
-    setSimMin(0)
     realStartRef.current = null
     accumulatedRealMsRef.current = 0
     setRealElapsedSeconds(0)
     setSelectedFlight(null)
-    setSelectedRoute(null)
     setConfigOpen(false)
     setScreen('main')
   }
 
-  function stopPolling() {
+  const stopPolling = useCallback(() => {
     if (pollingRef.current) {
       clearInterval(pollingRef.current)
       pollingRef.current = null
     }
-  }
+  }, [])
 
-  function startPolling() {
+  const startPolling = useCallback(() => {
     stopPolling()
+    pollingErrorsRef.current = 0
+    setPollingError(null)
     pollingRef.current = setInterval(async () => {
       try {
         const state = await api.getState()
+        pollingErrorsRef.current = 0
+        setPollingError(null)
         // Only update state if backend has real data or is actively running/finished.
         // Prevents empty post-reset state from overwriting a valid finalizada snapshot.
-        if (state && (state.enEjecucion || state.finalizada)) {
+        if (state && (state.enEjecucion || state.finalizada) && !stepInProgressRef.current) {
           setBackendState(state)
           if (state.finalizada) {
             stopPolling()
@@ -125,10 +131,14 @@ export default function App() {
           }
         }
       } catch (err) {
+        pollingErrorsRef.current += 1
+        if (pollingErrorsRef.current >= 3) {
+          setPollingError('No se puede contactar el servidor')
+        }
         console.error('Polling error:', err)
       }
     }, 2000)
-  }
+  }, [stopPolling])
 
   function onIniciar() {
     if (!backendState) {
@@ -148,6 +158,10 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    api.getAirportGraph().then(setAirportGraph).catch(() => {})
+  }, [])
 
   useEffect(() => {
     api.getAirports()
@@ -192,33 +206,85 @@ export default function App() {
     return () => clearInterval(autoStepRef.current)
   }, [autoStep])
 
+  // Prefetch next day starting at sim 20:00 (minute 1200) so it's ready at midnight.
+  // stepInProgressRef stays true until applyNewDay fires at 1440 to block polling
+  // from picking up the new backend state before the frontend clock reaches midnight.
+  useEffect(() => {
+    if (!autoStep) return
+    if (simClockMinutes < 1200 || simClockMinutes >= 1440) return
+    if (prefetchFiredRef.current) return
+
+    prefetchFiredRef.current = true
+    stepInProgressRef.current = true
+    nextDayStateRef.current = null
+    ;(async () => {
+      try {
+        const newState = await api.stepSimulation()
+        nextDayStateRef.current = newState ?? null
+      } catch (err) {
+        console.error('Prefetch error:', err)
+        nextDayStateRef.current = null
+        prefetchFiredRef.current = false
+        stepInProgressRef.current = false
+      }
+      // intentionally NO finally — stepInProgressRef released only in applyNewDay
+    })()
+  }, [simClockMinutes, autoStep])
+
+  // At midnight: apply prefetched state (instant) or wait if prefetch not ready yet
   useEffect(() => {
     if (!autoStep) return
     if (simClockMinutes < 1440) return
 
+    const applyNewDay = (newState) => {
+      stepInProgressRef.current = false
+      setBackendState(newState)
+      setSimClockMinutes(0)
+      prefetchFiredRef.current = false
+      nextDayStateRef.current = null
+      if (newState.finalizada) {
+        setAutoStep(false)
+        clearInterval(autoStepRef.current)
+        stopPolling()
+        setScreen('resultados')
+      }
+    }
+
+    if (nextDayStateRef.current) {
+      // Prefetch already done — apply instantly, no freeze
+      applyNewDay(nextDayStateRef.current)
+      return
+    }
+
+    // Prefetch not ready (backend took > 8s) — wait for it
+    stepInProgressRef.current = true
     let cancelled = false
     ;(async () => {
       try {
-        const newState = await api.stepSimulation()
-        if (cancelled) return
-        if (newState) {
-          setBackendState(newState)
-          setSimClockMinutes(0)
-          if (newState.finalizada) {
-            setAutoStep(false)
-            clearInterval(autoStepRef.current)
-            stopPolling()
-            setScreen('resultados')
+        // If prefetch is in-flight, poll until it resolves
+        const poll = () => new Promise((resolve) => {
+          const check = () => {
+            if (nextDayStateRef.current !== null || !prefetchFiredRef.current) {
+              resolve(nextDayStateRef.current)
+            } else {
+              setTimeout(check, 100)
+            }
           }
-        }
+          check()
+        })
+        const newState = prefetchFiredRef.current
+          ? await poll()
+          : await api.stepSimulation()
+        if (cancelled || !newState) return
+        applyNewDay(newState)
       } catch (err) {
         console.error('Auto-step error:', err)
+      } finally {
+        stepInProgressRef.current = false
       }
     })()
 
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [simClockMinutes, autoStep])
 
   useEffect(() => {
@@ -241,34 +307,6 @@ export default function App() {
     return () => clearInterval(id)
   }, [autoStep])
 
-  useEffect(() => {
-    if (running) {
-      intervalRef.current = setInterval(() => {
-        setSimMin((currentMinutes) => {
-          if (currentMinutes + 3 >= 60) {
-            setSimHour((currentHour) => {
-              if (currentHour + 1 >= 24) {
-                setSimDay((currentDay) => {
-                  if (currentDay + 1 > maxDay) {
-                    setRunning(false)
-                    return currentDay
-                  }
-                  return currentDay + 1
-                })
-                return 0
-              }
-              return currentHour + 1
-            })
-            return 0
-          }
-          return currentMinutes + 3
-        })
-      }, 100)
-    } else {
-      clearInterval(intervalRef.current)
-    }
-    return () => clearInterval(intervalRef.current)
-  }, [running, maxDay])
 
   const simState = backendState ?? {
     currentDay: 0, totalDays: 0,
@@ -283,99 +321,98 @@ export default function App() {
     throughputHistory: [], logOperaciones: [],
   }
 
-  const normalizedAirports = (simState?.airports || simState?.aeropuertos || []).map((airport) => ({
-    ...airport,
-    id: airport.id || airport.codigoIATA,
-    name: airport.name || airport.nombre,
-    continent: airport.continent || airport.continente,
-    lat: airport.lat,
-    lng: airport.lng,
-    currentOccupation: airport.currentOccupation ?? airport.ocupacionActual ?? 0,
-    warehouseCapacity: airport.warehouseCapacity ?? airport.capacidadAlmacen ?? 600,
-  }))
+  const normalizedAirports = useMemo(() =>
+    (simState?.aeropuertos || simState?.airports || []).map((airport) => ({
+      ...airport,
+      id: airport.id || airport.codigoIATA,
+      name: airport.name || airport.nombre,
+      continent: airport.continent || airport.continente,
+      lat: airport.lat,
+      lng: airport.lng,
+      currentOccupation: airport.currentOccupation ?? airport.ocupacionActual ?? 0,
+      warehouseCapacity: airport.warehouseCapacity ?? airport.capacidadAlmacen ?? 600,
+    })),
+  [simState?.aeropuertos, simState?.airports])
 
-  const normalizedFlights = simState?.vuelos
-    ? simState.vuelos.map((flight, idx) => ({
-      id: flight.id || flight.codigoVuelo || `FL-${idx}`,
-      origin: flight.origin || flight.origen,
-      destination: flight.destination || flight.destino,
-      type: flight.type || flight.tipo || 'intercontinental',
-      status: (flight.status || flight.estado) === 'cancelado'
-        ? 'cancelled'
-        : (flight.status || flight.estado) === 'completado'
-          ? 'completed'
-          : 'active',
-      currentLoad: flight.currentLoad ?? flight.cargaActual ?? 0,
-      capacity: flight.capacity ?? flight.capacidadTotal ?? 300,
-      hour: Number((flight.horaSalida || '00:00').split(':')[0]),
-      fraction: flight.fraction ?? 0,
-    }))
-    : (simState?.flights || [])
+  const normalizedFlights = useMemo(() =>
+    simState?.vuelos
+      ? simState.vuelos.map((flight, idx) => ({
+        id: flight.id || flight.codigoVuelo || `FL-${idx}`,
+        origin: flight.origin || flight.origen,
+        destination: flight.destination || flight.destino,
+        type: flight.type || flight.tipo || 'intercontinental',
+        status: (flight.status || flight.estado) === 'cancelado'
+          ? 'cancelled'
+          : (flight.status || flight.estado) === 'completado'
+            ? 'completed'
+            : 'active',
+        currentLoad: flight.currentLoad ?? flight.cargaActual ?? 0,
+        capacity: flight.capacity ?? flight.capacidadTotal ?? 300,
+        hour: Number((flight.horaSalida || '00:00').split(':')[0]),
+        fraction: flight.fraction ?? 0,
+      }))
+      : (simState?.flights || []),
+  [simState?.vuelos, simState?.flights])
 
-  const normalizedRoutes = simState?.envios
-    ? simState.envios.map((envio, idx) => ({
-      id: envio.idEnvio || `RT-${idx}`,
-      status: envio.estado === 'RETRASADO' ? 'red' : envio.estado === 'ENTREGADO' ? 'green' : 'amber',
-      replanified: false,
-      bags: envio.cantidadMaletas || 0,
-      type: Number(envio.sla || 1) > 1 ? 'inter' : 'same',
-      flightLegs: [{ origin: envio.aeropuertoOrigen, destination: envio.aeropuertoDestino }],
-      etaRemaining: 0,
-    }))
-    : (simState?.routes || [])
+  const originSet = useMemo(() => originIds ? new Set(originIds) : null, [originIds])
+  const destSet = useMemo(() => destIds ? new Set(destIds) : null, [destIds])
 
-  const backendRoutes = useMemo(() => {
-    if (!backendState?.envios) return []
-    return backendState.envios
-      .filter((e) => e.planResumen)
-      .map((e) => {
-        const legs = (e.planResumen || '')
-          .split('|')
-          .map((leg) => leg.trim())
-          .filter(Boolean)
-          .map((leg) => {
-            const [origin, destination] = leg.split('->')
-            return { origin: origin?.trim(), destination: destination?.trim() }
-          })
-          .filter((l) => l.origin && l.destination)
+  const visibleAirports = useMemo(() => {
+    if (!originSet && !destSet) return normalizedAirports
+    const visible = new Set()
+    for (const ap of normalizedAirports) {
+      if (!originSet || originSet.has(ap.id)) visible.add(ap.id)
+      if (!destSet || destSet.has(ap.id)) visible.add(ap.id)
+    }
+    return normalizedAirports.filter((a) => visible.has(a.id))
+  }, [normalizedAirports, originSet, destSet])
 
-        const status =
-          e.estado === 'ENTREGADO' ? 'green' :
-          e.estado === 'RETRASADO' ? 'red' : 'amber'
+  const normalizedRoutes = useMemo(() =>
+    simState?.envios
+      ? simState.envios.map((envio, idx) => ({
+        id: envio.idEnvio || `RT-${idx}`,
+        status: envio.estado === 'RETRASADO' ? 'red' : envio.estado === 'ENTREGADO' ? 'green' : 'amber',
+        replanified: false,
+        bags: envio.cantidadMaletas || 0,
+        type: Number(envio.sla || 1) > 1 ? 'inter' : 'same',
+        flightLegs: [{ origin: envio.aeropuertoOrigen, destination: envio.aeropuertoDestino }],
+        etaRemaining: 0,
+      }))
+      : (simState?.routes || []),
+  [simState?.envios, simState?.routes])
 
-        return {
-          id: e.idEnvio,
-          status,
-          type: e.sla === 1 ? 'same' : 'inter',
-          bags: e.cantidadMaletas,
-          flightLegs: legs,
-          replanified: false,
-        }
-      })
-      .filter((r) => r.flightLegs.length > 0)
-  }, [backendState?.envios])
 
-  const backendFlights = useMemo(() => {
+  // Heavy work: filter + parse times. Only reruns when backend data changes (~every 12s).
+  const activeVuelosWithTimes = useMemo(() => {
     if (!backendState?.vuelos) return []
     return backendState.vuelos
       .filter((v) => v.estado === 'activo' && v.enUso)
-      .map((v) => {
-        const depMin = parseTimeToMinutes(v.horaSalida)
-        const arrMin = parseTimeToMinutes(v.horaLlegada)
-        if (!isActiveAtMinute(simClockMinutes, depMin, arrMin)) return null
-        return {
-          id: v.codigoVuelo,
-          origin: v.origen,
-          destination: v.destino,
-          currentLoad: v.maletasAsignadas ?? v.cargaActual ?? 0,
-          capacity: v.capacidadTotal ?? 300,
-          type: v.tipo === 'continental' ? 'continental' : 'intercontinental',
-          status: 'active',
-          fraction: flightFractionAtMinute(simClockMinutes, depMin, arrMin),
-        }
-      })
-      .filter(Boolean)
-  }, [backendState?.vuelos, simClockMinutes])
+      .map((v) => ({
+        id: v.codigoVuelo,
+        origin: v.origen,
+        destination: v.destino,
+        currentLoad: v.maletasAsignadas ?? v.cargaActual ?? 0,
+        capacity: v.capacidadTotal ?? 300,
+        type: v.tipo === 'continental' ? 'continental' : 'intercontinental',
+        status: 'active',
+        depMin: parseTimeToMinutes(v.horaSalida),
+        arrMin: parseTimeToMinutes(v.horaLlegada),
+      }))
+  }, [backendState?.vuelos])
+
+  // Light work: apply clock position. Reruns every second but only on pre-filtered list.
+  const backendFlights = useMemo(() =>
+    activeVuelosWithTimes
+      .filter((v) =>
+        isActiveAtMinute(simClockMinutes, v.depMin, v.arrMin) &&
+        (!originSet || originSet.has(v.origin)) &&
+        (!destSet || destSet.has(v.destination))
+      )
+      .map((v) => ({
+        ...v,
+        fraction: flightFractionAtMinute(simClockMinutes, v.depMin, v.arrMin),
+      })),
+  [activeVuelosWithTimes, simClockMinutes, originSet, destSet])
 
   const fechaSimuladaDisplay = useMemo(() => {
     if (!backendState?.fechaSimulada) return null
@@ -402,30 +439,97 @@ export default function App() {
     // If vuelo not found in current frame, keep the previous drawer content open.
   }, [selectedFlight, backendState, backendFlights])
 
-  const activeKpis = backendState?.kpis
-    ? {
-        bagsInTransit: backendState.kpis.maletasEnTransito,
-        bagsDelivered: backendState.kpis.maletasEntregadas,
-        slaCompliance: backendState.kpis.cumplimientoSLA,
-        activeFlights: backendState.kpis.vuelosActivos,
-        slaViolated: backendState.kpis.slaVencidos,
-      }
-    : simState?.kpis ?? {
-        bagsInTransit: 0, bagsDelivered: 0,
-        slaCompliance: 0, activeFlights: 0,
-        slaViolated: 0,
-      }
+  const activeKpis = useMemo(() =>
+    backendState?.kpis
+      ? {
+          bagsInTransit: backendState.kpis.maletasEnTransito,
+          bagsDelivered: backendState.kpis.maletasEntregadas,
+          slaCompliance: backendState.kpis.cumplimientoSLA,
+          activeFlights: backendState.kpis.vuelosActivos,
+          slaViolated: backendState.kpis.slaVencidos,
+        }
+      : simState?.kpis ?? {
+          bagsInTransit: 0, bagsDelivered: 0,
+          slaCompliance: 0, activeFlights: 0,
+          slaViolated: 0,
+        },
+  [backendState?.kpis, simState?.kpis])
 
   async function handleReset() {
+    prefetchFiredRef.current = false
+    nextDayStateRef.current = null
     try {
       await api.resetSimulation()
     } catch (err) {
       console.error('Reset backend error:', err)
     }
     stopPolling()
+    pollingErrorsRef.current = 0
+    setPollingError(null)
     onReset()
     setBackendState(null)
   }
+
+  async function handleStop() {
+    prefetchFiredRef.current = false
+    nextDayStateRef.current = null
+    try {
+      const state = await api.stopSimulation()
+      if (state) setBackendState(state)
+    } catch (err) {
+      console.error('Stop backend error:', err)
+    }
+    stopPolling()
+    setAutoStep(false)
+    clearInterval(autoStepRef.current)
+    setScreen('resultados')
+  }
+
+  async function handleRestart() {
+    if (!backendState) return
+    prefetchFiredRef.current = false
+    nextDayStateRef.current = null
+    stopPolling()
+    setAutoStep(false)
+    clearInterval(autoStepRef.current)
+    setSimClockMinutes(0)
+    setIsRestarting(true)
+    try {
+      const state = await api.restartSimulation()
+      if (state) {
+        setBackendState(state)
+        setScreen('main')
+        startPolling()
+      }
+    } catch (err) {
+      console.error('Restart backend error:', err)
+    } finally {
+      setIsRestarting(false)
+    }
+  }
+
+  const handleNavigate = useCallback((next) => {
+    setConfigOpen(false)
+    setScreen(next)
+  }, [])
+
+  const handleCloseAirport = useCallback(() => setMapSelectedAirport(null), [])
+  const handleCloseVuelo   = useCallback(() => { setMapSelectedVuelo(null); setSelectedFlight(null) }, [])
+  const handleBackToMain   = useCallback(() => setScreen('main'),            [])
+
+  const handleCancelConfig = useCallback(() => {
+    setScreen('main')
+    setConfigOpen(false)
+  }, [])
+
+  const handleSimulationStarted = useCallback((state, params) => {
+    setConfigOpen(false)
+    setBackendState(state)
+    setLastParams(params)
+    setSimClockMinutes(0)
+    setScreen('main')
+    startPolling()
+  }, [startPolling])
 
   return (
     <>
@@ -439,16 +543,15 @@ export default function App() {
         simRateLabel={null}
         kpis={activeKpis}
         isRunning={autoStep}
-        running={running}
         backendState={backendState}
         onToggleSim={onToggleSim}
+        onStop={handleStop}
+        onRestart={handleRestart}
         onReset={handleReset}
+        canRestart={Boolean(backendState)}
         theme={theme}
         onToggleTheme={onToggleTheme}
-        onNavigate={(next) => {
-          setConfigOpen(false)
-          setScreen(next)
-        }}
+        onNavigate={handleNavigate}
         onIniciar={onIniciar}
         screen={screen}
         hasSimulation={Boolean(backendState)}
@@ -459,7 +562,7 @@ export default function App() {
         {(screen === 'main' && !configOpen) && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: `${leftOpen ? '220px' : '0px'} 1fr ${rightOpen ? '300px' : '0px'}`,
+            gridTemplateColumns: `${leftOpen ? '220px' : '0px'} ${filterOpen ? '232px' : '0px'} 1fr ${rightOpen ? '300px' : '0px'}`,
             height: '100%',
             overflow: 'hidden',
             transition: 'grid-template-columns 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
@@ -469,9 +572,20 @@ export default function App() {
               <LeftPanel filters={filters} setFilters={setFilters} threshold={threshold} setThreshold={setThreshold} />
             </div>
 
+            {/* Filter Panel Container */}
+            <div style={{ overflow: 'hidden', height: '100%', borderRight: filterOpen ? '1px solid var(--border)' : 'none', background: 'var(--panel)' }}>
+              <AirportFilterPanel
+                airports={normalizedAirports}
+                originIds={originIds}
+                setOriginIds={setOriginIds}
+                destIds={destIds}
+                setDestIds={setDestIds}
+              />
+            </div>
+
             {/* Center Map Container */}
             <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
-              {/* Floating Toggle Buttons */}
+              {/* Left toggle (LeftPanel) */}
               <button
                 onClick={() => setLeftOpen(!leftOpen)}
                 style={{
@@ -484,52 +598,62 @@ export default function App() {
                 {leftOpen ? '‹' : '›'}
               </button>
 
+              {/* Filter toggle */}
+              <button
+                onClick={() => setFilterOpen(!filterOpen)}
+                style={{
+                  position: 'absolute', left: 0, top: 'calc(50% + 56px)', transform: 'translateY(-50%)',
+                  zIndex: 1000, width: 24, height: 48, background: 'rgba(13, 17, 23, 0.85)',
+                  border: '1px solid var(--border)', borderLeft: 'none', borderRadius: '0 8px 8px 0',
+                  color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11,
+                }}
+              >
+                {filterOpen ? '‹' : '›'}
+              </button>
+
               <MapView
-                airports={normalizedAirports}
-                routes={backendRoutes}
+                airports={visibleAirports}
                 flights={backendFlights}
-                filters={filters}
-                threshold={threshold}
-                simHour={simHour}
-                simMin={simMin}
-                selectedRoute={selectedRoute}
-                setSelectedRoute={setSelectedRoute}
                 selectedFlight={selectedFlight}
                 setSelectedFlight={setSelectedFlight}
-                onFlightFromRoute={setMapSelectedVuelo}
+                selectedFlightData={mapSelectedVuelo}
                 onAirportClick={setMapSelectedAirport}
+                onMapClick={handleCloseVuelo}
                 theme={theme}
               />
 
-              <button
-                onClick={() => setRightOpen(!rightOpen)}
-                style={{
-                  position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
-                  zIndex: 1000, width: 24, height: 48, background: 'rgba(13, 17, 23, 0.85)',
-                  border: '1px solid var(--border)', borderRight: 'none', borderRadius: '8px 0 0 8px',
-                  color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}
-              >
-                {rightOpen ? '›' : '‹'}
-              </button>
+              {!mapSelectedVuelo && !mapSelectedAirport && (
+                <button
+                  onClick={() => setRightOpen(!rightOpen)}
+                  style={{
+                    position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
+                    zIndex: 1000, width: 24, height: 48, background: 'rgba(13, 17, 23, 0.85)',
+                    border: '1px solid var(--border)', borderRight: 'none', borderRadius: '8px 0 0 8px',
+                    color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  }}
+                >
+                  {rightOpen ? '›' : '‹'}
+                </button>
+              )}
 
               {/* Detail Drawers */}
               <DrawerAeropuerto
                 airport={mapSelectedAirport}
                 vuelos={backendState?.vuelos || []}
-                onClose={() => setMapSelectedAirport(null)}
+                onClose={handleCloseAirport}
               />
               <DrawerVuelo
                 vuelo={mapSelectedVuelo}
-                onClose={() => setMapSelectedVuelo(null)}
+                onClose={handleCloseVuelo}
               />
             </div>
 
             {/* Right Panel Container */}
-            <div style={{ overflow: 'hidden', borderLeft: rightOpen ? '1px solid var(--border)' : 'none', background: 'var(--panel)' }}>
+            <div style={{ overflow: 'hidden', height: '100%', borderLeft: rightOpen ? '1px solid var(--border)' : 'none', background: 'var(--panel)' }}>
               <RightPanel
                 flights={backendFlights}
-                airports={normalizedAirports}
+                airports={visibleAirports}
                 threshold={threshold}
                 selectedFlight={selectedFlight}
                 setSelectedFlight={setSelectedFlight}
@@ -546,36 +670,27 @@ export default function App() {
               <EnviosScreen
                 simState={simState}
                 theme={theme}
-                onBack={() => setScreen('main')}
+                onBack={handleBackToMain}
               />
             )}
             {screen === 'dashboard' && (
               <DashboardScreen
                 simState={simState}
                 theme={theme}
-                onBack={() => setScreen('main')}
+                onBack={handleBackToMain}
               />
             )}
             {screen === 'resultados' && (
               <ResultadosScreen
                 simState={simState}
                 theme={theme}
-                onBack={() => setScreen('main')}
+                onBack={handleBackToMain}
               />
             )}
             {screen === 'config' && (
               <ConfigScreen
-                onCancel={() => {
-                  setScreen('main')
-                  setConfigOpen(false)
-                }}
-                onSimulationStarted={(state) => {
-                  setConfigOpen(false)
-                  setBackendState(state)
-                  setSimClockMinutes(0)
-                  setScreen('main')
-                  startPolling()
-                }}
+                onCancel={handleCancelConfig}
+                onSimulationStarted={handleSimulationStarted}
               />
             )}
           </div>
@@ -617,6 +732,22 @@ export default function App() {
         </div>
       )
     })()}
+    {pollingError && (
+      <div style={{ position: 'fixed', bottom: 16, right: 16, zIndex: 1500, background: 'rgba(240,75,75,0.12)', border: '1px solid rgba(240,75,75,0.4)', borderRadius: 8, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, backdropFilter: 'blur(6px)' }}>
+        <span style={{ color: '#f04b4b', fontSize: 14 }}>⚠</span>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#f04b4b' }}>{pollingError}</span>
+        <button onClick={() => setPollingError(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, marginLeft: 4 }}>✕</button>
+      </div>
+    )}
+    {isRestarting && (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(13,17,23,0.88)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
+        <div style={{ width: 52, height: 52, borderRadius: '50%', border: '3px solid rgba(88,166,255,0.15)', borderTopColor: 'var(--blue)', animation: 'spin 0.75s linear infinite' }} />
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)', letterSpacing: 1, marginBottom: 6 }}>Reiniciando simulación…</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>Reutilizando rutas planificadas</div>
+        </div>
+      </div>
+    )}
   </>
   )
 }

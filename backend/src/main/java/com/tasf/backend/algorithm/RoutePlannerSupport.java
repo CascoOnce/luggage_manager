@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,10 +24,16 @@ import org.slf4j.LoggerFactory;
 abstract class RoutePlannerSupport {
 
     private static final Logger log = LoggerFactory.getLogger(RoutePlannerSupport.class);
+    private static final ForkJoinPool PLANNING_POOL =
+        new ForkJoinPool(Math.max(2, Runtime.getRuntime().availableProcessors() - 1));
 
     // Populated in buildCandidatePool so that objective/respectsHardConstraints
     // can read domain-constant capacities without receiving aeropuertos explicitly.
     private Map<String, Integer> airportCapacityCache = new HashMap<>();
+
+    protected Map<String, Integer> getAirportCapacityCache() {
+        return airportCapacityCache;
+    }
 
     protected Map<String, List<RouteCandidate>> buildCandidatePool(
         List<Envio> envios,
@@ -42,15 +50,29 @@ abstract class RoutePlannerSupport {
             .filter(vuelo -> !vuelo.isCancelado())
             .collect(Collectors.groupingBy(Vuelo::getOrigen));
 
-        Map<String, List<RouteCandidate>> pool = new HashMap<>();
-        for (Envio envio : envios) {
-            enforceSlaFromContinent(envio, airportByCode);
-            List<RouteCandidate> routes = generateRoutes(envio, flightsByOrigin, airportByCode, params);
-            routeCounter.increment(routes.size());
-            pool.put(envio.getIdEnvio(), routes);
-            log.info("Building candidates for envio {}: origin={} destination={} candidates={}",
-                envio.getIdEnvio(), envio.getAeropuertoOrigen(), envio.getAeropuertoDestino(), routes.size());
+        LongAdder adder = new LongAdder();
+        Map<String, List<RouteCandidate>> pool;
+        try {
+            pool = PLANNING_POOL.submit(() ->
+                envios.parallelStream().collect(Collectors.toConcurrentMap(
+                    Envio::getIdEnvio,
+                    envio -> {
+                        enforceSlaFromContinent(envio, airportByCode);
+                        List<RouteCandidate> routes = generateRoutes(envio, flightsByOrigin, airportByCode, params);
+                        adder.add(routes.size());
+                        log.debug("Building candidates for envio {}: origin={} destination={} candidates={}",
+                            envio.getIdEnvio(), envio.getAeropuertoOrigen(), envio.getAeropuertoDestino(), routes.size());
+                        return routes;
+                    }
+                ))
+            ).get();
+        } catch (Exception ex) {
+            throw new RuntimeException("Parallel candidate pool build failed", ex);
         }
+        routeCounter.increment((int) adder.sum());
+        long sinRuta = pool.values().stream().filter(List::isEmpty).count();
+        log.info("Candidate pool built: {} envios, {} total routes, {} without route",
+            envios.size(), routeCounter.get(), sinRuta);
 
         return pool;
     }

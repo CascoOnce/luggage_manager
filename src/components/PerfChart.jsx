@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { Bar } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip } from 'chart.js'
 
@@ -25,7 +25,7 @@ export default function PerfChart({ throughputHistory }) {
     )
   }
 
-  const data = {
+  const data = useMemo(() => ({
     labels: throughputHistory.map((t) => t.day),
     datasets: [
       {
@@ -41,7 +41,7 @@ export default function PerfChart({ throughputHistory }) {
         borderRadius: 3, borderWidth: 0,
       },
     ],
-  }
+  }), [throughputHistory])
 
   const options = {
     responsive: true, maintainAspectRatio: false,

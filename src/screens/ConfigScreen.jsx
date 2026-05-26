@@ -9,11 +9,6 @@ const PERIOD_OPTIONS = [
   { key: '7', label: '7 DIAS', sublabel: 'Simulacion semanal' },
 ]
 
-const ALGORITHM_OPTIONS = [
-  { key: 'SIMULATED_ANNEALING', label: 'SA', sublabel: 'Simulated Annealing' },
-  { key: 'TABU_SEARCH', label: 'TS', sublabel: 'Tabu Search' },
-]
-
 function sectionHeaderStyle() {
   return {
     fontFamily: 'var(--mono)',
@@ -28,8 +23,8 @@ function sectionHeaderStyle() {
 
 export default function ConfigScreen({ onCancel, onSimulationStarted }) {
   const [periodo, setPeriodo] = useState('3')
-  const [algoritmo, setAlgoritmo] = useState('SIMULATED_ANNEALING')
-  const [fechaInicio, setFechaInicio] = useState('2026-01-02')
+  const algoritmo = 'SIMULATED_ANNEALING'
+  const [fechaInicio, setFechaInicio] = useState('2026-06-01')
   const [escalaMinima, setEscalaMinima] = useState(10)
   const [tiempoRecogida, setTiempoRecogida] = useState(10)
   const [semaforo, setSemaforo] = useState({ verde: 60, ambar: 85 })
@@ -134,7 +129,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)', letterSpacing: 1, marginBottom: 6 }}>Calculando rutas óptimas…</div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
-              {algoritmo === 'SIMULATED_ANNEALING' ? 'Simulated Annealing' : 'Tabu Search'} · {periodo} días
+              Simulated Annealing · {periodo} días
             </div>
           </div>
         </div>
@@ -154,37 +149,6 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
               </button>
             )
           })}
-
-          <div style={{ marginTop: 20 }}>
-            <span style={sectionHeaderStyle()}>Algoritmo</span>
-            <div style={{ display: 'flex', border: '1px solid var(--border)' }}>
-              {ALGORITHM_OPTIONS.map((option, idx) => {
-                const selected = algoritmo === option.key
-                return (
-                  <button
-                    key={option.key}
-                    onClick={() => !loading && setAlgoritmo(option.key)}
-                    disabled={loading}
-                    style={{
-                      flex: 1,
-                      padding: '10px 12px',
-                      border: 'none',
-                      borderRight: idx === 0 ? '1px solid var(--border)' : 'none',
-                      background: selected ? 'rgba(88,166,255,0.1)' : 'transparent',
-                      cursor: loading ? 'not-allowed' : 'pointer',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: 2,
-                    }}
-                  >
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 14, fontWeight: 700, color: selected ? 'var(--blue)' : 'var(--muted)' }}>{option.label}</span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: selected ? 'var(--blue)' : 'var(--muted)', opacity: 0.7 }}>{option.sublabel}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
 
           <div style={{ marginTop: 20 }}>
             <span style={sectionHeaderStyle()}>Fecha de inicio</span>
@@ -339,7 +303,6 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
           <div style={{ marginBottom: 20 }}>
             <span style={sectionHeaderStyle()}>Resumen de configuración</span>
             {[
-              ['Algoritmo', algoritmo === 'SIMULATED_ANNEALING' ? 'Simulated Annealing' : 'Tabu Search'],
               ['Periodo', `${periodo} días desde ${fechaInicio}`],
               ['Escala mínima', `${escalaMinima} min`],
               ['Tiempo recogida', `${tiempoRecogida} min`],
