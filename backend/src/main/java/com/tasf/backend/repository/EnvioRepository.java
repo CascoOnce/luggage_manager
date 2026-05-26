@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 public interface EnvioRepository extends JpaRepository<EnvioEntity, Long> {
@@ -21,6 +22,12 @@ public interface EnvioRepository extends JpaRepository<EnvioEntity, Long> {
      * Usado por el seeder y el upload para evitar duplicados.
      */
     boolean existsByIdPedido(String idPedido);
+
+    /**
+     * Carga en un solo query todos los envíos cuyos idPedido estén en el conjunto dado.
+     * Usado por SimulationPersistenceService para evitar el O(n²) de findAll() en loop.
+     */
+    List<EnvioEntity> findByIdPedidoIn(Collection<String> ids);
 
     /**
      * Cuenta envíos por aeropuerto de origen — útil para seeder parcial.

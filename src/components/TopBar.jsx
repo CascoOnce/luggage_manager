@@ -105,7 +105,8 @@ export default function TopBar({
   simRateLabel,
   kpis,
   isRunning,
-  running, onToggleSim, onReset,
+  running, onToggleSim, onStop, onRestart, onReset,
+  canRestart,
   useBackend, backendState,
   theme, onToggleTheme,
   onNavigate,
@@ -113,14 +114,9 @@ export default function TopBar({
   screen,
   hasSimulation,
 }) {
-  const isBackendRunning = Boolean(useBackend && backendState?.enEjecucion)
-  const isBackendFinished = Boolean(useBackend && backendState?.finalizada)
+  const isBackendRunning = backendState?.enEjecucion === true
+  const isBackendFinished = backendState?.finalizada === true
   const effectiveRunning = isRunning !== undefined ? isRunning : running
-  const primaryActionLabel = isBackendRunning
-    ? (effectiveRunning ? '⏸ PAUSAR' : '▶ REANUDAR')
-    : isBackendFinished
-      ? '↺ REINICIAR'
-      : 'CONFIGURAR'
 
   const kpiCards = [
     { label: 'En tránsito',    value: hasSimulation ? kpis.bagsInTransit.toLocaleString() : '—', color: hasSimulation ? 'var(--text-bright)' : 'var(--muted)' },
@@ -210,23 +206,48 @@ export default function TopBar({
 
       <div style={s.controls}>
         <button style={s.btnReset} onClick={onToggleTheme}>{theme === 'dark' ? '☀' : '🌙'}</button>
-        <button style={s.btnStart(isBackendRunning || effectiveRunning)} onClick={() => {
-          if (isBackendRunning) {
-            onToggleSim()
-            return
-          }
-          if (isBackendFinished) {
-            onReset()
-            return
-          }
-          if (onIniciar) {
-            onIniciar()
-            return
-          }
-          onToggleSim()
-        }}>
-          {primaryActionLabel}
-        </button>
+
+        {/* Sin simulación: solo CONFIGURAR */}
+        {!hasSimulation && (
+          <button style={s.btnStart(false)} onClick={onIniciar}>
+            CONFIGURAR
+          </button>
+        )}
+
+        {/* Simulación en curso: Pausar/Reanudar + Stop + Empezar de nuevo */}
+        {isBackendRunning && (
+          <>
+            <button style={s.btnStart(effectiveRunning)} onClick={onToggleSim}>
+              {effectiveRunning ? '⏸ PAUSAR' : '▶ REANUDAR'}
+            </button>
+            <button
+              style={{ ...s.btnReset, color: 'var(--red)', borderColor: 'rgba(240,75,75,0.4)' }}
+              onClick={onStop}
+            >
+              ⏹ STOP
+            </button>
+            {canRestart && (
+              <button style={s.btnReset} onClick={onRestart}>
+                ↺ REINICIAR
+              </button>
+            )}
+          </>
+        )}
+
+        {/* Simulación finalizada: Empezar de nuevo + Configurar */}
+        {isBackendFinished && !isBackendRunning && (
+          <>
+            {canRestart && (
+              <button style={s.btnStart(false)} onClick={onRestart}>
+                ↺ EMPEZAR DE NUEVO
+              </button>
+            )}
+            <button style={s.btnReset} onClick={() => onNavigate('config')}>
+              CONFIGURAR
+            </button>
+          </>
+        )}
+
         <button style={s.btnReset} onClick={onReset}>Reset</button>
       </div>
     </div>

@@ -17,8 +17,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -43,6 +47,7 @@ public class DataLoaderService {
 
     private List<Aeropuerto> aeropuertos = new ArrayList<>();
     private List<Vuelo> vuelos = new ArrayList<>();
+    private Map<String, Set<String>> airportGraph = new HashMap<>();
 
     public DataLoaderService(
             AeropuertoRepository aeropuertoRepository,
@@ -172,6 +177,13 @@ public class DataLoaderService {
             .toList();
 
         log.info("Loaded {} airports and {} flights from DB", this.aeropuertos.size(), this.vuelos.size());
+
+        this.airportGraph = new HashMap<>();
+        for (Vuelo v : this.vuelos) {
+            airportGraph.computeIfAbsent(v.getOrigen(), k -> new HashSet<>()).add(v.getDestino());
+            airportGraph.computeIfAbsent(v.getDestino(), k -> new HashSet<>()).add(v.getOrigen());
+        }
+        log.info("Built airport adjacency graph with {} nodes", this.airportGraph.size());
     }
 
     public List<Aeropuerto> getAeropuertos() {
@@ -180,6 +192,10 @@ public class DataLoaderService {
 
     public List<Vuelo> getVuelos() {
         return vuelos;
+    }
+
+    public Map<String, Set<String>> getAirportGraph() {
+        return Collections.unmodifiableMap(airportGraph);
     }
 
     // Nota: El método getTodosLosEnvios() se elimina porque ya no cargamos todo en memoria.

@@ -110,6 +110,11 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   50%      { opacity: 0.75; }
 }
 
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
 /* flight marker divs injected by Leaflet DivIcon */
 .flight-plane {
   width: 20px;

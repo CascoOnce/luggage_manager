@@ -128,7 +128,7 @@ export default function LeftPanel({ filters, setFilters, threshold, setThreshold
             { color: '#22d07a', label: 'OK / dentro de SLA',     type: 'dot'  },
             { color: '#f5a623', label: 'Alerta / warehouse alto', type: 'dot'  },
             { color: '#f04b4b', label: 'Crítico / SLA vencido',   type: 'dot'  },
-            { color: '#f5a623', label: 'Ruta replanificada',      type: 'dash' },
+            //{ color: '#f5a623', label: 'Ruta replanificada',      type: 'dash' },
           ].map(({ color, label, type }) => (
             <div key={label} style={s.legendItem}>
               {type === 'dot'

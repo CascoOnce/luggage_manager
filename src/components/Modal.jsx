@@ -51,12 +51,6 @@ export default function Modal({ title, children, confirmLabel, onConfirm, onClos
 
   return (
     <div style={s.overlay} onClick={onClose}>
-      <style>{`
-        @keyframes modalIn {
-          from { opacity: 0; transform: scale(0.95); }
-          to { opacity: 1; transform: scale(1); }
-        }
-      `}</style>
       <div style={s.panel} onClick={(e) => e.stopPropagation()}>
         <h3 style={s.title}>{title}</h3>
         <div style={s.body}>{children}</div>

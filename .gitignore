@@ -40,6 +40,7 @@ logs/
 .env
 .env.*
 !.env.example
+application-local*
 
 # ─── Archivos temporales / generados ───────────────────────────────
 *.class
@@ -50,9 +51,8 @@ logs/
 *.zip
 *.tar.gz
 *.rar
-
-# ─── Claude Code ────────────────────────────────────────────────────
-.claude/settings.local.json
+.claude/
+CLAUDE.md
 
 # ─── Scripts de infraestructura (no van al repo público) ────────────
 scripts/*.pem
