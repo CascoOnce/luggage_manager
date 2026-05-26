@@ -66,76 +66,77 @@ public class DataLoaderService {
     }
 
     private void seedDatabaseIfEmpty() {
-        if (aeropuertoRepository.count() > 0) {
-            return;
-        }
-        log.info("Database is empty — seeding airports and flights from bundled data files...");
         try {
-            // Seed airports
+            // Parse airports once — needed for both airport seeding and continent map for envíos
             InputStream airportsStream = new ClassPathResource("data/aeropuertos.txt").getInputStream();
             List<Aeropuerto> parsedAirports = airportParser.parseAirports(airportsStream);
-            List<AeropuertoEntity> airportEntities = parsedAirports.stream()
-                .map(a -> AeropuertoEntity.builder()
-                    .codigoIata(a.getCodigoIATA())
-                    .ciudad(a.getCiudad())
-                    .pais(a.getPais())
-                    .continente(a.getContinente())
-                    .huso(a.getHuso())
-                    .capacidadAlmacen(a.getCapacidadAlmacen())
-                    .lat(a.getLat())
-                    .lng(a.getLng())
-                    .build())
-                .toList();
-            aeropuertoRepository.saveAll(airportEntities);
-            log.info("Seeded {} airports", airportEntities.size());
-
-            // Seed flights
             Map<String, String> continentByAirport = parsedAirports.stream()
                 .collect(Collectors.toMap(Aeropuerto::getCodigoIATA, Aeropuerto::getContinente));
-            InputStream flightsStream = new ClassPathResource("data/planes_vuelo.txt").getInputStream();
-            List<Vuelo> parsedFlights = flightParser.parseFlights(flightsStream, continentByAirport);
-            List<VueloEntity> flightEntities = parsedFlights.stream()
-                .map(v -> VueloEntity.builder()
-                    .codigoVuelo(v.getCodigoVuelo())
-                    .iataOrigen(v.getOrigen())
-                    .iataDestino(v.getDestino())
-                    .horaSalida(v.getHoraSalida())
-                    .horaLlegada(v.getHoraLlegada())
-                    .capacidadTotal(v.getCapacidadTotal())
-                    .tipo(v.getTipo())
-                    .build())
-                .toList();
-            vueloRepository.saveAll(flightEntities);
-            log.info("Seeded {} flights", flightEntities.size());
 
-            // Seed envíos from all bundled _envios_XXXX_.txt files
-            PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
-            Resource[] envioResources = resolver.getResources("classpath:data/Envios/_envios_*.txt");
-            int totalEnvios = 0;
-            for (Resource resource : envioResources) {
-                String filename = resource.getFilename();
-                Matcher matcher = IATA_FROM_FILENAME.matcher(filename);
-                if (!matcher.find()) continue;
-                String iata = matcher.group(1);
-                try (InputStream is = resource.getInputStream()) {
-                    List<Envio> envios = baggageParser.parseEnvios(is, iata, LocalDate.MIN, null, continentByAirport);
-                    List<EnvioEntity> entities = envios.stream()
-                        .map(e -> EnvioEntity.builder()
-                            .idPedido(e.getIdEnvio())
-                            .codigoAerolinea(e.getCodigoAerolinea())
-                            .iataOrigen(e.getAeropuertoOrigen())
-                            .iataDestino(e.getAeropuertoDestino())
-                            .fechaHoraIngreso(e.getFechaHoraIngreso())
-                            .cantidadMaletas(e.getCantidadMaletas())
-                            .sla(e.getSla())
-                            .estado(e.getEstado().name())
-                            .build())
-                        .toList();
-                    envioRepository.saveAll(entities);
-                    totalEnvios += entities.size();
-                }
+            if (aeropuertoRepository.count() == 0) {
+                log.info("Seeding airports and flights...");
+                List<AeropuertoEntity> airportEntities = parsedAirports.stream()
+                    .map(a -> AeropuertoEntity.builder()
+                        .codigoIata(a.getCodigoIATA())
+                        .ciudad(a.getCiudad())
+                        .pais(a.getPais())
+                        .continente(a.getContinente())
+                        .huso(a.getHuso())
+                        .capacidadAlmacen(a.getCapacidadAlmacen())
+                        .lat(a.getLat())
+                        .lng(a.getLng())
+                        .build())
+                    .toList();
+                aeropuertoRepository.saveAll(airportEntities);
+                log.info("Seeded {} airports", airportEntities.size());
+
+                InputStream flightsStream = new ClassPathResource("data/planes_vuelo.txt").getInputStream();
+                List<Vuelo> parsedFlights = flightParser.parseFlights(flightsStream, continentByAirport);
+                List<VueloEntity> flightEntities = parsedFlights.stream()
+                    .map(v -> VueloEntity.builder()
+                        .codigoVuelo(v.getCodigoVuelo())
+                        .iataOrigen(v.getOrigen())
+                        .iataDestino(v.getDestino())
+                        .horaSalida(v.getHoraSalida())
+                        .horaLlegada(v.getHoraLlegada())
+                        .capacidadTotal(v.getCapacidadTotal())
+                        .tipo(v.getTipo())
+                        .build())
+                    .toList();
+                vueloRepository.saveAll(flightEntities);
+                log.info("Seeded {} flights", flightEntities.size());
             }
-            log.info("Seeded {} envios from {} files", totalEnvios, envioResources.length);
+
+            if (envioRepository.count() == 0) {
+                log.info("Seeding envios...");
+                PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
+                Resource[] envioResources = resolver.getResources("classpath:data/Envios/_envios_*.txt");
+                int totalEnvios = 0;
+                for (Resource resource : envioResources) {
+                    String filename = resource.getFilename();
+                    Matcher matcher = IATA_FROM_FILENAME.matcher(filename);
+                    if (!matcher.find()) continue;
+                    String iata = matcher.group(1);
+                    try (InputStream is = resource.getInputStream()) {
+                        List<Envio> envios = baggageParser.parseEnvios(is, iata, LocalDate.MIN, null, continentByAirport);
+                        List<EnvioEntity> entities = envios.stream()
+                            .map(e -> EnvioEntity.builder()
+                                .idPedido(e.getIdEnvio())
+                                .codigoAerolinea(e.getCodigoAerolinea())
+                                .iataOrigen(e.getAeropuertoOrigen())
+                                .iataDestino(e.getAeropuertoDestino())
+                                .fechaHoraIngreso(e.getFechaHoraIngreso())
+                                .cantidadMaletas(e.getCantidadMaletas())
+                                .sla(e.getSla())
+                                .estado(e.getEstado().name())
+                                .build())
+                            .toList();
+                        envioRepository.saveAll(entities);
+                        totalEnvios += entities.size();
+                    }
+                }
+                log.info("Seeded {} envios from {} files", totalEnvios, envioResources.length);
+            }
         } catch (IOException e) {
             throw new IllegalStateException("Failed to seed database from bundled data files", e);
         }
