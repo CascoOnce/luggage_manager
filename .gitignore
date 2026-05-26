@@ -50,3 +50,10 @@ logs/
 *.zip
 *.tar.gz
 *.rar
+
+# ─── Claude Code ────────────────────────────────────────────────────
+.claude/settings.local.json
+
+# ─── Scripts de infraestructura (no van al repo público) ────────────
+scripts/*.pem
+scripts/*.key
