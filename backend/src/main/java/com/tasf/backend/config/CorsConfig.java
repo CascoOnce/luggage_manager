@@ -9,8 +9,18 @@ public class CorsConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        String extraOrigins = System.getenv("CORS_ALLOWED_ORIGINS");
+        String[] origins = extraOrigins != null && !extraOrigins.isBlank()
+            ? extraOrigins.split(",")
+            : new String[]{};
+
+        String[] base = {"http://localhost:*", "http://127.0.0.1:*"};
+        String[] all = java.util.stream.Stream
+            .concat(java.util.Arrays.stream(base), java.util.Arrays.stream(origins))
+            .toArray(String[]::new);
+
         registry.addMapping("/api/**")
-            .allowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*")
+            .allowedOriginPatterns(all)
             .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
             .allowedHeaders("*")
             .allowCredentials(false)

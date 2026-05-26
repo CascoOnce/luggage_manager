@@ -1,0 +1,134 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  JAVA_VERSION: '21'
+  NODE_VERSION: '20'
+
+jobs:
+  # ─── Build & package both artifacts ───────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Frontend ────────────────────────────────────────────────────────
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          # In production, the frontend calls /api/* which Nginx proxies to the backend.
+          # Locally it falls back to http://localhost:8080/api (see src/services/api.js).
+          VITE_API_BASE_URL: /api
+
+      # ── Backend ─────────────────────────────────────────────────────────
+      - name: Setup Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Build backend JAR
+        # Tests are skipped because they require a live MySQL instance.
+        # Add a test profile with an H2 datasource to enable them in CI.
+        run: mvn -B package -DskipTests --file backend/pom.xml
+
+      # ── Store artifacts for the deploy job ──────────────────────────────
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist/
+          retention-days: 1
+
+      - name: Upload backend JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar
+          path: backend/target/backend-*.jar
+          retention-days: 1
+
+  # ─── Deploy to EC2 (main branch only) ─────────────────────────────────────
+  deploy:
+    name: Deploy to EC2
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist/
+
+      - name: Download backend JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-jar
+          path: backend/target/
+
+      - name: Configure SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Add EC2 to known hosts
+        run: ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Ensure rsync is installed on EC2
+        run: ssh "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "which rsync || sudo apt-get install -y -q rsync"
+
+      - name: Sync frontend to Nginx webroot
+        run: |
+          rsync -avz --delete dist/ \
+            "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/var/www/luggage-manager/"
+
+      - name: Upload backend JAR
+        run: |
+          scp backend/target/backend-*.jar \
+            "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/luggage-manager/app.jar"
+
+      - name: Write environment file and restart service
+        run: |
+          ssh "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" bash -s << 'REMOTE'
+            # Write .env atomically so the running service is not exposed mid-write
+            cat > /opt/luggage-manager/.env.tmp << ENV
+          SPRING_DATASOURCE_URL=${{ secrets.SPRING_DATASOURCE_URL }}
+          SPRING_DATASOURCE_USERNAME=${{ secrets.SPRING_DATASOURCE_USERNAME }}
+          SPRING_DATASOURCE_PASSWORD=${{ secrets.SPRING_DATASOURCE_PASSWORD }}
+          CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
+          SPRING_PROFILES_ACTIVE=prod
+          ENV
+            mv /opt/luggage-manager/.env.tmp /opt/luggage-manager/.env
+            chmod 600 /opt/luggage-manager/.env
+            sudo systemctl restart luggage-manager
+            echo "Waiting for service to start..."
+            for i in $(seq 1 12); do
+              sleep 5
+              if sudo systemctl is-active --quiet luggage-manager; then
+                echo "Service is running after $((i * 5))s"
+                exit 0
+              fi
+              echo "  attempt $i/12..."
+            done
+            echo "Service failed to start after 60s:"
+            sudo journalctl -u luggage-manager -n 80
+            exit 1
+          REMOTE

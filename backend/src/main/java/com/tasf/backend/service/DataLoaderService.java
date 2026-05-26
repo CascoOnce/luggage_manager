@@ -3,10 +3,14 @@ package com.tasf.backend.service;
 import com.tasf.backend.domain.Aeropuerto;
 import com.tasf.backend.domain.Envio;
 import com.tasf.backend.domain.Vuelo;
+import com.tasf.backend.entity.AeropuertoEntity;
+import com.tasf.backend.entity.EnvioEntity;
+import com.tasf.backend.entity.VueloEntity;
 import com.tasf.backend.parser.AirportParser;
 import com.tasf.backend.parser.BaggageParser;
 import com.tasf.backend.parser.FlightParser;
 import com.tasf.backend.repository.AeropuertoRepository;
+import com.tasf.backend.repository.EnvioRepository;
 import com.tasf.backend.repository.VueloRepository;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
@@ -32,9 +36,14 @@ import org.springframework.stereotype.Service;
 @Service
 public class DataLoaderService {
     private static final Logger log = LoggerFactory.getLogger(DataLoaderService.class);
+    private static final Pattern IATA_FROM_FILENAME = Pattern.compile("_envios_([A-Z]{4})_");
 
     private final AeropuertoRepository aeropuertoRepository;
     private final VueloRepository vueloRepository;
+    private final EnvioRepository envioRepository;
+    private final AirportParser airportParser;
+    private final FlightParser flightParser;
+    private final BaggageParser baggageParser;
 
     private List<Aeropuerto> aeropuertos = new ArrayList<>();
     private List<Vuelo> vuelos = new ArrayList<>();
@@ -42,15 +51,100 @@ public class DataLoaderService {
 
     public DataLoaderService(
             AeropuertoRepository aeropuertoRepository,
-            VueloRepository vueloRepository) {
+            VueloRepository vueloRepository,
+            EnvioRepository envioRepository,
+            AirportParser airportParser,
+            FlightParser flightParser,
+            BaggageParser baggageParser) {
         this.aeropuertoRepository = aeropuertoRepository;
         this.vueloRepository = vueloRepository;
+        this.envioRepository = envioRepository;
+        this.airportParser = airportParser;
+        this.flightParser = flightParser;
+        this.baggageParser = baggageParser;
     }
 
     @PostConstruct
     public void init() {
-        // Fase 4: Cargar datos estáticos desde DB a memoria (para el motor)
+        seedDatabaseIfEmpty();
         loadStaticDataFromDb();
+    }
+
+    private void seedDatabaseIfEmpty() {
+        try {
+            // Parse airports once — needed for both airport seeding and continent map for envíos
+            InputStream airportsStream = new ClassPathResource("data/aeropuertos.txt").getInputStream();
+            List<Aeropuerto> parsedAirports = airportParser.parseAirports(airportsStream);
+            Map<String, String> continentByAirport = parsedAirports.stream()
+                .collect(Collectors.toMap(Aeropuerto::getCodigoIATA, Aeropuerto::getContinente));
+
+            if (aeropuertoRepository.count() == 0) {
+                log.info("Seeding airports and flights...");
+                List<AeropuertoEntity> airportEntities = parsedAirports.stream()
+                    .map(a -> AeropuertoEntity.builder()
+                        .codigoIata(a.getCodigoIATA())
+                        .ciudad(a.getCiudad())
+                        .pais(a.getPais())
+                        .continente(a.getContinente())
+                        .huso(a.getHuso())
+                        .capacidadAlmacen(a.getCapacidadAlmacen())
+                        .lat(a.getLat())
+                        .lng(a.getLng())
+                        .build())
+                    .toList();
+                aeropuertoRepository.saveAll(airportEntities);
+                log.info("Seeded {} airports", airportEntities.size());
+
+                InputStream flightsStream = new ClassPathResource("data/planes_vuelo.txt").getInputStream();
+                List<Vuelo> parsedFlights = flightParser.parseFlights(flightsStream, continentByAirport);
+                List<VueloEntity> flightEntities = parsedFlights.stream()
+                    .map(v -> VueloEntity.builder()
+                        .codigoVuelo(v.getCodigoVuelo())
+                        .iataOrigen(v.getOrigen())
+                        .iataDestino(v.getDestino())
+                        .horaSalida(v.getHoraSalida())
+                        .horaLlegada(v.getHoraLlegada())
+                        .capacidadTotal(v.getCapacidadTotal())
+                        .tipo(v.getTipo())
+                        .build())
+                    .toList();
+                vueloRepository.saveAll(flightEntities);
+                log.info("Seeded {} flights", flightEntities.size());
+            }
+
+            if (envioRepository.count() == 0) {
+                log.info("Seeding envios...");
+                PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
+                Resource[] envioResources = resolver.getResources("classpath:data/Envios/_envios_*.txt");
+                int totalEnvios = 0;
+                for (Resource resource : envioResources) {
+                    String filename = resource.getFilename();
+                    Matcher matcher = IATA_FROM_FILENAME.matcher(filename);
+                    if (!matcher.find()) continue;
+                    String iata = matcher.group(1);
+                    try (InputStream is = resource.getInputStream()) {
+                        List<Envio> envios = baggageParser.parseEnvios(is, iata, LocalDate.MIN, null, continentByAirport);
+                        List<EnvioEntity> entities = envios.stream()
+                            .map(e -> EnvioEntity.builder()
+                                .idPedido(e.getIdEnvio())
+                                .codigoAerolinea(e.getCodigoAerolinea())
+                                .iataOrigen(e.getAeropuertoOrigen())
+                                .iataDestino(e.getAeropuertoDestino())
+                                .fechaHoraIngreso(e.getFechaHoraIngreso())
+                                .cantidadMaletas(e.getCantidadMaletas())
+                                .sla(e.getSla())
+                                .estado(e.getEstado().name())
+                                .build())
+                            .toList();
+                        envioRepository.saveAll(entities);
+                        totalEnvios += entities.size();
+                    }
+                }
+                log.info("Seeded {} envios from {} files", totalEnvios, envioResources.length);
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to seed database from bundled data files", e);
+        }
     }
 
     private void loadStaticDataFromDb() {
