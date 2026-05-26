@@ -10,7 +10,7 @@ WEB_DIR=/var/www/luggage-manager
 
 echo "==> Installing dependencies"
 apt-get update -q
-apt-get install -y -q openjdk-21-jre-headless nginx
+apt-get install -y -q openjdk-21-jre-headless nginx rsync
 
 echo "==> Creating application directories"
 mkdir -p "$APP_DIR" "$WEB_DIR"
