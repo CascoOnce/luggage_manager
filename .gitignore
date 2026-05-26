@@ -53,3 +53,7 @@ application-local*
 *.rar
 .claude/
 CLAUDE.md
+
+# ─── Scripts de infraestructura (no van al repo público) ────────────
+scripts/*.pem
+scripts/*.key
