@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 
 const s = {
   bar: {
@@ -99,6 +99,15 @@ function fmtClock(sec) {
   return `${hh}:${mm}:${ss}`
 }
 
+function useWallClock() {
+  const [clock, setClock] = useState(() => new Date().toLocaleTimeString('es-PE'))
+  useEffect(() => {
+    const id = setInterval(() => setClock(new Date().toLocaleTimeString('es-PE')), 1000)
+    return () => clearInterval(id)
+  }, [])
+  return clock
+}
+
 export default function TopBar({
   currentDay, totalDays, elapsedSeconds, realElapsedSeconds,
   fechaSimulada,
@@ -114,6 +123,7 @@ export default function TopBar({
   screen,
   hasSimulation,
 }) {
+  const wallClock = useWallClock()
   const isBackendRunning = backendState?.enEjecucion === true
   const isBackendFinished = backendState?.finalizada === true
   const effectiveRunning = isRunning !== undefined ? isRunning : running
@@ -187,20 +197,32 @@ export default function TopBar({
         })}
       </div>
 
-      {/* Simulation time indicators */}
-      <div style={s.timeBlock}>
-        <div style={s.timeLine}>
-          <span style={{ ...s.timeVal, fontSize: 14 }}>{currentDay > 0 ? `DÍA ${currentDay} / ${totalDays}` : '—'}</span>
+      {/* Cronómetros REAL + SIM */}
+      <div style={{ display: 'flex', height: '100%', borderLeft: '1px solid var(--border)' }}>
+        {/* Reloj REAL */}
+        <div style={{ ...s.timeBlock, borderRight: '1px solid var(--border)', borderLeft: 'none' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--blue)', marginBottom: 3 }}>REAL</div>
+          <div style={s.timeLine}>
+            <span style={{ ...s.timeVal, fontSize: 14 }}>{wallClock}</span>
+          </div>
+          <div style={s.timeLine}>
+            <span style={{ ...s.timeVal, fontSize: 11, color: 'var(--muted)' }}>{fmtClock(realElapsedSeconds)}</span>
+            <span style={s.timeLabel}>transcurrido</span>
+          </div>
         </div>
-        <div style={s.timeLine}>
-          <span style={{ ...s.timeVal, fontSize: 11, color: 'var(--muted)' }}>
-            {fechaSimulada ? fechaSimulada : fmtElapsed(elapsedSeconds)}
-          </span>
-          <span style={s.timeLabel}>sim</span>
-        </div>
-        <div style={s.timeLine}>
-          <span style={{ ...s.timeVal, fontSize: 11, color: 'var(--text)' }}>{fmtClock(realElapsedSeconds)}</span>
-          <span style={s.timeLabel}>real</span>
+        {/* Reloj SIM */}
+        <div style={{ ...s.timeBlock, borderLeft: 'none' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--amber)', marginBottom: 3 }}>SIM</div>
+          <div style={s.timeLine}>
+            <span style={{ ...s.timeVal, fontSize: 14 }}>{currentDay > 0 ? `DÍA ${currentDay} / ${totalDays}` : '—'}</span>
+          </div>
+          <div style={s.timeLine}>
+            <span style={{ ...s.timeVal, fontSize: 11, color: 'var(--muted)' }}>
+              {fechaSimulada
+                ? `${fechaSimulada}:${String(realElapsedSeconds % 60).padStart(2, '0')}`
+                : fmtElapsed(elapsedSeconds)}
+            </span>
+          </div>
         </div>
       </div>
 

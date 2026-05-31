@@ -660,6 +660,7 @@ export default function App() {
                 simState={simState}
                 theme={theme}
                 onBack={handleBackToMain}
+                onCancelFlight={handleCancelFlight}
               />
             )}
             {screen === 'dashboard' && (
