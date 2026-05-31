@@ -1,12 +1,13 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { api, startSimulation } from '../services/api.js'
 
 const FILE_PATTERN = /_envios_[A-Za-z]{4}_\.txt$/i
 
 const PERIOD_OPTIONS = [
-  { key: '3', label: '3 DIAS', sublabel: 'Simulacion corta' },
-  { key: '5', label: '5 DIAS', sublabel: 'Simulacion estandar' },
-  { key: '7', label: '7 DIAS', sublabel: 'Simulacion semanal' },
+  { key: '3', label: '3 DÍAS', sublabel: 'Simulación corta' },
+  { key: '5', label: '5 DÍAS', sublabel: 'Simulación estándar' },
+  { key: '7', label: '7 DÍAS', sublabel: 'Simulación semanal' },
+  { key: 'colapso', label: 'COLAPSO', sublabel: 'Sin límite — hasta el colapso' },
 ]
 
 function sectionHeaderStyle() {
@@ -25,10 +26,12 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
   const [periodo, setPeriodo] = useState('3')
   const algoritmo = 'SIMULATED_ANNEALING'
   const [fechaInicio, setFechaInicio] = useState('2026-06-01')
+  const [horaInicio, setHoraInicio] = useState('00:00')
   const [escalaMinima, setEscalaMinima] = useState(10)
   const [tiempoRecogida, setTiempoRecogida] = useState(10)
   const [semaforo, setSemaforo] = useState({ verde: 60, ambar: 85 })
   const [loading, setLoading] = useState(false)
+  const [loadingElapsed, setLoadingElapsed] = useState(0)
   const [error, setError] = useState(null)
   const [uploadFile, setUploadFile] = useState(null)
   const [uploadFileError, setUploadFileError] = useState(null)
@@ -36,6 +39,14 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
   const [uploadResult, setUploadResult] = useState(null)
   const [uploadError, setUploadError] = useState(null)
   const fileInputRef = useRef(null)
+
+  useEffect(() => {
+    if (!loading) { setLoadingElapsed(0); return }
+    setLoadingElapsed(0)
+    const start = Date.now()
+    const id = setInterval(() => setLoadingElapsed(Math.floor((Date.now() - start) / 100) / 10), 100)
+    return () => clearInterval(id)
+  }, [loading])
 
   const semaforoError = Number(semaforo.ambar) <= Number(semaforo.verde)
     ? 'Umbral ámbar debe ser mayor que verde'
@@ -58,38 +69,48 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
   }
 
   function handleFileChange(event) {
-    const file = event.target.files[0]
+    const files = Array.from(event.target.files || [])
     setUploadResult(null)
     setUploadError(null)
-    if (!file) {
+    if (files.length === 0) {
       setUploadFile(null)
       setUploadFileError(null)
       return
     }
-    if (!FILE_PATTERN.test(file.name)) {
+    const invalid = files.find(f => !FILE_PATTERN.test(f.name))
+    if (invalid) {
       setUploadFile(null)
-      setUploadFileError('Nombre inválido. Debe ser: _envios_XXXX_.txt')
+      setUploadFileError(`Nombre inválido: ${invalid.name}. Debe ser: _envios_XXXX_.txt`)
       return
     }
-    setUploadFile(file)
+    setUploadFile(files)
     setUploadFileError(null)
   }
 
   async function handleUpload() {
-    if (!uploadFile) return
+    if (!uploadFile || uploadFile.length === 0) return
     setUploadLoading(true)
     setUploadError(null)
     setUploadResult(null)
-    try {
-      const result = await api.uploadEnvios(uploadFile)
-      setUploadResult(result)
-      setUploadFile(null)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setUploadLoading(false)
+    let totalCount = 0
+    const errors = []
+    for (const file of uploadFile) {
+      try {
+        const result = await api.uploadEnvios(file)
+        totalCount += result.count ?? 0
+      } catch (err) {
+        errors.push(`${file.name}: ${err instanceof Error ? err.message : String(err)}`)
+      }
     }
+    setUploadFile(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (errors.length > 0) {
+      setUploadError(errors.join(' | '))
+    }
+    if (totalCount > 0 || errors.length === 0) {
+      setUploadResult({ count: totalCount, files: uploadFile.length })
+    }
+    setUploadLoading(false)
   }
 
   async function handleSimular() {
@@ -97,16 +118,18 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
       setError(semaforoError)
       return
     }
-    const dias = Number.parseInt(periodo, 10)
+    const esColapso = periodo === 'colapso'
+    const dias = esColapso ? 99 : Number.parseInt(periodo, 10)
     const params = {
       algoritmo,
       dias,
-      esColapso: false,
+      esColapso,
       minutosEscalaMinima: Number(escalaMinima),
       minutosRecogidaDestino: Number(tiempoRecogida),
       umbralSemaforoVerde: Number(semaforo.verde),
       umbralSemaforoAmbar: Number(semaforo.ambar),
       fechaInicio,
+      horaInicio,
     }
 
     setLoading(true)
@@ -128,8 +151,14 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
           <div style={{ width: 52, height: 52, borderRadius: '50%', border: '3px solid rgba(88,166,255,0.15)', borderTopColor: 'var(--blue)', animation: 'spin 0.75s linear infinite' }} />
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)', letterSpacing: 1, marginBottom: 6 }}>Calculando rutas óptimas…</div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
-              Simulated Annealing · {periodo} días
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
+              Simulated Annealing · {periodo === 'colapso' ? 'Modo Colapso' : `${periodo} días`}
+            </div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 22, color: 'var(--blue-bright)', fontWeight: 700, letterSpacing: 2 }}>
+              {loadingElapsed.toFixed(1)}s
+            </div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 }}>
+              tiempo de planificación
             </div>
           </div>
         </div>
@@ -151,22 +180,32 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
           })}
 
           <div style={{ marginTop: 20 }}>
-            <span style={sectionHeaderStyle()}>Fecha de inicio</span>
-            <input
-              type="date"
-              value={fechaInicio}
-              onChange={(event) => setFechaInicio(event.target.value)}
-              disabled={loading}
-              style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '8px 10px' }}
-            />
+            <span style={sectionHeaderStyle()}>Fecha y hora de inicio</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="date"
+                value={fechaInicio}
+                onChange={(event) => setFechaInicio(event.target.value)}
+                disabled={loading}
+                style={{ flex: 2, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '8px 10px' }}
+              />
+              <input
+                type="time"
+                value={horaInicio}
+                onChange={(event) => setHoraInicio(event.target.value)}
+                disabled={loading}
+                style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '8px 10px' }}
+              />
+            </div>
           </div>
 
           <div style={{ marginTop: 20 }}>
-            <span style={sectionHeaderStyle()}>Archivo de envíos</span>
+            <span style={sectionHeaderStyle()}>Archivos de envíos</span>
             <input
               ref={fileInputRef}
               type="file"
               accept=".txt"
+              multiple
               onChange={handleFileChange}
               disabled={loading || uploadLoading}
               style={{ display: 'none' }}
@@ -191,7 +230,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
                 boxSizing: 'border-box',
               }}
             >
-              Seleccionar archivo
+              Seleccionar archivos (.txt)
             </label>
 
             {uploadFileError && (
@@ -202,8 +241,8 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
 
             {uploadFile && !uploadFileError && (
               <div style={{ marginTop: 8 }}>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {uploadFile.name}
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
+                  {uploadFile.length === 1 ? uploadFile[0].name : `${uploadFile.length} archivos seleccionados`}
                 </div>
                 <button
                   onClick={handleUpload}
@@ -229,7 +268,9 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
 
             {uploadResult && (
               <div style={{ marginTop: 6, color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 11 }}>
-                {uploadResult.count} envíos cargados
+                {uploadResult.files > 1
+                  ? `${uploadResult.files} archivos procesados — ${uploadResult.count} envíos cargados`
+                  : `${uploadResult.count} envíos cargados`}
               </div>
             )}
 
@@ -303,7 +344,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
           <div style={{ marginBottom: 20 }}>
             <span style={sectionHeaderStyle()}>Resumen de configuración</span>
             {[
-              ['Periodo', `${periodo} días desde ${fechaInicio}`],
+              ['Periodo', periodo === 'colapso' ? `Colapso desde ${fechaInicio}` : `${periodo} días desde ${fechaInicio}`],
               ['Escala mínima', `${escalaMinima} min`],
               ['Tiempo recogida', `${tiempoRecogida} min`],
               ['Semáforo verde', `< ${semaforo.verde}%`],

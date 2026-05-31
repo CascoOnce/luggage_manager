@@ -19,7 +19,13 @@ import java.util.Map;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
+// import org.springframework.stereotype.Component; // TABU SEARCH — deshabilitado, usar SA
+
+/*
+ * TABU SEARCH DESHABILITADO
+ * Solo se usa Simulated Annealing. Esta clase queda comentada como referencia.
+ * Para reactivar: descomentar @Component y el import de arriba.
+ */
 
 /**
  * ROOT CAUSE OF THE HANG (fixed in this revision)
@@ -52,7 +58,7 @@ import org.springframework.stereotype.Component;
  * neighbour unconditionally; the tabu list and noImprovementLimit provide the
  * necessary termination guarantee.
  */
-@Component("TABU_SEARCH")
+// @Component("TABU_SEARCH")
 public class TabuSearchAlgorithm extends RoutePlannerSupport implements MetaheuristicAlgorithm {
     private static final Logger log = LoggerFactory.getLogger(TabuSearchAlgorithm.class);
     private MetricaAlgoritmo ultimaMetrica;
