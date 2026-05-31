@@ -4,9 +4,10 @@ import { api, startSimulation } from '../services/api.js'
 const FILE_PATTERN = /_envios_[A-Za-z]{4}_\.txt$/i
 
 const PERIOD_OPTIONS = [
-  { key: '3', label: '3 DIAS', sublabel: 'Simulacion corta' },
-  { key: '5', label: '5 DIAS', sublabel: 'Simulacion estandar' },
-  { key: '7', label: '7 DIAS', sublabel: 'Simulacion semanal' },
+  { key: '3', label: '3 DÍAS', sublabel: 'Simulación corta' },
+  { key: '5', label: '5 DÍAS', sublabel: 'Simulación estándar' },
+  { key: '7', label: '7 DÍAS', sublabel: 'Simulación semanal' },
+  { key: 'colapso', label: 'COLAPSO', sublabel: 'Sin límite — hasta el colapso' },
 ]
 
 function sectionHeaderStyle() {
@@ -117,11 +118,12 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
       setError(semaforoError)
       return
     }
-    const dias = Number.parseInt(periodo, 10)
+    const esColapso = periodo === 'colapso'
+    const dias = esColapso ? 99 : Number.parseInt(periodo, 10)
     const params = {
       algoritmo,
       dias,
-      esColapso: false,
+      esColapso,
       minutosEscalaMinima: Number(escalaMinima),
       minutosRecogidaDestino: Number(tiempoRecogida),
       umbralSemaforoVerde: Number(semaforo.verde),
@@ -150,7 +152,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)', letterSpacing: 1, marginBottom: 6 }}>Calculando rutas óptimas…</div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
-              Simulated Annealing · {periodo} días
+              Simulated Annealing · {periodo === 'colapso' ? 'Modo Colapso' : `${periodo} días`}
             </div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 22, color: 'var(--blue-bright)', fontWeight: 700, letterSpacing: 2 }}>
               {loadingElapsed.toFixed(1)}s
@@ -342,7 +344,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
           <div style={{ marginBottom: 20 }}>
             <span style={sectionHeaderStyle()}>Resumen de configuración</span>
             {[
-              ['Periodo', `${periodo} días desde ${fechaInicio}`],
+              ['Periodo', periodo === 'colapso' ? `Colapso desde ${fechaInicio}` : `${periodo} días desde ${fechaInicio}`],
               ['Escala mínima', `${escalaMinima} min`],
               ['Tiempo recogida', `${tiempoRecogida} min`],
               ['Semáforo verde', `< ${semaforo.verde}%`],
