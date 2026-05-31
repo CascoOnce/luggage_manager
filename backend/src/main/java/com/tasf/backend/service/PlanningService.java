@@ -20,8 +20,8 @@ import org.springframework.stereotype.Service;
 public class PlanningService {
     private static final Logger log = LoggerFactory.getLogger(PlanningService.class);
     private static final String SA = "SIMULATED_ANNEALING";
-    private static final String TS = "TABU_SEARCH";
-    private static final int COMPLEXITY_THRESHOLD_FOR_TABU = 25;
+    // private static final String TS = "TABU_SEARCH"; // TABU SEARCH deshabilitado
+    // private static final int COMPLEXITY_THRESHOLD_FOR_TABU = 25;
     private final Map<String, MetaheuristicAlgorithm> algorithms;
 
     public PlanningService(List<MetaheuristicAlgorithm> algorithms) {
@@ -91,8 +91,9 @@ public class PlanningService {
         if ("SA".equals(normalized)) {
             return SA;
         }
+        // if ("TS".equals(normalized)) { return TS; } // TABU SEARCH deshabilitado — usar SA
         if ("TS".equals(normalized)) {
-            return TS;
+            return SA;
         }
         return normalized;
     }

@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import LeftPanel from './components/LeftPanel.jsx'
 import MapView from './components/MapView.jsx'
 import RightPanel from './components/RightPanel.jsx'
 import TopBar from './components/TopBar.jsx'
@@ -29,11 +28,6 @@ export default function App() {
   const [originIds, setOriginIds] = useState(null)
   const [destIds, setDestIds] = useState(null)
 
-  const [filters, setFilters] = useState({
-    status: ['green', 'amber', 'red'],
-    route: ['same', 'inter'],
-  })
-
   const [selectedFlight, setSelectedFlight] = useState(null)
   const [mapSelectedAirport, setMapSelectedAirport] = useState(null)
   const [mapSelectedVuelo, setMapSelectedVuelo] = useState(null)
@@ -52,7 +46,6 @@ export default function App() {
 
   const [autoStep, setAutoStep] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
-  const [leftOpen, setLeftOpen] = useState(true)
   const [filterOpen, setFilterOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
 
@@ -395,6 +388,8 @@ export default function App() {
         capacity: v.capacidadTotal ?? 300,
         type: v.tipo === 'continental' ? 'continental' : 'intercontinental',
         status: 'active',
+        horaSalida: v.horaSalida,
+        horaLlegada: v.horaLlegada,
         depMin: parseTimeToMinutes(v.horaSalida),
         arrMin: parseTimeToMinutes(v.horaLlegada),
       }))
@@ -515,6 +510,15 @@ export default function App() {
 
   const handleCloseAirport = useCallback(() => setMapSelectedAirport(null), [])
   const handleCloseVuelo   = useCallback(() => { setMapSelectedVuelo(null); setSelectedFlight(null) }, [])
+  const handleCancelFlight = useCallback(async (codigoVuelo) => {
+    try {
+      await api.cancelFlight(codigoVuelo)
+      setMapSelectedVuelo(null)
+      setSelectedFlight(null)
+    } catch (err) {
+      alert('Error al cancelar vuelo: ' + (err instanceof Error ? err.message : String(err)))
+    }
+  }, [])
   const handleBackToMain   = useCallback(() => setScreen('main'),            [])
 
   const handleCancelConfig = useCallback(() => {
@@ -562,16 +566,11 @@ export default function App() {
         {(screen === 'main' && !configOpen) && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: `${leftOpen ? '220px' : '0px'} ${filterOpen ? '232px' : '0px'} 1fr ${rightOpen ? '300px' : '0px'}`,
+            gridTemplateColumns: `${filterOpen ? '232px' : '0px'} 1fr ${rightOpen ? '300px' : '0px'}`,
             height: '100%',
             overflow: 'hidden',
             transition: 'grid-template-columns 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
           }}>
-            {/* Left Panel Container */}
-            <div style={{ overflow: 'hidden', borderRight: leftOpen ? '1px solid var(--border)' : 'none', background: 'var(--panel)' }}>
-              <LeftPanel filters={filters} setFilters={setFilters} threshold={threshold} setThreshold={setThreshold} />
-            </div>
-
             {/* Filter Panel Container */}
             <div style={{ overflow: 'hidden', height: '100%', borderRight: filterOpen ? '1px solid var(--border)' : 'none', background: 'var(--panel)' }}>
               <AirportFilterPanel
@@ -580,29 +579,18 @@ export default function App() {
                 setOriginIds={setOriginIds}
                 destIds={destIds}
                 setDestIds={setDestIds}
+                threshold={threshold}
+                setThreshold={setThreshold}
               />
             </div>
 
             {/* Center Map Container */}
             <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
-              {/* Left toggle (LeftPanel) */}
-              <button
-                onClick={() => setLeftOpen(!leftOpen)}
-                style={{
-                  position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
-                  zIndex: 1000, width: 24, height: 48, background: 'rgba(13, 17, 23, 0.85)',
-                  border: '1px solid var(--border)', borderLeft: 'none', borderRadius: '0 8px 8px 0',
-                  color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}
-              >
-                {leftOpen ? '‹' : '›'}
-              </button>
-
               {/* Filter toggle */}
               <button
                 onClick={() => setFilterOpen(!filterOpen)}
                 style={{
-                  position: 'absolute', left: 0, top: 'calc(50% + 56px)', transform: 'translateY(-50%)',
+                  position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
                   zIndex: 1000, width: 24, height: 48, background: 'rgba(13, 17, 23, 0.85)',
                   border: '1px solid var(--border)', borderLeft: 'none', borderRadius: '0 8px 8px 0',
                   color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -646,6 +634,7 @@ export default function App() {
               <DrawerVuelo
                 vuelo={mapSelectedVuelo}
                 onClose={handleCloseVuelo}
+                onCancelFlight={handleCancelFlight}
               />
             </div>
 
