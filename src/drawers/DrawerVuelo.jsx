@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
+import { api } from '../services/api.js'
 
 const s = {
   overlay: {
@@ -97,12 +98,23 @@ function estadoColor(estado) {
 }
 
 export default function DrawerVuelo({ vuelo, onClose, onCancelFlight }) {
+  const [enviosAsignados, setEnviosAsignados] = useState([])
+
   useEffect(() => {
     if (!vuelo) return
     function onKey(e) { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [vuelo, onClose])
+
+  useEffect(() => {
+    if (!vuelo) { setEnviosAsignados([]); return }
+    const code = vuelo.id || vuelo.codigoVuelo
+    if (!code) return
+    api.getEnviosByFlight(code)
+      .then((data) => setEnviosAsignados(Array.isArray(data) ? data : []))
+      .catch(() => setEnviosAsignados([]))
+  }, [vuelo])
 
   if (!vuelo) return null
 
@@ -168,6 +180,28 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight }) {
             <span style={s.rowLabel}>Capacidad</span>
             <span style={s.rowVal}>{cap} maletas</span>
           </div>
+        </div>
+
+        {/* Envíos asignados */}
+        <div style={s.section}>
+          <span style={s.sectionTitle}>Envíos asignados ({enviosAsignados.length})</span>
+          {enviosAsignados.length === 0 ? (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>Sin envíos asignados</div>
+          ) : (
+            <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+              {enviosAsignados.map((e) => (
+                <div key={e.idEnvio} style={{ padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--blue)' }}>{e.idEnvio}</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>{e.cantidadMaletas} maletas</span>
+                  </div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                    {e.aeropuertoOrigen} → {e.aeropuertoDestino}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Trayecto */}

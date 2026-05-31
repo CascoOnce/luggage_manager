@@ -1,5 +1,5 @@
 
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 
 const s = {
   panel: {
@@ -64,9 +64,19 @@ function warehouseColor(ap, threshold) {
 }
 
 export default function RightPanel({ flights, airports, threshold, selectedFlight, setSelectedFlight, onVueloClick }) {
+  const [flightQuery, setFlightQuery] = useState('')
   const flightList = flights || []
   const airportList = airports || []
-  const activeFlights = flightList.filter((f) => f.status === 'active')
+  const activeFlights = useMemo(() => {
+    const active = flightList.filter((f) => f.status === 'active')
+    const q = flightQuery.trim().toLowerCase()
+    if (!q) return active
+    return active.filter((f) =>
+      f.id?.toLowerCase().includes(q) ||
+      f.origin?.toLowerCase().includes(q) ||
+      f.destination?.toLowerCase().includes(q)
+    )
+  }, [flightList, flightQuery])
   const { occupiedAirports, hiddenCount } = useMemo(() => {
     const sorted = [...airportList].sort((a, b) => {
       const aOcc = a.currentOccupation ?? a.ocupacionActual ?? 0
@@ -85,6 +95,19 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
       {/* ── ACTIVE FLIGHTS ────────────────────────────────────────────── */}
       <div style={{ ...s.sectionPad, flex: '0 0 50%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <span style={s.title}>Vuelos activos</span>
+        <input
+          value={flightQuery}
+          onChange={(e) => setFlightQuery(e.target.value)}
+          placeholder="Buscar vuelo, origen, destino..."
+          style={{
+            flexShrink: 0, marginBottom: 8,
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+            fontFamily: 'var(--mono)', fontSize: 11,
+            padding: '5px 8px', borderRadius: 2, outline: 'none',
+          }}
+        />
         <div style={s.scrollable}>
           {activeFlights.map((f) => {
             const isSelected = selectedFlight === f.id

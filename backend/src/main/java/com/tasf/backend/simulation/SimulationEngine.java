@@ -557,6 +557,19 @@ public class SimulationEngine {
             .map(envio -> toEnvioDto(envio, true, latestPlanByEnvio.get(envio.getIdEnvio())));
     }
 
+    public synchronized List<EnvioDTO> getEnviosByFlight(String codigoVuelo) {
+        Map<String, PlanDeViaje> latestPlanByEnvio = buildLatestPlanByEnvio();
+        Set<String> envioIds = planes.stream()
+            .filter(PlanDeViaje::isEsActivo)
+            .filter(p -> p.getEscalas().stream().anyMatch(e -> codigoVuelo.equals(e.getCodigoVuelo())))
+            .map(PlanDeViaje::getIdEnvio)
+            .collect(Collectors.toSet());
+        return envios.stream()
+            .filter(e -> envioIds.contains(e.getIdEnvio()))
+            .map(e -> toEnvioDto(e, false, latestPlanByEnvio.get(e.getIdEnvio())))
+            .collect(Collectors.toList());
+    }
+
     private Map<String, PlanDeViaje> buildLatestPlanByEnvio() {
         Map<String, PlanDeViaje> map = new HashMap<>();
         for (PlanDeViaje p : planes) {

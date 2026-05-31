@@ -85,6 +85,34 @@ function escalaDotColor(escala) {
   return 'var(--amber)'
 }
 
+function toMinutes(str) {
+  if (!str) return null
+  if (str.includes('T')) {
+    const d = new Date(str)
+    return Number.isNaN(d.getTime()) ? null : d.getHours() * 60 + d.getMinutes()
+  }
+  const parts = str.split(':').map(Number)
+  return parts.length >= 2 ? parts[0] * 60 + parts[1] : null
+}
+
+function dwellMinutes(llegada, salida) {
+  const l = toMinutes(llegada)
+  const s = toMinutes(salida)
+  if (l === null || s === null) return 0
+  let diff = s - l
+  if (diff < 0) diff += 1440
+  return diff
+}
+
+function fmtDwell(min) {
+  if (min <= 0) return ''
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  if (h > 0 && m > 0) return `${h}h ${m}m`
+  if (h > 0) return `${h}h`
+  return `${m}m`
+}
+
 export default function DrawerEnvio({ envioId, onClose }) {
   const [envio, setEnvio]   = useState(null)
   const [loading, setLoading] = useState(false)
@@ -185,21 +213,31 @@ export default function DrawerEnvio({ envioId, onClose }) {
                   {escalas.map((escala, idx) => {
                     const dotColor = escalaDotColor(escala)
                     const isLast = idx === escalas.length - 1
+                    const dwell = !isLast
+                      ? dwellMinutes(escala.horaLlegadaEst, escalas[idx + 1].horaSalidaEst)
+                      : 0
                     return (
-                      <div key={`${escala.codigoVuelo}-${idx}`} style={s.tlRow}>
-                        <div style={s.tlDotCol}>
-                          <div style={s.tlDot(dotColor)} />
-                          {!isLast && <div style={s.tlLine} />}
-                        </div>
-                        <div style={s.tlContent}>
-                          <div style={s.tlCode}>
-                            {escala.codigoVuelo || '—'} — {escala.codigoAeropuerto || '?'}
+                      <React.Fragment key={`${escala.codigoVuelo}-${idx}`}>
+                        <div style={s.tlRow}>
+                          <div style={s.tlDotCol}>
+                            <div style={s.tlDot(dotColor)} />
+                            {!isLast && <div style={s.tlLine} />}
                           </div>
-                          <div style={s.tlMeta}>
-                            Salida {escala.horaSalidaEst || '—'} · Llegada {escala.horaLlegadaEst || '—'}
+                          <div style={s.tlContent}>
+                            <div style={s.tlCode}>
+                              {escala.codigoVuelo || '—'} — {escala.codigoAeropuerto || '?'}
+                            </div>
+                            <div style={s.tlMeta}>
+                              Salida {escala.horaSalidaEst || '—'} · Llegada {escala.horaLlegadaEst || '—'}
+                            </div>
                           </div>
                         </div>
-                      </div>
+                        {!isLast && dwell > 0 && (
+                          <div style={{ padding: '2px 0 4px 26px', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
+                            ⏱ {fmtDwell(dwell)} en {escala.codigoAeropuerto}
+                          </div>
+                        )}
+                      </React.Fragment>
                     )
                   })}
                 </div>

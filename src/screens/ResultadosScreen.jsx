@@ -332,6 +332,39 @@ export default function ResultadosScreen({ simState }) {
           </div>
         </div>
 
+        {/* Historial de vuelos */}
+        {(() => {
+          const vuelosHistorial = (simState?.vuelos || []).filter((v) =>
+            v.cancelado || v.cargaActual > 0 || v.currentLoad > 0
+          )
+          if (vuelosHistorial.length === 0) return null
+          return (
+            <div style={{ marginTop: 20 }}>
+              <div style={headingStyle()}>Historial de vuelos ({vuelosHistorial.length})</div>
+              <div style={{ marginTop: 8, border: '1px solid var(--border)', overflowX: 'auto' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.7fr 0.7fr 1fr 0.7fr', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                  <span>Código</span><span>Origen</span><span>Destino</span><span>Estado</span><span style={{ textAlign: 'right' }}>Carga</span>
+                </div>
+                <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                  {vuelosHistorial.map((v, i) => {
+                    const cancelado = v.cancelado === true || v.status === 'cancelado' || v.estado === 'cancelado'
+                    const carga = v.cargaActual ?? v.currentLoad ?? 0
+                    return (
+                      <div key={v.id || v.codigoVuelo || i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.7fr 0.7fr 1fr 0.7fr', gap: 8, padding: '5px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)', fontFamily: 'var(--mono)', fontSize: 12 }}>
+                        <span style={{ color: 'var(--blue)' }}>{v.id || v.codigoVuelo || '—'}</span>
+                        <span style={{ color: 'var(--muted)' }}>{v.origin || v.origen || '—'}</span>
+                        <span style={{ color: 'var(--muted)' }}>{v.destination || v.destino || '—'}</span>
+                        <span style={{ color: cancelado ? 'var(--red)' : 'var(--green)' }}>{cancelado ? 'CANCELADO' : 'COMPLETADO'}</span>
+                        <span style={{ textAlign: 'right', color: 'var(--muted)' }}>{carga}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+
         <button
           onClick={() => csvDownload(simState, airportRows)}
           style={{
