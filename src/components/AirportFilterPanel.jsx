@@ -190,6 +190,7 @@ function AirportList({ airports, selectedIds, onToggle, disabled, blockedIds }) 
 
 export default function AirportFilterPanel({
   airports, originIds, setOriginIds, destIds, setDestIds,
+  threshold, setThreshold,
 }) {
   const allIds = useMemo(() => (airports || []).map((a) => a.id), [airports])
 
@@ -280,6 +281,46 @@ export default function AirportFilterPanel({
       <div style={s.footer}>
         {originCount} origen{originCount !== 1 ? 'es' : ''} · {destCount} destino{destCount !== 1 ? 's' : ''}
       </div>
+
+      {threshold != null && setThreshold && (
+        <>
+          <div style={s.divider} />
+          <div style={{ padding: '10px 12px', flexShrink: 0 }}>
+            <span style={{ fontFamily: 'var(--sans)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--blue)', fontWeight: 700, display: 'block', marginBottom: 8 }}>Alerta Warehouse</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span style={{ fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--text)', fontWeight: 500 }}>Umbral crítico</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--amber)', fontWeight: 500 }}>{threshold}%</span>
+            </div>
+            <input
+              type="range" min={50} max={99} step={1}
+              value={threshold}
+              style={{ width: '100%', accentColor: 'var(--amber)', cursor: 'pointer', height: 4, margin: '2px 0' }}
+              onChange={(e) => setThreshold(+e.target.value)}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--muted)' }}>50%</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--muted)' }}>99%</span>
+            </div>
+          </div>
+
+          <div style={s.divider} />
+          <div style={{ padding: '10px 12px', flexShrink: 0 }}>
+            <span style={{ fontFamily: 'var(--sans)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--blue)', fontWeight: 700, display: 'block', marginBottom: 8 }}>Semáforo</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {[
+                { color: '#22d07a', label: 'OK / dentro de SLA' },
+                { color: '#f5a623', label: 'Alerta / warehouse alto' },
+                { color: '#f04b4b', label: 'Crítico / SLA vencido' },
+              ].map(({ color, label }) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: color, boxShadow: `0 0 5px ${color}90` }} />
+                  <span>{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

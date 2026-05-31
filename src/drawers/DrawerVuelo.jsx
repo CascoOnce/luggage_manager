@@ -96,7 +96,7 @@ function estadoColor(estado) {
   return 'var(--amber)'
 }
 
-export default function DrawerVuelo({ vuelo, onClose }) {
+export default function DrawerVuelo({ vuelo, onClose, onCancelFlight }) {
   useEffect(() => {
     if (!vuelo) return
     function onKey(e) { if (e.key === 'Escape') onClose() }
@@ -119,6 +119,8 @@ export default function DrawerVuelo({ vuelo, onClose }) {
   const color   = loadColor(pct)
   const eColor  = estadoColor(estado)
   const isActivo = estado === 'active' || estado === 'activo'
+  const isCancelado = estado === 'cancelled' || estado === 'cancelado'
+  const canCancel = !isActivo && !isCancelado && !!onCancelFlight
 
   return (
     <div style={s.overlay}>
@@ -208,6 +210,32 @@ export default function DrawerVuelo({ vuelo, onClose }) {
             </div>
           </div>
         </div>
+
+        {canCancel && (
+          <div style={{ padding: '14px 16px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+            <button
+              onClick={() => {
+                if (window.confirm(`¿Cancelar vuelo ${code} (${origin} → ${dest})?`)) {
+                  onCancelFlight(code)
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                background: 'rgba(240,75,75,0.08)',
+                border: '1px solid rgba(240,75,75,0.3)',
+                color: 'var(--red)',
+                fontFamily: 'var(--mono)',
+                fontSize: 11,
+                textTransform: 'uppercase',
+                letterSpacing: 1,
+                cursor: 'pointer',
+              }}
+            >
+              Cancelar vuelo
+            </button>
+          </div>
+        )}
 
       </aside>
     </div>

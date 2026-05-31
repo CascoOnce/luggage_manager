@@ -123,7 +123,7 @@ public class SimulationEngine {
         this.planes = new ArrayList<>();
         this.cancelaciones = new ArrayList<>();
         this.metricas = new ArrayList<>();
-        this.fechaSimulada = params.getFechaInicio().atStartOfDay();
+        this.fechaSimulada = params.getFechaInicio().atTime(parseHoraInicio(params.getHoraInicio()));
 
         this.envios.forEach(envio -> envio.setEstado(EstadoEnvio.PLANIFICADO));
         this.maletas.forEach(maleta -> {
@@ -246,7 +246,7 @@ public class SimulationEngine {
 
         // Reset simulation clock
         this.diaActual = 1;
-        this.fechaSimulada = params.getFechaInicio().atStartOfDay();
+        this.fechaSimulada = params.getFechaInicio().atTime(parseHoraInicio(params.getHoraInicio()));
         this.enEjecucion = true;
         this.finalizada = false;
 
@@ -1190,6 +1190,15 @@ public class SimulationEngine {
             }
         }
         return generated;
+    }
+
+    private java.time.LocalTime parseHoraInicio(String horaInicio) {
+        if (horaInicio == null || horaInicio.isBlank()) return java.time.LocalTime.MIDNIGHT;
+        try {
+            return java.time.LocalTime.parse(horaInicio);
+        } catch (Exception e) {
+            return java.time.LocalTime.MIDNIGHT;
+        }
     }
 
     private int resolveDias(ParametrosSimulacion p) {
