@@ -140,4 +140,10 @@ public class SimulationController {
             .map(ResponseEntity::ok)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Envio not found"));
     }
+
+    @GetMapping("/flights/{code}/envios")
+    public ResponseEntity<List<EnvioDTO>> enviosByFlight(@PathVariable String code) {
+        if (!simulationEngine.estaInicializada()) return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(simulationEngine.getEnviosByFlight(code));
+    }
 }

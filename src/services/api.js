@@ -151,6 +151,10 @@ export const api = {
     return request(`/simulation/cancel-envio/${idEnvio}`, { method: 'POST' })
   }),
 
+  getEnviosByFlight: async (code) => withHandling('getEnviosByFlight', async () => {
+    return request(`/flights/${code}/envios`)
+  }),
+
   uploadEnvios: async (file) => withHandling('uploadEnvios', async () => {
     const formData = new FormData()
     formData.append('file', file)

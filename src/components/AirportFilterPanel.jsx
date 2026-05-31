@@ -192,7 +192,16 @@ export default function AirportFilterPanel({
   airports, originIds, setOriginIds, destIds, setDestIds,
   threshold, setThreshold,
 }) {
+  const [query, setQuery] = useState('')
   const allIds = useMemo(() => (airports || []).map((a) => a.id), [airports])
+
+  const filteredAirports = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return airports || []
+    return (airports || []).filter((a) =>
+      a.id?.toLowerCase().includes(q) || a.ciudad?.toLowerCase().includes(q)
+    )
+  }, [airports, query])
 
   const hasOrigin = originIds == null || originIds.length > 0
   const destDisabled = !hasOrigin
@@ -207,10 +216,10 @@ export default function AirportFilterPanel({
 
   // When exactly 1 origin is selected, hide it from the dest list
   const destAirports = useMemo(() => {
-    if (originSet.size !== 1) return airports || []
+    if (originSet.size !== 1) return filteredAirports
     const soleOrigin = [...originSet][0]
-    return (airports || []).filter((a) => a.id !== soleOrigin)
-  }, [airports, originSet])
+    return filteredAirports.filter((a) => a.id !== soleOrigin)
+  }, [filteredAirports, originSet])
 
   const destAllIds = useMemo(() => destAirports.map((a) => a.id), [destAirports])
 
@@ -244,6 +253,23 @@ export default function AirportFilterPanel({
 
   return (
     <div style={s.panel}>
+      {/* ── BÚSQUEDA ── */}
+      <div style={{ padding: '6px 10px', flexShrink: 0, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Buscar IATA o ciudad..."
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+            fontFamily: 'var(--mono)', fontSize: 11,
+            padding: '5px 8px', borderRadius: 2, outline: 'none',
+          }}
+        />
+      </div>
+
       {/* ── ORIGEN ── */}
       <div style={s.sectionHeader(false)}>
         <span style={s.sectionTitle}>Origen</span>
@@ -252,7 +278,7 @@ export default function AirportFilterPanel({
       </div>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <AirportList
-          airports={airports}
+          airports={filteredAirports}
           selectedIds={resolvedOriginIds}
           onToggle={handleOriginToggle}
           disabled={false}

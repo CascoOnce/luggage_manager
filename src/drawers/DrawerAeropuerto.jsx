@@ -116,13 +116,9 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose }) {
   const pct = cap > 0 ? Math.round((occ / cap) * 100) : 0
   const color = semaforoColor(pct)
 
-  const connectedFlights = (vuelos || [])
-    .filter((v) => {
-      const origin = v.origin || v.origen
-      const dest = v.destination || v.destino
-      return origin === airport.id || dest === airport.id
-    })
-    .slice(0, 8)
+  const iata = airport.id
+  const salidas = (vuelos || []).filter((v) => (v.origin || v.origen) === iata).slice(0, 6)
+  const llegadas = (vuelos || []).filter((v) => (v.destination || v.destino) === iata).slice(0, 6)
 
   return (
     <div style={s.overlay}>
@@ -174,29 +170,51 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose }) {
           </div>
         </div>
 
-        {/* Connected Flights */}
-        <div style={{ ...s.section, flex: 1 }}>
-          <span style={s.sectionTitle}>
-            Vuelos conectados {connectedFlights.length > 0 ? `(${connectedFlights.length})` : ''}
-          </span>
-          {connectedFlights.length === 0 ? (
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Sin vuelos activos</span>
-          ) : connectedFlights.map((v, i) => {
-            const code = v.id || v.codigoVuelo || `FL-${i}`
-            const origin = v.origin || v.origen || '?'
-            const dest = v.destination || v.destino || '?'
-            const load = v.currentLoad ?? v.cargaActual ?? 0
-            const vcap = v.capacity ?? v.capacidadTotal ?? 300
-            const c = flightColor(load, vcap)
-            return (
-              <div key={code} style={s.flightItem}>
-                <div style={s.dot(c)} />
-                <span style={s.flightCode}>{code}</span>
-                <span style={s.flightMeta}>{origin} → {dest}</span>
-                <span style={{ ...s.flightMeta, color: c }}>{Math.round((load / vcap) * 100)}%</span>
-              </div>
-            )
-          })}
+        {/* Salidas / Llegadas */}
+        <div style={{ ...s.section, flex: 1, overflowY: 'auto' }}>
+          {/* Salidas */}
+          <div style={{ marginBottom: 12 }}>
+            <span style={{ ...s.sectionTitle, color: 'var(--blue)' }}>Salidas ↑ ({salidas.length})</span>
+            {salidas.length === 0 ? (
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Sin salidas</span>
+            ) : salidas.map((v, i) => {
+              const code = v.id || v.codigoVuelo || `FL-${i}`
+              const dest = v.destination || v.destino || '?'
+              const load = v.currentLoad ?? v.cargaActual ?? 0
+              const vcap = v.capacity ?? v.capacidadTotal ?? 300
+              const c = flightColor(load, vcap)
+              return (
+                <div key={`s-${code}`} style={s.flightItem}>
+                  <div style={s.dot(c)} />
+                  <span style={s.flightCode}>{code}</span>
+                  <span style={s.flightMeta}>→ {dest}</span>
+                  <span style={{ ...s.flightMeta, color: c }}>{Math.round((load / vcap) * 100)}%</span>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Llegadas */}
+          <div>
+            <span style={{ ...s.sectionTitle, color: 'var(--green)' }}>Llegadas ↓ ({llegadas.length})</span>
+            {llegadas.length === 0 ? (
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Sin llegadas</span>
+            ) : llegadas.map((v, i) => {
+              const code = v.id || v.codigoVuelo || `FL-${i}`
+              const origin = v.origin || v.origen || '?'
+              const load = v.currentLoad ?? v.cargaActual ?? 0
+              const vcap = v.capacity ?? v.capacidadTotal ?? 300
+              const c = flightColor(load, vcap)
+              return (
+                <div key={`l-${code}`} style={s.flightItem}>
+                  <div style={s.dot(c)} />
+                  <span style={s.flightCode}>{code}</span>
+                  <span style={s.flightMeta}>{origin} →</span>
+                  <span style={{ ...s.flightMeta, color: c }}>{Math.round((load / vcap) * 100)}%</span>
+                </div>
+              )
+            })}
+          </div>
         </div>
 
         {/* Stats */}
