@@ -25,4 +25,5 @@ public class ParametrosSimulacion {
     @Builder.Default
     private int umbralSemaforoAmbar = 85;
     private LocalDate fechaInicio;
+    private String horaInicio; // HH:mm format, e.g. "08:30"
 }

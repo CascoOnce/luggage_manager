@@ -300,7 +300,7 @@ export default function MapView({
           >
             <Tooltip className="tasf-tooltip" direction="top" offset={[0, -32]}>
               <strong>{ap.id}</strong> — {ap.name}<br />
-              Warehouse: <strong>{pct}%</strong> ({ap.currentOccupation} / {ap.warehouseCapacity})
+              Almacén: <strong>{pct}%</strong> ({ap.currentOccupation} / {ap.warehouseCapacity} maletas)
             </Tooltip>
           </Marker>
         )
