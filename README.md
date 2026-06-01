@@ -1,675 +1,472 @@
-# TASF.B2B — Luggage Manager
+# TASF.B2B — Baggage Routing Simulation Platform
 
-![Status](https://img.shields.io/badge/status-active-brightgreen)
-![Version](https://img.shields.io/badge/version-0.0.1--SNAPSHOT-blue)
-![Java](https://img.shields.io/badge/Java-21-orange)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.13-6db33f)
+![Status](https://img.shields.io/badge/status-active-22d07a)
+![Version](https://img.shields.io/badge/version-2.0.0-58a6ff)
+![Java](https://img.shields.io/badge/Java-21-f04b4b)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.13-6fba3a)
 ![React](https://img.shields.io/badge/React-18-61dafb)
-![License](https://img.shields.io/badge/license-proprietary-lightgrey)
-
-## 🗺️ Overview
-
-TASF.B2B is a **baggage-management operations simulation platform** for multi-airport airline cargo routing. Given a set of shipment files, it computes optimal multi-hop routes across 30 real airports on three continents using metaheuristic algorithms, then simulates day-by-day dispatch while handling random flight cancellations, dynamic replanning, and SLA tracking.
-
-**Problem it solves:** airline operations teams need to validate routing strategies before deploying them to production. This platform lets operators load real shipment data, choose between Simulated Annealing and Tabu Search, configure SLA thresholds and warehouse capacities, and observe the full simulation on an interactive live map — all without touching a production system.
-
-**Target users:** airline operations engineers, logistics researchers, and software teams prototyping baggage management algorithms.
+![License](https://img.shields.io/badge/license-MIT-muted)
 
 ---
 
-## 🏗️ Architecture
+## 1. Overview
 
-### System Overview
+TASF.B2B is an interactive baggage logistics simulation platform built for airline operations research. It models the day-by-day movement of baggage shipments across a global network of 30 airports and 2,866 scheduled flights, using metaheuristic algorithms to assign the optimal route for each shipment.
+
+**Who it is for:** operations analysts and academic researchers who need to evaluate routing strategies under realistic constraints such as SLA deadlines, warehouse capacity, and stochastic flight disruptions.
+
+**Problem it solves:** manually assigning routes for hundreds of simultaneous shipments across continents is computationally intractable. TASF.B2B uses Simulated Annealing (SA) to produce near-optimal routing plans within seconds, then steps through the simulation day by day while randomly injecting flight cancellations and triggering automatic replanning. A collapse-detection mode monitors SLA breaches and automatically pauses the simulation when a configurable threshold is crossed.
+
+**Experimentation module:** completed simulations can be saved as one row in a persistent CSV file for numerical comparison across runs.
+
+---
+
+## 2. Architecture — System Overview
 
 ```mermaid
 graph TD
-    subgraph Browser["Browser (React + Vite :5173)"]
-        UI[App.jsx — screen router]
-        MAP[MapView — Leaflet]
-        SCREENS[ConfigScreen / DashboardScreen / EnviosScreen / VuelosScreen / ResultadosScreen]
-        API[services/api.js]
+    subgraph Startup["At Application Startup (@PostConstruct)"]
+        A[aeropuertos.txt<br/>30 airports, UTF-16LE] --> DL[DataLoaderService]
+        B[planes_vuelo.txt<br/>2866 flights, UTF-8] --> DL
+        C[Envios/_envios_IATA_.txt<br/>30 files, one per origin] --> DL
+        DL -->|todosLosEnvios| SE[SimulationEngine]
     end
 
-    subgraph Backend["Spring Boot (:8080)"]
-        CTRL[SimulationController]
-        SVC[SimulationEngine]
-        PLAN[PlanningService]
-        SA[SimulatedAnnealingAlgorithm]
-        TS[TabuSearchAlgorithm]
-        PARSE[BaggageParser / AirportParser / FlightParser]
-        DATA[DataLoaderService]
-        RESOURCES[aeropuertos.txt / planes_vuelo.txt]
+    subgraph Operator["Operator Browser"]
+        UI[ConfigScreen<br/>params only — no file upload]
     end
 
-    USER[Operator] -->|uploads _envios_*.txt + params| UI
-    UI --> API
-    API -->|POST /api/simulation/start| CTRL
-    API -->|POST /api/simulation/step| CTRL
-    API -->|GET /api/simulation/state| CTRL
-    CTRL --> SVC
-    SVC --> PLAN
-    PLAN --> SA
-    PLAN --> TS
-    DATA -->|@PostConstruct| RESOURCES
-    DATA --> SVC
-    PARSE -->|parses upload| SVC
-```
+    UI -->|POST /api/simulation/start<br/>JSON: algoritmo, dias, fechaInicio, ...| SC[SimulationController]
+    SC --> SE
+    SE -->|filter by date window| SE
+    SE -->|planificar| PS[PlanningService]
+    PS -->|always SA| ALG[SimulatedAnnealingAlgorithm]
+    ALG --> PS
+    PS --> SE
+    SE -->|SimulationStateDTO| SC
+    SC -->|200 OK| UI
 
-### Frontend ↔ Backend Communication
+    UI -->|POST /api/simulation/step<br/>every ~12 real seconds| SC
+    SC -->|avanzarDia| SE
+    SE -->|5–8% probability| DISRUPT[Flight cancellation<br/>+ replanning]
+    DISRUPT --> PS
 
-The React SPA communicates exclusively through REST over HTTP. `services/api.js` targets `http://localhost:8080/api`. After starting a simulation the frontend enters a **polling loop** (`GET /state` every 2 s) and an **auto-step loop**. The auto-step works as follows: a local counter (`simClockMinutes`) increments by 120 minutes every real second (`SIM_MINUTES_PER_REAL_SECOND = 120`); once it reaches 1440 (= one full simulated day), `POST /step` is fired and the counter resets to 0. Each call to `/step` advances the backend by **exactly one day**. A simulated day therefore takes ~12 real seconds to elapse. CORS is configured on the backend to accept all `localhost:*` origins.
+    UI -->|POST /api/experimentos/registrar| EC[ExperimentacionController]
+    EC --> ES[ExperimentacionService]
+    ES -->|synchronized append| CSV[experimentos/experimentos.csv]
 
-### Domain Entity Relationships
-
-```mermaid
-erDiagram
-    Aeropuerto {
-        string codigoIATA PK
-        string ciudad
-        string continente
-        int capacidadAlmacen
-        int ocupacionActual
-    }
-    Vuelo {
-        string codigoVuelo PK
-        string origen FK
-        string destino FK
-        LocalTime horaSalida
-        LocalTime horaLlegada
-        int capacidad
-        int cargaActual
-        boolean cancelado
-    }
-    Envio {
-        string idEnvio PK
-        string aeropuertoOrigen FK
-        string aeropuertoDestino FK
-        int cantidadMaletas
-        int sla
-        EstadoEnvio estado
-    }
-    Maleta {
-        string idMaleta PK
-        string idEnvio FK
-        string ubicacionActual FK
-        EstadoMaleta estado
-    }
-    PlanDeViaje {
-        string planId PK
-        string idEnvio FK
-        int version
-        string algoritmo
-    }
-    Escala {
-        int orden PK
-        string destino FK
-        LocalDateTime horaSalidaEst
-        LocalDateTime horaLlegadaEst
-        string codigoVuelo FK
-        boolean completada
-    }
-
-    Aeropuerto ||--o{ Vuelo : "origen / destino"
-    Envio ||--o{ Maleta : "genera"
-    Envio ||--|| PlanDeViaje : "tiene"
-    PlanDeViaje ||--|{ Escala : "contiene"
-    Vuelo ||--o{ Escala : "referenciado por"
+    UI -->|GET /api/experimentos/export| EC
+    EC -->|CSV file download| UI
 ```
 
 ---
 
-## ⚙️ Backend Flow
+## 3. Frontend ↔ Backend Communication
 
-### Folder Structure
+### Simulation lifecycle
+
+After `POST /api/simulation/start` returns a `SimulationStateDTO`, `App.jsx` calls `startPolling()`, which fires `GET /api/simulation/state` every **2,000 ms**. If the returned state has `enEjecucion: true` or `finalizada: true` the component updates `backendState`; if `finalizada` is `true` the poll stops and the screen navigates to `resultados`.
+
+Simultaneously, `autoStep` drives day advancement. A `setInterval` fires every **1,000 ms** and advances an internal clock by `SIM_MINUTES_PER_REAL_SECOND = 120`. When the clock reaches 1,440 (one full simulated day), `POST /api/simulation/step` is called, the clock resets to 0, and `backendState` is updated from the response. One simulated day therefore takes approximately **12 real seconds**.
+
+### Experimentation endpoints
+
+| Trigger | Endpoint | When |
+|---|---|---|
+| "Guardar experimento" button | `POST /api/experimentos/registrar` | Only callable after `finalizada: true` |
+| "Descargar registro" button | `GET /api/experimentos/export` | Downloads `experimentos.csv` as a blob; 404 if no experiments exist |
+
+Both calls are issued from `ResultadosScreen.jsx` using the named exports `registrarExperimento()` and `exportarExperimentos()` from `src/services/api.js`.
+
+---
+
+## 4. Backend — Folder Structure
 
 ```
 backend/src/main/java/com/tasf/backend/
-├── BackendApplication.java          # Spring Boot entry point
+├── BackendApplication.java
 ├── algorithm/
-│   ├── MetaheuristicAlgorithm.java  # Strategy interface
-│   ├── RoutePlannerSupport.java     # Abstract base: candidate pool, objectives, constraints
-│   ├── RouteCandidate.java          # Value object: ordered list of Leg records
-│   ├── SimulatedAnnealingAlgorithm.java  # SA implementation (@Component "SIMULATED_ANNEALING")
-│   └── TabuSearchAlgorithm.java     # TS implementation (@Component "TABU_SEARCH")
-├── config/
-│   └── CorsConfig.java              # WebMvcConfigurer: allows localhost:* on /api/**
+│   ├── MetaheuristicAlgorithm.java        # interface
+│   ├── RouteCandidate.java
+│   ├── RoutePlannerSupport.java           # abstract base with shared helpers
+│   ├── SimulatedAnnealingAlgorithm.java
+│   └── TabuSearchAlgorithm.java
 ├── controller/
-│   └── SimulationController.java    # REST endpoints (mapped to /api)
-├── domain/                          # Core business entities (Lombok @Data @Builder)
-│   ├── Aeropuerto.java  Vuelo.java  Envio.java  Maleta.java
-│   ├── PlanDeViaje.java  Escala.java  ParametrosSimulacion.java
-│   ├── PlanningResult.java  MetricaAlgoritmo.java
-│   ├── EstadoEnvio.java  EstadoMaleta.java  Cancelacion.java
-│   └── Almacen.java  Aerolinea.java
-├── dto/                             # API-facing projections (no business logic)
-│   ├── SimulationStateDTO.java      # Full simulation snapshot
-│   ├── AeropuertoDTO.java  VueloDTO.java  EnvioDTO.java
-│   └── KpisDTO.java  ThroughputDiaDTO.java
+│   ├── ExperimentacionController.java     # POST /registrar, GET /export
+│   └── SimulationController.java          # all /simulation/* and /airports /flights /envios
+├── domain/
+│   ├── Aeropuerto.java
+│   ├── Aerolinea.java
+│   ├── Almacen.java
+│   ├── Cancelacion.java
+│   ├── Envio.java
+│   ├── Escala.java
+│   ├── EstadoEnvio.java
+│   ├── EstadoMaleta.java
+│   ├── Maleta.java
+│   ├── MetricaAlgoritmo.java
+│   ├── ParametrosSimulacion.java
+│   ├── PlanDeViaje.java
+│   ├── PlanningResult.java
+│   ├── ColapsoPunto.java
+│   └── Vuelo.java
+├── dto/
+│   ├── AeropuertoDTO.java
+│   ├── EnvioDTO.java
+│   ├── KpisDTO.java
+│   ├── SimulationStateDTO.java
+│   ├── ThroughputDiaDTO.java
+│   └── VueloDTO.java
 ├── parser/
-│   ├── AirportParser.java           # UTF-16LE reader for aeropuertos.txt
-│   ├── FlightParser.java            # UTF-8 reader for planes_vuelo.txt
-│   └── BaggageParser.java          # Streaming reader for _envios_*.txt uploads
-└── service/
-    ├── DataLoaderService.java       # @PostConstruct static data loader
-    ├── PlanningService.java         # Dispatches to SA or TS; wraps PlanningResult
-    └── SimulationEngine.java        # Synchronized singleton: full simulation state machine
+│   ├── AirportParser.java
+│   ├── BaggageParser.java
+│   └── FlightParser.java
+├── service/
+│   ├── DataLoaderService.java             # @PostConstruct, loads all static data
+│   ├── ExperimentacionService.java        # synchronized CSV writer
+│   └── PlanningService.java              # algorithm selection and delegation
+└── simulation/
+    └── SimulationEngine.java              # stateful, @Service, all sim logic
 ```
-
-### Request Lifecycle
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Controller as SimulationController
-    participant Engine as SimulationEngine
-    participant Planner as PlanningService
-    participant Algo as SA / TS Algorithm
-
-    Client->>Controller: POST /api/simulation/start (multipart)
-    Controller->>Controller: parse ParametrosSimulacion JSON part
-    Controller->>Controller: BaggageParser.parse(files, params)
-    Controller->>Engine: inicializar(params, envios)
-    Engine->>Engine: deep-copy airports + flights
-    Engine->>Engine: generate Maleta objects (1 per bag)
-    Engine->>Planner: planificar(envios, vuelos, aeropuertos, params)
-    Planner->>Algo: planificar(...)
-    Algo->>Algo: buildCandidatePool() — up to 50 routes per envio
-    Algo->>Algo: search loop (SA: Boltzmann / TS: tabu list)
-    Algo-->>Planner: PlanningResult (plans + metrics + unrouted)
-    Planner-->>Engine: PlanningResult
-    Engine->>Engine: mark unrouted envios RETRASADO
-    Engine-->>Controller: SimulationStateDTO
-    Controller-->>Client: 200 SimulationStateDTO
-
-    Client->>Controller: POST /api/simulation/step
-    Controller->>Engine: avanzarDia()
-    Engine->>Engine: cancelRandomFlightsAndReplan()
-    Engine->>Engine: 3× processDepartures + processArrivals
-    Engine->>Engine: processDeliveries()
-    Engine->>Engine: checkSlaViolations()
-    Engine->>Engine: updateWarehouseOccupation()
-    Engine-->>Controller: SimulationStateDTO
-    Controller-->>Client: 200 SimulationStateDTO
-```
-
-### API Endpoints
-
-#### Simulation
-
-| Method | Path | Auth | Body / Params | Response |
-|--------|------|------|---------------|----------|
-| `POST` | `/api/simulation/start` | — | `multipart/form-data`: `params` (JSON) + `files[]` | `SimulationStateDTO` |
-| `POST` | `/api/simulation/step` | — | — | `SimulationStateDTO` |
-| `GET` | `/api/simulation/state` | — | — | `SimulationStateDTO` or `204` |
-| `POST` | `/api/simulation/reset` | — | — | `200 OK` |
-| `POST` | `/api/simulation/cancel-flight/{codigoVuelo}` | — | path variable | `SimulationStateDTO` |
-| `POST` | `/api/simulation/cancel-envio/{idEnvio}` | — | path variable | `SimulationStateDTO` |
-
-#### Resources
-
-| Method | Path | Auth | Response |
-|--------|------|------|----------|
-| `GET` | `/api/airports` | — | `List<AeropuertoDTO>` |
-| `GET` | `/api/flights` | — | `List<VueloDTO>` |
-| `GET` | `/api/envios` | — | `List<EnvioDTO>` (without plan detail) |
-| `GET` | `/api/envios/{id}` | — | `EnvioDTO` with full `planDetalle`, or `404` |
-
-### Design Patterns
-
-| Pattern | Where Applied |
-|---------|---------------|
-| **Strategy** | `MetaheuristicAlgorithm` interface → `SimulatedAnnealingAlgorithm` / `TabuSearchAlgorithm` selected at runtime by `PlanningService` |
-| **Template Method** | `RoutePlannerSupport` provides candidate pool generation, objective function, and hard-constraint checks; subclasses implement only the search loop |
-| **Builder** | Lombok `@Builder` on all domain and DTO classes |
-| **DTO / Domain Separation** | Internal domain objects never leave the service boundary; controllers produce DTOs |
-| **Synchronized Singleton** | `SimulationEngine` is a Spring `@Service` singleton; every public method is `synchronized` for thread safety |
-| **Service Layer** | `DataLoaderService` (static catalog), `PlanningService` (algorithm dispatch), `SimulationEngine` (stateful runtime) |
 
 ---
 
-## 🖥️ Frontend Flow
+## 5. Backend — Request Lifecycle
 
-### Component Tree
-
-```
-App.jsx  (global state: screen, backendState, polling intervals, theme)
-├── TopBar.jsx           — KPI strip, day/time clock, 4 nav tabs, Start/Pause/Reset
-│                          Tab order: OPERACIONES | ENVÍOS | DASHBOARD | RESULTADOS
-├── LeftPanel.jsx        — Filter chips, warehouse threshold slider, legend
-├── RightPanel.jsx       — Flight feed, operational summary
-│
-├── [screen === 'main']       → tab: OPERACIONES
-│   └── MapView.jsx     — Leaflet map: airport circles, route polylines, airplane marker
-│
-├── [screen === 'envios']     → tab: ENVÍOS
-│   ├── EnviosScreen.jsx   — Filterable shipments table
-│   └── DrawerEnvio.jsx    — Shipment detail + escala timeline + cancel action
-│
-├── [screen === 'dashboard']  → tab: DASHBOARD
-│   ├── DashboardScreen.jsx — KPI cards, stacked bar chart, airport occupation table
-│   └── DrawerAeropuerto.jsx
-│
-├── [screen === 'config']     → tab: RESULTADOS (active while no simulation running)
-│   └── ConfigScreen.jsx   — Simulation setup wizard
-│
-└── [screen === 'resultados'] → tab: RESULTADOS
-    └── ResultadosScreen.jsx — Final SLA summary, airport stats, CSV export
-
-NOTE: VuelosScreen.jsx is imported in App.jsx but is dead code —
-      no tab key maps to 'vuelos' and screen is never set to that value.
-```
-
-### Data Flow
+### a) POST /api/simulation/start
 
 ```mermaid
 sequenceDiagram
-    participant App
-    participant api as services/api.js
-    participant Backend
+    participant Op as Operator
+    participant SC as SimulationController
+    participant DL as DataLoaderService
+    participant SE as SimulationEngine
+    participant PS as PlanningService
+    participant Algo as SA Algorithm
 
-    App->>api: startSimulation(params, files)
-    api->>Backend: POST /api/simulation/start (multipart)
-    Backend-->>api: SimulationStateDTO
-    api-->>App: backendState updated
-
-    loop Every ~12 s (one simulated day = 1440 local clock minutes @ +120/s)
-        App->>api: stepSimulation()
-        api->>Backend: POST /api/simulation/step  ← advances backend by 1 full day
-        Backend-->>api: SimulationStateDTO
-        api-->>App: backendState updated
-    end
-
-    loop Every 2 s (polling)
-        App->>api: getState()
-        api->>Backend: GET /api/simulation/state
-        Backend-->>api: SimulationStateDTO
-        api-->>App: backendState updated
-    end
-
-    App->>TopBar: passes kpis, diaActual, fechaSimulada
-    App->>MapView: passes aeropuertos[], vuelos[]
-    App->>DashboardScreen: passes full backendState
+    Op->>SC: POST /api/simulation/start<br/>Content-Type: application/json<br/>{ dias, fechaInicio, esColapso,<br/>  umbralColapsoPorcentajeSlaVencido,<br/>  minutosEscalaMinima, minutosRecogidaDestino,<br/>  umbralSemaforoVerde, umbralSemaforoAmbar }
+    SC->>DL: getTodosLosEnvios()
+    DL-->>SC: List<Envio> (all pre-loaded shipments)
+    SC->>SE: inicializar(params, todosLosEnvios)
+    SE->>SE: filter envios by date window<br/>fechaInicio ≤ date < fechaInicio + dias<br/>(no upper bound when esColapso=true)
+    SE->>PS: planificar(filteredEnvios, vuelos, aeropuertos, params)
+    PS->>Algo: planificar() — always SA
+    Algo-->>PS: List<PlanDeViaje> + MetricaAlgoritmo
+    PS-->>SE: PlanningResult
+    SE-->>SC: SimulationStateDTO (diaActual=1, enEjecucion=true)
+    SC-->>Op: 200 OK — SimulationStateDTO
 ```
 
-### Route / Screen Navigation
+### b) POST /api/simulation/step
 
-Navigation is **state-driven** — no `<Route>` declarations. `App.jsx` holds a `screen` string and conditionally renders the matching screen component. `react-router-dom` is a declared dependency but not used.
+```mermaid
+sequenceDiagram
+    participant Op as Operator (auto-step, ~12 s)
+    participant SC as SimulationController
+    participant SE as SimulationEngine
+    participant PS as PlanningService
 
-| `screen` value | Rendered Component | Tab label | Triggered by |
-|----------------|--------------------|-----------|--------------|
-| `'main'` | `MapView` + panels | **OPERACIONES** | Tab click |
-| `'envios'` | `EnviosScreen` | **ENVÍOS** | Tab click |
-| `'dashboard'` | `DashboardScreen` | **DASHBOARD** | Tab click |
-| `'config'` | `ConfigScreen` | **RESULTADOS** (active) | Start button (no active sim) |
-| `'resultados'` | `ResultadosScreen` | **RESULTADOS** | Auto-navigate when `finalizada === true` |
-
-> `VuelosScreen.jsx` is imported but no tab key maps to `'vuelos'` — currently dead code.
-
-### State Management
-
-No Redux, Zustand, or Context API. All global state is `useState` / `useRef` in `App.jsx`:
-
-| State variable | Type | Purpose |
-|----------------|------|---------|
-| `backendState` | `SimulationStateDTO \| null` | Last API snapshot |
-| `screen` | `string` | Active screen |
-| `useBackend` | `boolean` | API-driven vs. pure-frontend mode |
-| `autoStep` | `boolean` | Enables the local clock tick (120 min/s); fires `POST /step` when clock reaches 1440 |
-| `staticAirports` | `AeropuertoDTO[]` | Fetched once at startup |
-| `pollingRef` | `Ref<IntervalId>` | Manages the 2 s polling interval |
-| `autoStepRef` | `Ref<IntervalId>` | Manages the 1 s step interval |
+    Op->>SC: POST /api/simulation/step
+    SC->>SE: avanzarDia()
+    SE->>SE: reset flight cancellation flags
+    SE->>SE: snapshot warehouse occupation
+    SE->>SE: cancelRandomFlightsAndReplan()<br/>(5–8% probability per planned flight)
+    alt cancellation occurred
+        SE->>PS: planificarConIncidencia(affectedBags, ...) — SA
+        PS-->>SE: new PlanningResult
+    end
+    SE->>SE: checkColapsoPunto()<br/>(if esColapso and pct RETRASADO ≥ umbral)
+    loop 3 passes
+        SE->>SE: processDepartures()
+        SE->>SE: processArrivals()
+    end
+    SE->>SE: processDeliveries()
+    SE->>SE: checkSlaViolations()
+    SE->>SE: updateWarehouseOccupation()
+    SE->>SE: append ThroughputDiaDTO to historial
+    alt diaActual >= diasSimulacion
+        SE->>SE: finalizada = true, mark remaining SLA violations
+    else
+        SE->>SE: diaActual++, fechaSimulada + 1 day
+    end
+    SE-->>SC: SimulationStateDTO
+    SC-->>Op: 200 OK — SimulationStateDTO
+```
 
 ---
 
-## 🚀 Getting Started
+## 6. API Reference
+
+All endpoints are under `http://localhost:8080/api`.
+
+### Simulation
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| `POST` | `/simulation/start` | JSON body: `ParametrosSimulacion` (see below) | `SimulationStateDTO` |
+| `POST` | `/simulation/step` | — | `SimulationStateDTO` |
+| `GET` | `/simulation/state` | — | `SimulationStateDTO` or `204 No Content` if not initialized |
+| `POST` | `/simulation/reset` | — | `200 OK` |
+| `POST` | `/simulation/cancel-flight/{codigoVuelo}` | Path variable | `SimulationStateDTO` |
+| `POST` | `/simulation/cancel-envio/{idEnvio}` | Path variable | `SimulationStateDTO` |
+| `GET` | `/simulation/flight/{codigoVuelo}/envios` | Path variable | `List<EnvioDTO>` assigned to that flight |
+
+**`ParametrosSimulacion` JSON fields:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `dias` | `Integer` | — | Number of days to simulate (required when `esColapso=false`) |
+| `esColapso` | `Boolean` | `false` | When `true`, no upper date bound is applied to envio filtering |
+| `fechaInicio` | `String` (ISO date) | — | Simulation start date, e.g. `"2026-01-02"` |
+| `umbralColapsoPorcentajeSlaVencido` | `double` | `50.0` | % of RETRASADO envios that triggers collapse detection |
+| `minutosEscalaMinima` | `int` | `10` | Minimum connection time in minutes |
+| `minutosRecogidaDestino` | `int` | `10` | Pickup time at destination in minutes |
+| `umbralSemaforoVerde` | `int` | `60` | Warehouse occupation % below which status is green |
+| `umbralSemaforoAmbar` | `int` | `85` | Warehouse occupation % below which status is amber (must be > verde) |
+
+### Static data
+
+| Method | Path | Response |
+|---|---|---|
+| `GET` | `/airports` | `List<AeropuertoDTO>` |
+| `GET` | `/flights` | `List<VueloDTO>` |
+| `GET` | `/envios` | `List<EnvioDTO>` |
+| `GET` | `/envios/{id}` | `EnvioDTO` (includes `planDetalle`) or `404` |
+
+### Experimentation
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| `POST` | `/experimentos/registrar` | — | `{ "mensaje": "Experimento registrado." }` or `400` if simulation not finished |
+| `GET` | `/experimentos/export` | — | `text/csv` attachment `experimentos.csv` or `404` if no data |
+
+---
+
+## 7. Data Resources
+
+```
+backend/src/main/resources/data/
+├── aeropuertos.txt                 # 30 airports, UTF-16LE
+├── planes_vuelo.txt                # 2,866 flights, UTF-8
+└── Envios/
+    ├── _envios_EBCI_.txt
+    ├── _envios_EDDI_.txt
+    ├── _envios_EHAM_.txt
+    └── ... (30 files total, one per origin IATA code)
+
+backend/                            # created at runtime
+└── experimentos/
+    └── experimentos.csv            # auto-created on first POST /experimentos/registrar
+```
+
+### File details
+
+**`aeropuertos.txt`** — Loaded by `AirportParser` at startup. Contains IATA code, name, city, country, continent, timezone offset, warehouse capacity, and WGS-84 coordinates for each of the 30 hub airports.
+
+**`planes_vuelo.txt`** — Loaded by `FlightParser` at startup. Contains 2,866 scheduled flights. Each flight has an origin, destination, departure time, arrival time, and total capacity. Flights are daily-repeating (time only, no calendar date).
+
+**`Envios/_envios_IATA_.txt`** — Scanned at startup by `DataLoaderService` using `PathMatchingResourcePatternResolver` with pattern `classpath:data/Envios/_envios_*.txt`. The 4-character IATA code is extracted from the filename via regex `_envios_([A-Za-z]{4})_\.txt`. Each file is parsed with `BaggageParser.parseEnvios()` using `dateFrom=LocalDate.MIN` and `dateTo=null` so all records are loaded; date-window filtering is performed later by `SimulationEngine.inicializar()`. SLA (1 day continental, 2 days intercontinental) is computed at load time from the continent map.
+
+**`experimentos/experimentos.csv`** — Written by `ExperimentacionService`. The directory and header row are created automatically on the first call to `POST /api/experimentos/registrar`. Subsequent calls append one row; the file is never overwritten.
+
+---
+
+## 8. Experimentation Module
+
+### Purpose
+
+The experimentation module provides structured numerical output for academic comparison across runs. Rather than relying on visual inspection of the map, researchers can run the same scenario multiple times and export a CSV capturing every key metric.
+
+> **Note:** Tabu Search is currently disabled — `PlanningService` always delegates to SA regardless of the `algoritmo` parameter. The `TabuSearchAlgorithm` class is compiled and present but never invoked.
+
+### How it works
+
+1. The operator configures and runs a complete simulation (any number of days, either algorithm).
+2. When the simulation finishes (`finalizada: true`), the "Experimentación numérica" section appears at the bottom of `ResultadosScreen`.
+3. Clicking **"Guardar experimento"** issues `POST /api/experimentos/registrar`. The button disables immediately and turns green after a successful save, preventing duplicate rows.
+4. Clicking **"Descargar registro de experimentos"** issues `GET /api/experimentos/export` and triggers a browser download of `experimentos.csv`. The file includes every run since the server started accumulating data.
+
+### CSV columns
+
+| Column | What it measures |
+|---|---|
+| `experimento_id` | UUID uniquely identifying this run |
+| `fecha_hora` | UTC ISO timestamp of when the row was written |
+| `algoritmo` | `SA` or `TS` |
+| `dias_simulacion` | Number of simulated days |
+| `tiempo_planificacion_ms` | Wall-clock time spent in the initial planning phase |
+| `rutas_evaluadas` | Number of candidate routes evaluated by the algorithm |
+| `fitness` | Proxy metric — same value as `rutas_evaluadas` in the current implementation |
+| `envios_totales` | Total shipments loaded into the simulation |
+| `envios_entregados` | Shipments with final status `ENTREGADO` |
+| `envios_sla_ok` | Sum of daily `slaOk` counts from `throughputHistorial` (bag-level) |
+| `pct_sla_cumplido` | SLA compliance percentage as reported by `KpisDTO.cumplimientoSLA` |
+| `sla_violados` | Shipments with status `RETRASADO` at simulation end |
+| `envios_no_planificados` | Shipments with status `RETRASADO` (overlaps with `sla_violados`) |
+| `ocupacion_promedio_almacen` | Average warehouse occupation % across all airports (historical average) |
+
+---
+
+## 9. Frontend — Component Tree
+
+```
+App
+├── TopBar
+│   ├── KPI strip (maletasEnTransito, cumplimientoSLA, vuelos activos, SLA vencidos)
+│   ├── dual clock: REAL (wall clock + elapsed) | SIM (day / total + fecha simulada)
+│   ├── PAUSAR / REANUDAR toggle, STOP, RESET buttons
+│   ├── theme toggle (dark / light)
+│   └── nav tabs: OPERACIONES | ENVÍOS | DASHBOARD | RESULTADOS | ⚠ COLAPSO (conditional)
+│
+├── collapse banner  [visible when colapsoPunto != null]
+│   └── día, % SLA vencido, aeropuerto crítico, "VER REPORTE →" button
+│
+├── [screen='main']  — OPERACIONES view
+│   ├── AirportFilterPanel (text search + continent checkboxes + warehouse semáforo)
+│   ├── MapView (Leaflet, airports, animated flight arcs, split route polyline)
+│   │   ├── DrawerAeropuerto (SALIDAS / LLEGADAS tabs, envíos asignados)
+│   │   └── DrawerVuelo (assigned envíos table, cancel flight button)
+│   └── RightPanel (active flight list + search, airport occupation bars)
+│
+└── overlay screens
+    ├── ConfigScreen  [screen='config']
+    │   ├── Period selector (3 / 5 / 7 days | Colapso operacional)
+    │   ├── Collapse threshold input (% SLA — visible when period=colapso)
+    │   ├── Date picker (fechaInicio)
+    │   ├── Multi-file upload (_envios_*.txt, sequential)
+    │   ├── Escala mínima + Tiempo recogida destino inputs
+    │   └── Semáforo verde / ámbar thresholds
+    │
+    ├── EnviosScreen  [screen='envios']  — subtabs: ENVÍOS | VUELOS
+    ├── DashboardScreen  [screen='dashboard']
+    ├── ColapsoScreen  [screen='colapso']  — only when colapsoPunto != null
+    │   ├── KPI cards: día del colapso, % SLA vencido, aeropuerto crítico
+    │   ├── Line chart: % SLA vencido por día (collapse day highlighted)
+    │   ├── Table: top 5 airports by warehouse occupation at collapse
+    │   └── Table: sample RETRASADO shipments
+    └── ResultadosScreen  [screen='resultados']
+        ├── KPI grid (6 metrics)
+        ├── Airport performance table
+        ├── SLA analysis bars (continental / intercontinental)
+        ├── Flight history table (COMPLETADO / CANCELADO)
+        ├── Operations log (last 100 entries)
+        ├── ↓ EXPORTAR REPORTE CSV
+        └── Experimentación numérica  [when finalizada=true]
+            ├── ↑ GUARDAR EXPERIMENTO (disables after success)
+            └── ↓ DESCARGAR REGISTRO DE EXPERIMENTOS
+```
+
+---
+
+## 10. Frontend — Screen Navigation Table
+
+| `screen` value | Rendered component | Tab label | Trigger |
+|---|---|---|---|
+| `'main'` | MapView + AirportFilterPanel + RightPanel | OPERACIONES | Default on load; `onBack()` from any screen |
+| `'config'` | ConfigScreen (full overlay) | *(no tab)* | CONFIGURAR button when no simulation running |
+| `'envios'` | EnviosScreen (subtabs: ENVÍOS / VUELOS) | ENVÍOS | TopBar `onNavigate('envios')` |
+| `'dashboard'` | DashboardScreen | DASHBOARD | TopBar `onNavigate('dashboard')` |
+| `'resultados'` | ResultadosScreen | RESULTADOS | Auto on `finalizada=true`; TopBar `onNavigate('resultados')` |
+| `'colapso'` | ColapsoScreen | ⚠ COLAPSO (red, conditional) | "VER REPORTE →" in collapse banner or tab click; only shown when `colapsoPunto != null` |
+
+---
+
+## 11. Frontend — State Management Table
+
+All state lives in `App.jsx`. There is no external state library.
+
+| Variable | Initial value | Purpose |
+|---|---|---|
+| `backendState` | `null` | Last `SimulationStateDTO` received from the backend; drives all rendering |
+| `autoStep` | `false` | When `true`, clock ticks every 1 s and issues `POST /step` every ~12 s |
+| `simClockMinutes` | `0` | Internal clock (0–1440) that drives animation and step timing |
+| `screen` | `'main'` | Which overlay is visible |
+| `configOpen` | `false` | Whether ConfigScreen is shown on top of the map |
+| `theme` | `'dark'` | CSS `data-theme` attribute value |
+| `filters` | `{status:[…], route:[…]}` | Map filter toggles passed to LeftPanel and MapView |
+| `threshold` | `80` | SLA compliance threshold for display in LeftPanel |
+| `staticAirports` | `[]` | Airports fetched once at mount from `GET /airports`; used before a simulation starts |
+| `selectedFlight` | `null` | IATA flight code currently selected on the map |
+| `selectedRoute` | `null` | Envio ID currently selected on the map |
+| `mapSelectedAirport` | `null` | Airport object passed to DrawerAeropuerto |
+| `mapSelectedVuelo` | `null` | Flight object passed to DrawerVuelo |
+| `leftOpen` | `true` | Left panel expanded state |
+| `rightOpen` | `true` | Right panel expanded state |
+| `realElapsedSeconds` | `0` | Wall-clock elapsed time displayed in TopBar |
+| `running` | `false` | Local simulation clock active flag (unused after backend switch) |
+| `simDay` | `1` | Local simulation day counter (unused after backend switch) |
+| `simHour` | `6` | Local simulation hour (unused after backend switch) |
+| `simMin` | `0` | Local simulation minute (unused after backend switch) |
+| `debugOpen` | `false` | Shift+D toggles a debug overlay |
+
+---
+
+## 12. Getting Started
 
 ### Prerequisites
 
-| Tool | Minimum Version |
-|------|----------------|
-| Java (JDK) | 21 |
-| Maven | 3.9+ (or use included `mvnw`) |
-| Node.js | 18+ |
-| npm | 9+ |
+- **Java 21** (JDK)
+- **Maven 3.9+**
+- **Node.js 20+** and **npm**
 
-> **Windows users:** use `mvnw.cmd` instead of `./mvnw` in the commands below.
-
-### Environment Variables
-
-The backend uses `application.properties` — no `.env` file is needed. The frontend has one hardcoded configuration value:
+### Installation
 
 ```bash
-# src/services/api.js — change if backend runs on a different host/port
-BACKEND_BASE_URL=http://localhost:8080/api
+git clone <repo-url>
+cd luggage_manager
 ```
 
-To change the backend URL without modifying source code, update the `BASE_URL` constant in [src/services/api.js](src/services/api.js).
+> **No file upload is required.** All 30 envio files, the airport list, and the flight schedule are bundled inside the backend JAR under `src/main/resources/data/`. They are loaded automatically at startup — the operator only supplies simulation parameters in the UI.
 
-A minimal `.env.example` for future extraction:
-
-```dotenv
-# .env.example
-VITE_API_BASE_URL=http://localhost:8080/api
-```
-
-### Installation & Running — Backend
+### Run the backend
 
 ```bash
 cd backend
-
-# Option A — Maven wrapper (no local Maven required)
-./mvnw spring-boot:run
-
-# Option B — local Maven
-mvn spring-boot:run
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-The API is available at `http://localhost:8080/api` once the context loads (look for `Started BackendApplication` in the log).
+The server starts on `http://localhost:8080`. Startup logs will show the number of airports, flights, and total envios loaded from classpath resources, e.g.:
 
-### Installation & Running — Frontend
+```
+Loaded 30 airports and 2866 flights
+Loaded 500 envios from _envios_SKBO_.txt (origin=SKBO)
+...
+Total envios loaded: 14832
+```
+
+### Run the frontend
 
 ```bash
-# From the project root
+# from the project root
 npm install
 npm run dev
 ```
 
-The UI is available at `http://localhost:5173` (Vite default — no port is configured in `vite.config.js`; if 5173 is already in use Vite auto-increments to `:5174`, `:5175`, etc.).
+The dev server starts at `http://localhost:5173` (or the next available port). Open that URL in a browser.
 
-### Production Build
+### Starting a simulation
 
-```bash
-# Backend — creates a self-contained JAR
-cd backend
-./mvnw clean package -DskipTests
-java -jar target/backend-0.0.1-SNAPSHOT.jar
-
-# Frontend — produces optimized static files in dist/
-npm run build
-npm run preview   # serves the dist/ folder locally for validation
-```
+1. Click **INICIAR** in the top bar.
+2. In the ConfigScreen, select a period (3 / 5 / 7 days or "Colapso operacional"), a start date, optionally upload `_envios_*.txt` files, and adjust semáforo thresholds.
+3. Click **▶ SIMULAR**. The backend receives a JSON POST with the parameters.
+4. The map populates and the simulation advances one day every ~12 real seconds.
+5. When complete, navigate to RESULTADOS to inspect metrics and optionally save the run to `experimentos.csv`.
 
 ---
 
-## 📡 API Reference
+## 13. Testing
 
-### `POST /api/simulation/start`
-
-Initializes and runs the planning algorithm, returns the initial simulation state.
-
-**Request** — `multipart/form-data`
-
-| Part | Type | Required | Description |
-|------|------|----------|-------------|
-| `params` | JSON string | ✔ | `ParametrosSimulacion` object |
-| `files[]` | file | ✔ | One or more `_envios_XXXX_.txt` baggage files |
-
-**`ParametrosSimulacion` schema:**
-
-```json
-{
-  "algoritmo": "SIMULATED_ANNEALING",
-  "dias": 3,
-  "esColapso": false,
-  "capacidadAlmacen": 800,
-  "capacidadVuelo": 300,
-  "minutosEscalaMinima": 10,
-  "minutosRecogidaDestino": 10,
-  "umbralSemaforoVerde": 60,
-  "umbralSemaforoAmbar": 85,
-  "fechaInicio": "2026-01-02"
-}
-```
-
-> **`esColapso`:** when `true`, the date filter for baggage files is left open-ended (no `dateTo`) and `diasSimulacion` is inferred from the last envio date in the data. The full collapse scenario UI/logic is not yet implemented beyond this parsing behaviour; the field is kept in the schema to avoid a breaking change when that feature is built.
-
-**Response** — `200 SimulationStateDTO`
-
-```json
-{
-  "diaActual": 1,
-  "totalDias": 3,
-  "fechaSimulada": "2026-01-02T00:00:00",
-  "algoritmo": "SIMULATED_ANNEALING",
-  "enEjecucion": true,
-  "finalizada": false,
-  "metrica": {
-    "nombre": "SIMULATED_ANNEALING",
-    "tiempoEjecucionMs": 1240,
-    "rutasEvaluadas": 48320
-  },
-  "kpis": {
-    "maletasEnTransito": 0,
-    "maletasEntregadas": 0,
-    "cumplimientoSLA": 0.0,
-    "vuelosActivos": 142,
-    "slaVencidos": 0,
-    "ocupacionPromedioAlmacen": 12.4
-  },
-  "aeropuertos": [{ "codigoIATA": "SKBO", "nombre": "El Dorado", "..." : "..." }],
-  "vuelos": [{ "codigoVuelo": "SKBO-SEQM-03:34", "origen": "SKBO", "..." : "..." }],
-  "envios": [{ "idEnvio": "E001", "estado": "PLANIFICADO", "..." : "..." }],
-  "throughputHistorial": [],
-  "logOperaciones": ["Simulation initialized. 1200 envios planned."]
-}
-```
-
----
-
-### `POST /api/simulation/step`
-
-Advances the simulation by exactly one day. Handles cancellations, departures, arrivals, deliveries, and SLA checks.
-
-**Response** — `200 SimulationStateDTO` (same schema as above, `diaActual` incremented).
-
-When `diaActual >= totalDias`, the response has `"finalizada": true` and `throughputHistorial` is fully populated.
-
----
-
-### `GET /api/simulation/state`
-
-Returns the current state snapshot without advancing the simulation.
-
-- **`200`** — `SimulationStateDTO`
-- **`204 No Content`** — simulation not yet initialized
-
----
-
-### `POST /api/simulation/reset`
-
-Clears all simulation state. The engine returns to uninitialized status.
-
-- **`200 OK`** — empty body
-
----
-
-### `POST /api/simulation/cancel-flight/{codigoVuelo}`
-
-Manually cancels a flight, rescues affected bags, and triggers Tabu Search replanning.
-
-**Path variable:** `codigoVuelo` — e.g., `SKBO-SEQM-03:34`
-
-**Response** — `200 SimulationStateDTO`
-
----
-
-### `POST /api/simulation/cancel-envio/{idEnvio}`
-
-Manually cancels a shipment and marks all its bags as `CANCELADA`.
-
-**Path variable:** `idEnvio` — e.g., `E001`
-
-**Response** — `200 SimulationStateDTO`
-
----
-
-### `GET /api/airports`
-
-Returns the airport catalog. If a simulation is active, occupation stats and semaphore values reflect the current simulation state.
-
-**Response** — `200 List<AeropuertoDTO>`
-
-```json
-[
-  {
-    "codigoIATA": "SKBO",
-    "nombre": "El Dorado International",
-    "ciudad": "Bogotá",
-    "continente": "AMERICAS",
-    "lat": 4.7016,
-    "lng": -74.1469,
-    "capacidadAlmacen": 800,
-    "ocupacionActual": 143,
-    "semaforo": "verde",
-    "maletasRecibidas": 340,
-    "maletasEnviadas": 197,
-    "ocupacionPromedio": 18.2,
-    "ocupacionMaxima": 31.0
-  }
-]
-```
-
----
-
-### `GET /api/envios/{id}`
-
-Returns full detail for a single shipment including all travel plan escalas.
-
-**Response** — `200 EnvioDTO`
-
-```json
-{
-  "idEnvio": "E001",
-  "codigoAerolinea": "AV",
-  "aeropuertoOrigen": "SKBO",
-  "aeropuertoDestino": "LEMD",
-  "cantidadMaletas": 5,
-  "estado": "EN_TRANSITO",
-  "sla": 2,
-  "fechaHoraIngreso": "2026-01-02T08:30:00",
-  "tiempoRestante": "1d 14h",
-  "planDetalle": {
-    "planId": "P-E001-v1",
-    "idEnvio": "E001",
-    "version": 1,
-    "algoritmo": "SIMULATED_ANNEALING",
-    "escalas": [
-      {
-        "orden": 1,
-        "destino": "EGLL",
-        "codigoVuelo": "SKBO-EGLL-22:15",
-        "horaSalidaEst": "2026-01-02T22:15:00",
-        "horaLlegadaEst": "2026-01-03T14:20:00",
-        "completada": true
-      },
-      {
-        "orden": 2,
-        "destino": "LEMD",
-        "codigoVuelo": "EGLL-LEMD-16:00",
-        "horaSalidaEst": "2026-01-03T16:00:00",
-        "horaLlegadaEst": "2026-01-03T19:30:00",
-        "completada": false
-      }
-    ]
-  }
-}
-```
-
----
-
-## 🧪 Testing
-
-### Running Tests
+Run all tests from the `backend/` directory:
 
 ```bash
 cd backend
-
-# Run all tests
-./mvnw test
-
-# Run a specific test class
-./mvnw test -Dtest=BaggageParserTest
-
-# Run with verbose output
-./mvnw test -Dsurefire.useFile=false
+mvn test
 ```
 
-Test reports are generated in `backend/target/surefire-reports/`.
-
-### Test Suite
-
-| Class | Type | What it covers |
-|-------|------|----------------|
-| `BackendApplicationTests` | Spring context | Application context loads without errors |
-| `BaggageParserTest` | Unit | Date-window filtering; closed window vs. open-ended `COLAPSO` mode |
-| `PlanningServiceIntegrationTest` | `@SpringBootTest` | SA and TS both produce valid plans with metrics; `planificarConIncidencia` always uses Tabu Search |
-| `SimulationScenarioTest` | `@SpringBootTest` | 3-day run completes with `finalizada=true` and 3 throughput entries; COLAPSO initialization; 5-day run verifies `[INCIDENCIA]` log entries |
-| `SimulationControllerIntegrationTest` | `@SpringBootTest` + MockMvc | Full HTTP flow: `start → step → state → airports → flights → envios → envio/{id} → reset` |
-
-### Test Data
-
-`backend/src/test/resources/data/_envios_SKBO_.txt` — real-format baggage file for the SKBO (Bogotá) origin airport used by all integration tests.
-
-### Coverage Notes
-
-Integration tests cover the full happy path through the HTTP layer. Unit coverage focuses on the parser's date-filtering edge cases. The algorithm search loops are validated indirectly via `PlanningServiceIntegrationTest` by asserting that returned plans satisfy hard constraints (non-null flight codes, arrival before SLA deadline).
-
----
-
-## 🚢 Deployment
-
-### Running with Docker (manual)
-
-```bash
-# Backend
-cd backend
-./mvnw clean package -DskipTests
-docker build -t tasf-backend .
-
-# Frontend
-npm run build
-docker build -t tasf-frontend .
-```
-
-> No `Dockerfile` is included in the repository yet. The above is a reference for when one is added.
-
-### Recommended Platforms
-
-| Layer | Platform | Notes |
-|-------|----------|-------|
-| Backend | **Railway** / **Render** | Deploy the fat JAR; set `PORT` env var (Spring reads `SERVER_PORT`) |
-| Frontend | **Vercel** / **Netlify** | Point build output to `dist/`; set `VITE_API_BASE_URL` to the backend URL |
-| Container orchestration | **Docker Compose** | Recommended for local full-stack development once Dockerfiles are added |
-
-### CI/CD
-
-No CI/CD pipeline is configured yet. A recommended GitHub Actions setup:
-
-```yaml
-# .github/workflows/ci.yml (not yet present)
-on: [push, pull_request]
-jobs:
-  backend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with: { java-version: '21', distribution: 'temurin' }
-      - run: cd backend && ./mvnw verify
-
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '18' }
-      - run: npm ci && npm run build
-```
-
-### Environment Variables for Production
-
-| Variable | Layer | Value |
-|----------|-------|-------|
-| `SERVER_PORT` | Backend (env override) | `8080` |
-| `SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE` | Backend | `500MB` |
-| `VITE_API_BASE_URL` | Frontend build | `https://your-backend.railway.app/api` |
+| Test class | Type | What it covers |
+|---|---|---|
+| `BackendApplicationTests` | Smoke | Spring context loads without errors |
+| `BaggageParserTest` | Unit | `parseEnvios()` respects a closed date window (dateFrom–dateTo) and an open-ended window (`dateTo=null`) used by collapse mode. Uses in-memory `ByteArrayInputStream` — no filesystem access. |
+| `PlanningServiceIntegrationTest` | Integration | Verifies that `planificar()` and `planificarConIncidencia()` both honour `params.algoritmo`: SA runs use SA, TS runs use TS, and replanning after an incident also uses the operator-selected algorithm rather than a hardcoded fallback. Uses envios from `DataLoaderService`. |
+| `SimulationScenarioTest` | Integration | Tests three full `SimulationEngine` scenarios: exact 3-day run (checks `finalizada` and `throughputHistorial.size`), collapse mode (checks `totalDias` is derived from envio span when `diasSimulacion` is preset), and a 5-day run that verifies `[INCIDENCIA]` and replanificación log entries can appear. |
+| `SimulationControllerIntegrationTest` | Integration (MockMvc) | Full HTTP flow: `POST /api/simulation/start` with a JSON body (no multipart), `POST /step`, `GET /state`, `GET /airports`, `GET /flights`, `GET /envios`, `GET /envios/{id}`, `POST /reset`, `GET /state` → 204. Confirms the envio `000000001` exists with a `planDetalle` field. |
