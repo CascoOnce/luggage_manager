@@ -30,6 +30,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
   const [escalaMinima, setEscalaMinima] = useState(10)
   const [tiempoRecogida, setTiempoRecogida] = useState(10)
   const [semaforo, setSemaforo] = useState({ verde: 60, ambar: 85 })
+  const [umbralColapso, setUmbralColapso] = useState(50)
   const [loading, setLoading] = useState(false)
   const [loadingElapsed, setLoadingElapsed] = useState(0)
   const [error, setError] = useState(null)
@@ -130,6 +131,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
       umbralSemaforoAmbar: Number(semaforo.ambar),
       fechaInicio,
       horaInicio,
+      umbralColapsoPorcentajeSlaVencido: esColapso ? Number(umbralColapso) : 50,
     }
 
     setLoading(true)
@@ -310,6 +312,31 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
               </div>
             ))}
           </div>
+
+          {periodo === 'colapso' && (
+            <div style={{ marginBottom: 20 }}>
+              <span style={sectionHeaderStyle()}>Condición de colapso</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>Umbral SLA vencido (%)</span>
+                <input
+                  type="number"
+                  min={10}
+                  max={90}
+                  step={5}
+                  value={umbralColapso}
+                  disabled={loading}
+                  onChange={(event) => {
+                    const v = Number(event.target.value)
+                    if (Number.isFinite(v) && v >= 10 && v <= 90) setUmbralColapso(v)
+                  }}
+                  style={{ width: 64, textAlign: 'right', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '6px 8px', appearance: 'textfield', MozAppearance: 'textfield', WebkitAppearance: 'none' }}
+                />
+              </div>
+              <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 10, opacity: 0.6 }}>
+                La sim detecta colapso cuando ≥{umbralColapso}% de envíos superan su SLA
+              </div>
+            </div>
+          )}
 
           <div style={{ marginBottom: 20 }}>
             <span style={sectionHeaderStyle()}>Rangos de semáforo</span>

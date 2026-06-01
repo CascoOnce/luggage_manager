@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.tasf.backend.domain.ColapsoPunto;
 import com.tasf.backend.domain.MetricaAlgoritmo;
 
 @Data
@@ -25,4 +26,5 @@ public class SimulationStateDTO {
     private KpisDTO kpis;
     private List<ThroughputDiaDTO> throughputHistorial;
     private List<String> logOperaciones;
+    private ColapsoPunto colapsoPunto;
 }

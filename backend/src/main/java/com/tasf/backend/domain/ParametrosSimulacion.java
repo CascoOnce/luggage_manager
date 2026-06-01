@@ -26,4 +26,6 @@ public class ParametrosSimulacion {
     private int umbralSemaforoAmbar = 85;
     private LocalDate fechaInicio;
     private String horaInicio; // HH:mm format, e.g. "08:30"
+    @Builder.Default
+    private double umbralColapsoPorcentajeSlaVencido = 50.0;
 }
