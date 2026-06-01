@@ -75,6 +75,8 @@
 | B-28 | Carga de maletas de vuelo en tránsito en números (hover) | Tooltip con load/capacity al pasar mouse |
 | B-29 | Carga de vuelo en tránsito en colores semáforo | Verde <70%, ámbar 70–90%, rojo ≥90% |
 | B-33 | Mecanismo para mostrar/ocultar ruta de vuelo | Click en vuelo → muestra ruta punteada; click en mapa → deselecciona |
+| B-34 | Tramo recorrido vs. pendiente en ruta de vuelo seleccionado | `MapView.jsx` — polilínea dividida con `mercatorLerp`: tramo recorrido (blanco/gris slate, weight 2, solid) y tramo pendiente (azul punteado) |
+| B-36 | Fecha, hora, minuto y segundo del tiempo real actual | `TopBar.jsx` — bloque "REAL" con `new Date().toLocaleTimeString('es-PE')` actualizado cada segundo |
 | B-37 | Tiempo transcurrido (dd, hh, mm) dentro de lo simulado | `TopBar.jsx:191–204` — "DÍA X / Y" + reloj simulado |
 | B-38 | Tiempo transcurrido en tiempo real | Elapsed HH:MM:SS en `TopBar.jsx` |
 | B-39 | Bloque de tiempos con fuente pertinente | `TopBar.jsx` — bloque dedicado con monospace |
@@ -100,8 +102,14 @@
 | B-67 | Ruta completa de la maleta con todas las escalas | `DrawerEnvio.jsx` — todos los tramos visibles |
 | B-68 | Buscar envío planificado | `EnviosScreen.jsx:143–158` — búsqueda por ID, origen, destino |
 | B-69 | Buscar envío ya entregado | Misma búsqueda + filtro de estado ENTREGADO |
+| B-10 | Lista de vuelos que parten de un aeropuerto | `DrawerAeropuerto.jsx` — pestaña "SALIDAS" separada de "LLEGADAS" |
+| B-11 | Lista de vuelos que arriban a un aeropuerto | `DrawerAeropuerto.jsx` — pestaña "LLEGADAS" |
+| B-61 | Buscar aeropuerto/almacén principal por texto | `AirportFilterPanel.jsx` — input de búsqueda por IATA o nombre en tiempo real |
 | B-71 | Lista de vuelos de la flota con carga actual | `RightPanel.jsx:85–111` — vuelos activos con load/capacity |
 | B-72 | Rutas planificadas de un vuelo específico | `DrawerVuelo.jsx:172–209` — trayecto origen→destino |
+| B-73 | Maletas asignadas a un vuelo específico | `DrawerVuelo.jsx` — tabla de envíos asignados; backend: `GET /api/simulation/flight/{code}/envios` |
+| B-74 | Buscar vuelo específico | `AirportFilterPanel.jsx` input de búsqueda de vuelos; subtab Vuelos en `EnviosScreen.jsx` |
+| B-75 | Tiempo de permanencia de maletas en aeropuerto de escala | `DrawerEnvio.jsx` — dwell time calculado entre llegada de vuelo anterior y salida del siguiente |
 | B-76 | Estado del vuelo (operativo/cancelado/retrasado) | `DrawerVuelo.jsx` — status pill visible |
 
 ### Otros
@@ -118,37 +126,29 @@
 | # | Descripción | Lo que hay | Lo que falta |
 |---|-------------|------------|--------------|
 | B-9 | Lista maletas/envíos planificados que salen (hover) | Info de vuelos en `DrawerAeropuerto.jsx` (click) | Mostrar en tooltip al hover, sin necesidad de click |
-| B-10 | Lista de vuelos que parten (hover) | `DrawerAeropuerto.jsx` muestra vuelos conectados | No diferencia "parten" vs "arriban"; requiere click |
-| B-11 | Lista de vuelos que arriban (hover) | Misma lista anterior sin separar por dirección | Separar salidas y llegadas; mostrar en hover |
 | B-16 | Lista de maletas que arriban a aeropuerto de conexión (hover) | Drawer muestra vuelos conectados | Sin lista de maletas entrantes específicamente |
 | B-17 | Lista de vuelos que parten de aeropuerto de conexión | Mismo drawer | Sin diferenciación por dirección |
 | B-18 | Lista de vuelos en espera/tránsito en aeropuerto de conexión | Drawer muestra estado de vuelos | Sin categoría "en espera" explícita |
-| B-19 | Cancelaciones de vuelos visibles en mapa | Vuelos cancelados **desaparecen** del mapa (`MapView.jsx:259`) | Mostrar línea/ícono en color de cancelación en lugar de ocultar |
-| B-20 | Color idóneo para vuelo cancelado o ruta bloqueada | Sin visualización de cancellation | Agregar ruta en rojo/gris con dash pattern |
-| B-21 | Info de cancelación al pasar mouse | Sin objeto de cancelación en mapa | Tooltip con vuelo, ruta y hora de cancelación |
-| B-22 | Grosor/ideograma idóneo para cancelación | Sin renderizado | Línea gruesa o ícono de bloqueo en la ruta |
-| B-30 | Línea de ruta aérea planificada | Solo se muestra para **el vuelo seleccionado** (`MapView.jsx:212`) | Opción para mostrar todas las rutas simultáneamente |
+| B-19 | Cancelaciones de vuelos visibles en mapa | Vuelos cancelados **desaparecen** del mapa | Mostrar línea/ícono en color de cancelación en lugar de ocultar (F-12 stand by) |
+| B-20 | Color idóneo para vuelo cancelado o ruta bloqueada | Sin visualización | Agregar ruta en rojo con dash pattern (depende de B-19) |
+| B-21 | Info de cancelación al pasar mouse | Sin objeto de cancelación en mapa | Tooltip con vuelo, ruta y hora (depende de B-19) |
+| B-22 | Grosor/ideograma idóneo para cancelación | Sin renderizado | Depende de B-19 |
+| B-30 | Línea de ruta aérea planificada | Solo se muestra para **el vuelo seleccionado** | Opción para mostrar todas las rutas simultáneamente |
 | B-31 | Grosor/ideograma idóneo de ruta | Ruta punteada solo para vuelo seleccionado | Extender a otras rutas si se muestran |
-| B-32 | Rutas con colores semánticos y leyenda visible | Leyenda en `LeftPanel.jsx:123–142` (por estado de SLA) | Leyenda de colores de tipo de ruta (continental/intercontinental) en mapa |
-| B-34 | Tramo actual del vuelo diferenciando lo recorrido | Muestra línea completa origen→destino | Dividir en "tramo recorrido" (gris) y "tramo pendiente" (color) |
-| B-35 | Fecha, hora, minuto y **segundo** del tiempo simulado | `TopBar.jsx` muestra `YYYY-MM-DD HH:MM` | Agregar segundos en el reloj simulado |
-| B-36 | Fecha, hora, minuto y segundo del tiempo **real actual** | Muestra tiempo elapsed (`HH:MM:SS`), no hora de pared | Agregar reloj de hora actual del sistema (`new Date()`) |
-| B-45 | Cancelación Tipo 1 (programada) reflejada en mapa | Backend cancela el vuelo y lo quita del estado activo | Mapa no muestra indicador visual de que fue cancelado |
+| B-32 | Rutas con colores semánticos y leyenda visible | Leyenda por estado de SLA | Leyenda de colores por tipo de ruta (continental/intercontinental) |
+| B-35 | Fecha, hora, minuto y **segundo** del tiempo simulado | `TopBar.jsx` muestra `YYYY-MM-DD HH:MM` | Agregar segundos derivados del elapsed real |
+| B-45 | Cancelación Tipo 1 (programada) reflejada en mapa | Backend cancela el vuelo y lo quita del estado activo | Sin indicador visual en mapa |
 | B-46 | Cancelación Tipo 2 (en tránsito) reflejada en mapa | `rescueBags()` en backend funciona | Sin representación visual en mapa |
-| B-47 | Cancelación Tipo 3 (masiva) reflejada en mapa | `cancelRandomFlightsAndReplan()` implementado pero **no expuesto** en `avanzarDia()` | Conectar método al ciclo de simulación |
-| B-51 | Seleccionar cancelación desde mapa → panel de detalle | No hay objeto de cancelación renderizado en mapa | Requiere primero implementar B-19 |
-| B-52 | Seleccionar aeropuerto principal desde panel → centra en mapa | `AirportFilterPanel` muestra/oculta aeropuertos | Sin `flyTo()` o centering en mapa |
+| B-47 | Cancelación Tipo 3 (masiva) reflejada en mapa | `cancelRandomFlightsAndReplan()` implementado pero no expuesto en `avanzarDia()` | Conectar método al ciclo de simulación |
+| B-51 | Seleccionar cancelación desde mapa → panel de detalle | No hay objeto de cancelación renderizado | Requiere primero implementar B-19 |
+| B-52 | Seleccionar aeropuerto principal desde panel → centra en mapa | `AirportFilterPanel` muestra/oculta aeropuertos | Sin `flyTo()` o centering |
 | B-53 | Seleccionar aeropuerto de conexión desde panel → centra | Mismo caso | Sin centering en mapa |
-| B-55 | Seleccionar cancelación desde panel → centra en mapa | Sin panel de cancelaciones | Requiere implementar panel de cancelaciones primero |
-| B-61 | Buscar aeropuerto/almacén principal | `AirportFilterPanel` tiene checkboxes por continente | Sin campo de búsqueda textual por nombre o IATA |
-| B-63 | Lista de cancelaciones según hora y aeropuerto | Log de operaciones tiene eventos de cancelación (`[INCIDENCIA]`) | Sin panel/tabla dedicado de cancelaciones |
-| B-64 | Lista de vuelos cancelados | `EnviosScreen` muestra envíos CANCELADO; log de ops muestra vuelos | Sin tabla dedicada de vuelos cancelados (VuelosScreen es dead code) |
-| B-70 | Lista de vuelos de la flota Tasf.B2B | `RightPanel` muestra solo vuelos **activos** | `VuelosScreen.jsx` existe pero no hay tab que navegue a ella |
-| B-73 | Maletas asignadas a un vuelo específico | `DrawerVuelo.jsx` muestra `load/capacity` numérico | Sin lista de maletas individuales asignadas |
-| B-74 | Buscar vuelo específico | Sin campo de búsqueda de vuelos | `RightPanel` no tiene search; no hay pantalla de búsqueda de vuelos |
-| B-75 | Tiempo de permanencia de maletas en aeropuerto de escala | `DrawerEnvio.jsx` timeline muestra hora de salida de cada tramo | Sin cálculo explícito del dwell time entre llegada y salida de escala |
+| B-55 | Seleccionar cancelación desde panel → centra en mapa | Sin panel de cancelaciones | Requiere implementar panel de cancelaciones (F-11 stand by) |
+| B-63 | Lista de cancelaciones según hora y aeropuerto | Log de operaciones tiene eventos `[INCIDENCIA]` | Sin panel/tabla dedicado (F-11 stand by, depende de B-04 backend) |
+| B-64 | Lista de vuelos cancelados | Log de ops muestra vuelos cancelados | Sin tabla estructurada de vuelos cancelados |
+| B-70 | Lista de vuelos de la flota Tasf.B2B | Subtab "VUELOS" en `EnviosScreen.jsx` + `RightPanel` muestra vuelos activos | `VuelosScreen.jsx` standalone aún como dead code; sin top-level tab dedicado |
 | B-77 | Período en que un vuelo está cancelado/en mantenimiento | `DrawerVuelo.jsx` muestra status pill | Sin rango horario de inicio/fin de cancelación |
-| B-82 | Reporte final con última planificación en los **3 escenarios** | `ResultadosScreen.jsx` muestra resultado del último escenario corrido | Sin comparación entre escenarios; cada ejecución sobreescribe el estado |
+| B-82 | Reporte final con última planificación en los **3 escenarios** | `ResultadosScreen.jsx` muestra último escenario | Sin comparación entre escenarios |
 
 ---
 
@@ -177,7 +177,8 @@
 |---|-------------|-------------------|
 | E1-1 | Parametrizar período (3/5/7 días) | `ConfigScreen.jsx:6–10` — radio buttons; enviado como `dias` en `ParametrosSimulacion` |
 | E1-3 | Respetar plazos: 1 día mismo continente / 2 días distinto | `RoutePlannerSupport.java:80–93` — `enforceSlaFromContinent()` |
-| E1-4 | Replanificar rutas ante cancelaciones durante simulación | `SimulationEngine.java:792–796` — `replanificar(..., conIncidencia=true)` → Tabu Search |
+| E1-4 | Replanificar rutas ante cancelaciones durante simulación | `SimulationEngine.java:792–796` — `replanificar(..., conIncidencia=true)` → SA |
+| E1-6 | Historial de vuelos (completados, cancelados, retrasados) al final | `ResultadosScreen.jsx` — sección "HISTORIAL DE VUELOS" con tabla de estado final |
 | E1-7 | Gráfica/indicador de cumplimiento de plazos al final | `DashboardScreen.jsx:266–279` — stacked bar chart SLA OK/Breach; `ResultadosScreen.jsx:298–315` — barras % |
 
 ### Escenario 2 — Operaciones en Tiempo Real
@@ -195,8 +196,11 @@
 
 | # | Descripción | Dónde en el código |
 |---|-------------|-------------------|
+| E3-1 | Parametrizar escenario de colapso (demanda/cancelaciones) | `ConfigScreen.jsx` — toggle modo colapso + input umbral % SLA vencido; `ParametrosSimulacion.java` campo `umbralColapsoPorcentajeSlaVencido` |
 | E3-2 | Detecta y notifica visualmente almacén supera capacidad (semáforo) | `RightPanel.jsx:113–143` + `DashboardScreen.jsx:304–348` — rojo cuando ≥ umbral |
-| E3-5 | Planificador replanifica antes de declarar colapso | `SimulationEngine.java:796` — replan con incidencia siempre antes de marcar RETRASADO |
+| E3-3 | Detecta y notifica visualmente cuando la operación colapsa | `App.jsx` — `colapsoPuntoAlertedRef` detecta primer colapso, pausa auto-step, muestra banner rojo; pestaña "⚠ COLAPSO" en `TopBar.jsx` |
+| E3-4 | Reporte/gráfica del punto de colapso | `ColapsoScreen.jsx` — KPI cards (día, SLA%, aeropuerto crítico), gráfico de línea % SLA por día, top 5 aeropuertos críticos, tabla envíos retrasados |
+| E3-5 | Planificador replanifica antes de declarar colapso | `SimulationEngine.java:796` — replan con SA siempre antes de marcar RETRASADO |
 
 ### Sección D — RNF
 
@@ -211,12 +215,10 @@
 | # | Descripción | Lo que hay | Lo que falta |
 |---|-------------|------------|--------------|
 | E1-2 | Simulación semanal entre 30 y 90 minutos | ~84 seg para 7 días (12 seg/día simulado) | Verificar si el requerimiento es de velocidad de visualización o de ejecución total del algoritmo |
-| E1-5 | Evolución de stock de maletas en almacenes a lo largo del período | `DashboardScreen` muestra throughput diario (SLA OK/Breach) | Sin gráfico de ocupación de cada almacén por día |
-| E1-6 | Historial de vuelos (completados, cancelados, retrasados) al final | Log de operaciones + `ResultadosScreen` con métricas generales | Sin tabla estructurada de vuelos con estado final |
+| E1-5 | Evolución de stock de maletas en almacenes a lo largo del período | `DashboardScreen` muestra throughput diario (SLA OK/Breach) | Sin gráfico de ocupación de cada almacén por día (F-15 stand by, depende de B-07 backend) |
 | E2-3 | Actualización de monitoreo de maletas de forma **manual por aeropuerto** | Actualización automática vía polling 2s | Sin acción manual del operador para registrar llegada/salida |
-| E3-1 | Parametrizar escenario de colapso (demanda/cancelaciones) | `esColapso` flag en `ParametrosSimulacion.java:18` | No expuesto en `ConfigScreen`; solo activable via API directa |
-| E3-6 | Comparar resultado de 2 algoritmos en escenario de colapso | `ExperimentacionController.java:40–70` — registro y CSV export | Sin comparación side-by-side en UI; requiere 2 corridas + análisis manual del CSV |
-| RNF-2 | Dos algoritmos evaluados por experimentación numérica | `MetricaAlgoritmo.java` captura `tiempoEjecucionMs` y `rutasEvaluadas`; CSV exportable | Sin reporte/dashboard comparativo en UI |
+| E3-6 | Comparar resultado de 2 algoritmos en escenario de colapso | `ExperimentacionController.java:40–70` — registro y CSV export | Sin comparación side-by-side en UI; TS deshabilitado actualmente (solo SA activo) |
+| RNF-2 | Dos algoritmos evaluados por experimentación numérica | `MetricaAlgoritmo.java` captura `tiempoEjecucionMs` y `rutasEvaluadas`; CSV exportable | Sin reporte/dashboard comparativo en UI; TS deshabilitado |
 | RNF-3 | Colores semáforo parametrizables en rangos | Umbrales verde/ámbar en `ConfigScreen.jsx:273–301` | Rojo es derivado (todo lo ≥ ámbar); no se puede configurar el umbral exacto del rojo |
 
 ---
@@ -225,8 +227,6 @@
 
 | # | Descripción | Comentario |
 |---|-------------|------------|
-| E3-3 | Detecta y notifica visualmente cuando la operación **colapsa** (imposibilidad de cumplir plazos) | El sistema marca envíos como RETRASADO pero no hay notificación global de "colapso total" |
-| E3-4 | Reporte/gráfica del punto de colapso (momento, métricas, causa) | Sin pantalla ni endpoint dedicado para punto de colapso |
 | RNF-4 | Funciona en equipamiento del laboratorio de Ing. Informática | Despliegue a EC2 (AWS); no verificado en infraestructura del lab PUCP |
 | RNF-5 | Evidencia del proceso NTP-ISO/IEC 29110-5-1-2 (VSE) | Sin documentación de proceso en el repositorio |
 | RNF-6 | Videos de presentación final grabados | Artefacto externo, no en código |
@@ -239,12 +239,14 @@
 | Categoría | ✅ Completo | ⚠️ Parcial | ❌ Sin implementar |
 |-----------|------------|-----------|-------------------|
 | Sección A (22 criterios) | 17 | 5 | 0 |
-| Sección B — Mapa/Panel (86 criterios) | 28 | 30 | 28* |
-| Sección C — Escenarios (20 criterios) | 10 | 7 | 3 |
+| Sección B — Mapa/Panel (86 criterios) | 36 | 22 | 28* |
+| Sección C — Escenarios (20 criterios) | 14 | 5 | 1 |
 | Sección D — RNF (7 criterios) | 1 | 3 | 3 |
-| **Total (135 criterios)** | **~56 (41%)** | **~45 (33%)** | **~34 (25%)** |
+| **Total (135 criterios)** | **~68 (50%)** | **~35 (26%)** | **~32 (24%)** |
 
 *Incluye N/A (B-83, B-84, B-85, B-86) que son criterios de evaluador o artefactos externos.
+
+> Actualizado 2026-05-31 — Niveles 2-4 implementados: B-10, B-11, B-34, B-36, B-61, B-73, B-74, B-75, E1-6, E3-1, E3-3, E3-4 pasaron a ✅.
 
 ---
 
@@ -252,32 +254,22 @@
 
 ### Fortalezas del sistema (para defender en evaluación)
 
-1. **Algoritmos metaheurísticos completos y diferenciados**: SA para planificación general; TS obligatorio ante incidencias. Separación clara de responsabilidades.
-2. **Restricciones duras implementadas**: Capacidad de almacén (90% del total) y capacidad de vuelo verificadas en ambos algoritmos. SLA continental/intercontinental enforced.
-3. **Visualización dinámica de vuelos en tránsito**: Interpolación Mercator real, rotación de ícono según dirección, animación fluida sin saltos.
-4. **Dashboard de análisis completo**: KPIs en tiempo real, gráfico de throughput, tabla de aeropuertos por ocupación, barras SLA final.
-5. **Carga de envíos en tiempo real**: Upload de archivo `.txt` durante simulación con replanificación automática.
-6. **Semáforos parametrizables**: Umbral verde/ámbar configurable por el usuario antes de iniciar.
-7. **Exportación y registro de experimentos**: CSV descargable de resultados para comparación manual de algoritmos.
+1. **Algoritmos metaheurísticos**: SA implementado con restricciones duras (capacidad almacén 90%, capacidad vuelo, SLA continental/intercontinental).
+2. **Visualización dinámica de vuelos en tránsito**: Interpolación Mercator real, rotación de ícono según dirección, ruta dividida en tramo recorrido/pendiente (B-34).
+3. **Dashboard de análisis completo**: KPIs en tiempo real, gráfico throughput, tabla aeropuertos por ocupación, barras SLA final.
+4. **Carga de envíos en tiempo real**: Multi-upload de archivos `.txt` durante simulación con replanificación automática.
+5. **Semáforos parametrizables**: Umbral verde/ámbar configurable antes de iniciar.
+6. **Detección y reporte de colapso**: Banner automático con pausa, pestaña ⚠ COLAPSO, pantalla de reporte con gráfico SLA y top aeropuertos críticos (E3-3, E3-4).
+7. **Observabilidad de envíos**: Drawer con dwell time por escala, envíos asignados por vuelo, búsqueda de aeropuertos y vuelos.
 
-### Prioridad alta (alto impacto, mínimo esfuerzo)
-
-| Item | Esfuerzo | Impacto en rúbrica |
-|------|----------|-------------------|
-| **B-19 a B-22**: Mostrar cancelaciones en mapa (línea roja en lugar de ocultar) | Medio | Alto — 4 criterios en B + habilita B-51, B-55, B-56–58 |
-| **E3-1**: Exponer checkbox `esColapso` en ConfigScreen | Bajo | 1 criterio pero habilita E3-3/E3-4 |
-| **B-70**: Activar VuelosScreen (ya existe, solo falta el tab) | Muy bajo | 1 criterio + habilita B-74, B-73 |
-| **B-36**: Mostrar hora de pared actual (no elapsed) | Muy bajo | 1 criterio |
-| **B-47**: Conectar `cancelRandomFlightsAndReplan()` en `avanzarDia()` | Bajo | 1 criterio + habilita visualización Tipo 3 |
-
-### Prioridad media (esfuerzo moderado)
+### Pendiente con mayor impacto en rúbrica
 
 | Item | Esfuerzo | Impacto en rúbrica |
 |------|----------|-------------------|
-| **B-34**: Diferenciar tramo recorrido vs pendiente en ruta de vuelo | Medio | Visual llamativo |
-| **E1-2**: Ajustar velocidad de simulación para cumplir 30–90 min | Medio | Aclarar requerimiento primero |
-| **E3-3/E3-4**: Detector de colapso con notificación y reporte | Alto | 2 criterios en E3 |
-| **B-63/B-64**: Panel de cancelaciones estructurado | Medio | Habilita B-56–58, B-78–80 |
+| **F-12 · B-19 a B-22**: Mostrar cancelaciones en mapa | Medio | Alto — 4 criterios + habilita B-51, B-55, B-56–58 |
+| **B-47**: Conectar `cancelRandomFlightsAndReplan()` en `avanzarDia()` | Bajo | Cancelaciones Tipo 3 en ciclo de simulación |
+| **F-11 · B-63/B-64**: Panel de cancelaciones estructurado | Medio | Habilita B-56–58, B-78–80 |
+| **F-15 · E1-5**: Gráfico de evolución de ocupación de almacenes | Alto | Requiere B-07 backend primero |
 
 ### Items que dependen de artefactos externos (gestión, no código)
 
@@ -288,4 +280,4 @@
 
 ---
 
-*Generado a partir de inspección del código fuente en `feature/backend` — 2026-05-28*
+*Generado 2026-05-28. Actualizado 2026-05-31 para reflejar Niveles 2–4 implementados.*
