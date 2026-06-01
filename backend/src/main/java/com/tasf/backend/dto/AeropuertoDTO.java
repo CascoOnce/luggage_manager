@@ -23,4 +23,6 @@ public class AeropuertoDTO {
     private int maletasEnviadas;
     private double ocupacionPromedio;
     private double ocupacionMaxima;
+    private int maletasEnAlmacenLocal;
+    private int maletasEnTransitoEntrantes;
 }

@@ -324,18 +324,25 @@ export default function App() {
     throughputHistory: [], logOperaciones: [],
   }
 
-  const normalizedAirports = useMemo(() =>
-    (simState?.aeropuertos || simState?.airports || []).map((airport) => ({
-      ...airport,
-      id: airport.id || airport.codigoIATA,
-      name: airport.name || airport.nombre,
-      continent: airport.continent || airport.continente,
-      lat: airport.lat,
-      lng: airport.lng,
-      currentOccupation: airport.currentOccupation ?? airport.ocupacionActual ?? 0,
-      warehouseCapacity: airport.warehouseCapacity ?? airport.capacidadAlmacen ?? 600,
-    })),
-  [simState?.aeropuertos, simState?.airports])
+  const normalizedAirports = useMemo(() => {
+    const airports = simState?.aeropuertos || simState?.airports || []
+    const vuelosList = simState?.vuelos || []
+    return airports.map((airport) => {
+      const iata = airport.codigoIATA || airport.id
+      return {
+        ...airport,
+        id: iata,
+        name: airport.name || airport.nombre,
+        continent: airport.continent || airport.continente,
+        lat: airport.lat,
+        lng: airport.lng,
+        currentOccupation: airport.currentOccupation ?? airport.ocupacionActual ?? 0,
+        warehouseCapacity: airport.warehouseCapacity ?? airport.capacidadAlmacen ?? 600,
+        vuelosSalientes: vuelosList.filter((v) => (v.origen || v.origin) === iata && v.enUso).length,
+        vuelosLlegando:  vuelosList.filter((v) => (v.destino || v.destination) === iata && v.enUso).length,
+      }
+    })
+  }, [simState?.aeropuertos, simState?.airports, simState?.vuelos])
 
   const normalizedFlights = useMemo(() =>
     simState?.vuelos
@@ -426,13 +433,13 @@ export default function App() {
 
     source.setHours(0, 0, 0, 0)
     const current = new Date(source.getTime() + simClockMinutes * 60000)
-    const yyyy = current.getFullYear()
     const mm = String(current.getMonth() + 1).padStart(2, '0')
     const dd = String(current.getDate()).padStart(2, '0')
     const hh = String(current.getHours()).padStart(2, '0')
     const mi = String(current.getMinutes()).padStart(2, '0')
-    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
-  }, [backendState?.fechaSimulada, simClockMinutes])
+    const ss = String(realElapsedSeconds % 60).padStart(2, '0')
+    return `${mm}-${dd} ${hh}:${mi}:${ss}`
+  }, [backendState?.fechaSimulada, simClockMinutes, realElapsedSeconds])
 
   useEffect(() => {
     if (!selectedFlight) {

@@ -332,7 +332,10 @@ export default function MapView({
           >
             <Tooltip className="tasf-tooltip" direction="top" offset={[0, -32]}>
               <strong>{ap.id}</strong> — {ap.name}<br />
-              Almacén: <strong>{pct}%</strong> ({ap.currentOccupation} / {ap.warehouseCapacity} maletas)
+              Almacén: <strong>{pct}%</strong> ({ap.currentOccupation} / {ap.warehouseCapacity})<br />
+              {ap.maletasEnAlmacenLocal > 0 && <><span>En espera: <strong>{ap.maletasEnAlmacenLocal}</strong> maletas</span><br /></>}
+              {ap.maletasEnTransitoEntrantes > 0 && <><span>Llegando: <strong>{ap.maletasEnTransitoEntrantes}</strong> maletas</span><br /></>}
+              {(ap.vuelosSalientes > 0 || ap.vuelosLlegando > 0) && <span>Vuelos: <strong>{ap.vuelosSalientes}</strong> salen · <strong>{ap.vuelosLlegando}</strong> llegan</span>}
             </Tooltip>
           </Marker>
         )

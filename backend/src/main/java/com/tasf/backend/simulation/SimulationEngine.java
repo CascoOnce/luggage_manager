@@ -517,6 +517,22 @@ public class SimulationEngine {
         }
         Map<String, Envio> envioById = envios.stream().collect(Collectors.toMap(Envio::getIdEnvio, e -> e, (a, b) -> a));
 
+        Map<String, Long> maletasPorAlmacen = maletas.stream()
+            .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN && m.getUbicacionActual() != null)
+            .collect(Collectors.groupingBy(Maleta::getUbicacionActual, Collectors.counting()));
+
+        Map<String, String> vueloADestino = vuelos.stream()
+            .filter(v -> v.getDestino() != null)
+            .collect(Collectors.toMap(Vuelo::getCodigoVuelo, Vuelo::getDestino, (a, b) -> a));
+
+        Map<String, Long> maletasPorDestino = maletas.stream()
+            .filter(m -> m.getEstado() == EstadoMaleta.EN_VUELO)
+            .filter(m -> maletaVueloActual.containsKey(m.getIdMaleta()))
+            .collect(Collectors.groupingBy(
+                m -> vueloADestino.getOrDefault(maletaVueloActual.get(m.getIdMaleta()), ""),
+                Collectors.counting()
+            ));
+
         return SimulationStateDTO.builder()
             .diaActual(diaActual)
             .totalDias(params.getDiasSimulacion())
@@ -525,7 +541,7 @@ public class SimulationEngine {
             .metrica(metricas.isEmpty() ? null : metricas.get(metricas.size() - 1))
             .enEjecucion(enEjecucion)
             .finalizada(finalizada)
-            .aeropuertos(aeropuertos.stream().map(this::toAeropuertoDto).toList())
+            .aeropuertos(aeropuertos.stream().map(a -> toAeropuertoDto(a, maletasPorAlmacen, maletasPorDestino)).toList())
             .vuelos(vuelos.stream().map(v -> toVueloDto(v, plansByFlight, envioById)).toList())
             .envios(envios.stream().map(e -> toEnvioDto(e, false, latestPlanByEnvio.get(e.getIdEnvio()))).toList())
             .kpis(buildKpis())
@@ -565,9 +581,23 @@ public class SimulationEngine {
 
     public synchronized List<AeropuertoDTO> getAeropuertosEstado() {
         if (params == null) {
-            return dataLoaderService.getAeropuertos().stream().map(this::toAeropuertoDto).toList();
+            return dataLoaderService.getAeropuertos().stream()
+                .map(a -> toAeropuertoDto(a, Map.of(), Map.of())).toList();
         }
-        return aeropuertos.stream().map(this::toAeropuertoDto).toList();
+        Map<String, Long> maletasPorAlmacen = maletas.stream()
+            .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN && m.getUbicacionActual() != null)
+            .collect(Collectors.groupingBy(Maleta::getUbicacionActual, Collectors.counting()));
+        Map<String, String> vueloADestino = vuelos.stream()
+            .filter(v -> v.getDestino() != null)
+            .collect(Collectors.toMap(Vuelo::getCodigoVuelo, Vuelo::getDestino, (a, b) -> a));
+        Map<String, Long> maletasPorDestino = maletas.stream()
+            .filter(m -> m.getEstado() == EstadoMaleta.EN_VUELO)
+            .filter(m -> maletaVueloActual.containsKey(m.getIdMaleta()))
+            .collect(Collectors.groupingBy(
+                m -> vueloADestino.getOrDefault(maletaVueloActual.get(m.getIdMaleta()), ""),
+                Collectors.counting()
+            ));
+        return aeropuertos.stream().map(a -> toAeropuertoDto(a, maletasPorAlmacen, maletasPorDestino)).toList();
     }
 
     public synchronized List<VueloDTO> getVuelosEstado() {
@@ -1035,7 +1065,9 @@ public class SimulationEngine {
             .build();
     }
 
-    private AeropuertoDTO toAeropuertoDto(Aeropuerto airport) {
+    private AeropuertoDTO toAeropuertoDto(Aeropuerto airport,
+            Map<String, Long> maletasPorAlmacen,
+            Map<String, Long> maletasPorDestino) {
         int capacidad = airport.getCapacidadAlmacen();
         int ocupacion = airport.getOcupacionActual();
 
@@ -1074,6 +1106,8 @@ public class SimulationEngine {
             .maletasEnviadas(airport.getMaletasEnviadas())
             .ocupacionPromedio(ocupProm)
             .ocupacionMaxima(ocupMax)
+            .maletasEnAlmacenLocal(maletasPorAlmacen.getOrDefault(airport.getCodigoIATA(), 0L).intValue())
+            .maletasEnTransitoEntrantes(maletasPorDestino.getOrDefault(airport.getCodigoIATA(), 0L).intValue())
             .build();
     }
 

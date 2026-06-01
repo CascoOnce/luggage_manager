@@ -221,9 +221,7 @@ export default function TopBar({
           </div>
           <div style={s.timeLine}>
             <span style={{ ...s.timeVal, fontSize: 11, color: 'var(--muted)' }}>
-              {fechaSimulada
-                ? `${fechaSimulada}:${String(realElapsedSeconds % 60).padStart(2, '0')}`
-                : fmtElapsed(elapsedSeconds)}
+              {fechaSimulada || fmtElapsed(elapsedSeconds)}
             </span>
           </div>
         </div>
