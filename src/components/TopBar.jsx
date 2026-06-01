@@ -122,6 +122,7 @@ export default function TopBar({
   onIniciar,
   screen,
   hasSimulation,
+  colapsoPunto,
 }) {
   const wallClock = useWallClock()
   const isBackendRunning = backendState?.enEjecucion === true
@@ -140,6 +141,7 @@ export default function TopBar({
     { key: 'envios', label: 'ENVÍOS' },
     { key: 'dashboard', label: 'DASHBOARD' },
     { key: 'resultados', label: 'RESULTADOS' },
+    ...(colapsoPunto ? [{ key: 'colapso', label: '⚠ COLAPSO', alert: true }] : []),
   ]
 
   function isActiveTab(key) {
@@ -168,14 +170,15 @@ export default function TopBar({
         {tabs.map((tab) => {
           const active = isActiveTab(tab.key)
           const disabled = !hasSimulation && (tab.key === 'envios' || tab.key === 'dashboard')
+          const isAlert = tab.alert
           return (
             <button
               key={tab.key}
               disabled={disabled}
               style={{
                 ...s.tab,
-                color: active ? 'var(--text-bright)' : 'var(--muted)',
-                borderBottom: active ? '2px solid var(--blue)' : '2px solid transparent',
+                color: active ? (isAlert ? 'var(--red)' : 'var(--text-bright)') : (isAlert ? 'rgba(240,75,75,0.7)' : 'var(--muted)'),
+                borderBottom: active ? `2px solid ${isAlert ? 'var(--red)' : 'var(--blue)'}` : '2px solid transparent',
                 opacity: disabled ? 0.3 : 1,
                 cursor: disabled ? 'default' : 'pointer',
               }}

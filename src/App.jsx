@@ -7,6 +7,7 @@ import ConfigScreen from './screens/ConfigScreen.jsx'
 import EnviosScreen from './screens/EnviosScreen.jsx'
 import DashboardScreen from './screens/DashboardScreen.jsx'
 import ResultadosScreen from './screens/ResultadosScreen.jsx'
+import ColapsoScreen from './screens/ColapsoScreen.jsx'
 import DrawerAeropuerto from './drawers/DrawerAeropuerto.jsx'
 import DrawerVuelo from './drawers/DrawerVuelo.jsx'
 import AirportFilterPanel from './components/AirportFilterPanel.jsx'
@@ -41,6 +42,7 @@ export default function App() {
   const stepInProgressRef = useRef(false)
   const nextDayStateRef = useRef(null)
   const prefetchFiredRef = useRef(false)
+  const colapsoPuntoAlertedRef = useRef(false)
 
   const [pollingError, setPollingError] = useState(null)
 
@@ -184,6 +186,14 @@ export default function App() {
       stopAutoStep()
     }
   }, [backendState?.enEjecucion, backendState?.finalizada])
+
+  useEffect(() => {
+    if (backendState?.colapsoPunto && !colapsoPuntoAlertedRef.current) {
+      colapsoPuntoAlertedRef.current = true
+      setAutoStep(false)
+      clearInterval(autoStepRef.current)
+    }
+  }, [backendState?.colapsoPunto])
 
   useEffect(() => {
     if (autoStep) {
@@ -453,6 +463,7 @@ export default function App() {
   async function handleReset() {
     prefetchFiredRef.current = false
     nextDayStateRef.current = null
+    colapsoPuntoAlertedRef.current = false
     try {
       await api.resetSimulation()
     } catch (err) {
@@ -559,7 +570,31 @@ export default function App() {
         onIniciar={onIniciar}
         screen={screen}
         hasSimulation={Boolean(backendState)}
+        colapsoPunto={backendState?.colapsoPunto ?? null}
       />
+      {backendState?.colapsoPunto && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+          height: 32, padding: '0 20px',
+          background: 'rgba(240,75,75,0.12)',
+          borderBottom: '1px solid rgba(240,75,75,0.35)',
+          fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)',
+        }}>
+          <span style={{ fontWeight: 700 }}>⚠ COLAPSO DETECTADO</span>
+          <span style={{ color: 'rgba(240,75,75,0.4)' }}>|</span>
+          <span>DÍA {backendState.colapsoPunto.dia}</span>
+          <span style={{ color: 'rgba(240,75,75,0.4)' }}>|</span>
+          <span>SLA vencido: {backendState.colapsoPunto.pctSlaVencido}%</span>
+          <span style={{ color: 'rgba(240,75,75,0.4)' }}>|</span>
+          <span>Aeropuerto crítico: <strong>{backendState.colapsoPunto.aeropuertoMasCritico}</strong></span>
+          <button
+            onClick={() => handleNavigate('colapso')}
+            style={{ marginLeft: 'auto', background: 'transparent', border: '1px solid rgba(240,75,75,0.4)', color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 10, padding: '2px 8px', borderRadius: 3, cursor: 'pointer', letterSpacing: 1 }}
+          >
+            VER REPORTE →
+          </button>
+        </div>
+      )}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative', minHeight: 0 }}>
         {/* ── OPERACIONES (main map view) ─────────────────────────────── */}
         {/* ── OPERACIONES (main map view) ─────────────────────────────── */}
@@ -680,6 +715,13 @@ export default function App() {
               <ConfigScreen
                 onCancel={handleCancelConfig}
                 onSimulationStarted={handleSimulationStarted}
+              />
+            )}
+            {screen === 'colapso' && (
+              <ColapsoScreen
+                simState={simState}
+                theme={theme}
+                onBack={handleBackToMain}
               />
             )}
           </div>
