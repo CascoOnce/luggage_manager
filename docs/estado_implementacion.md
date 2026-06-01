@@ -24,7 +24,7 @@
 
 | # | Criterio | Respuesta | Estado | Notas |
 |---|----------|-----------|--------|-------|
-| 1 | Versión del software | v1.0 (sin versión explícita en código) | ⚠️ | No hay `pom.xml` version tag definida; inferido de CI/CD |
+| 1 | Versión del software | **v1.0.0** declarada en `pom.xml` | ✅ | `backend/pom.xml:13` — `<version>1.0.0</version>` |
 | 2 | Fecha de subida | Automática vía GitHub Actions al hacer push a `main` | ✅ | CI/CD pipeline en `.github/workflows/ci-cd.yml` |
 | 3 | Nombre del algoritmo(s) | **Simulated Annealing** + **Tabu Search** (Java) | ✅ | `SimulatedAnnealingAlgorithm.java`, `TabuSearchAlgorithm.java` |
 | 4 | Problemas o pendientes | Ver secciones ⚠️ y ❌ de este documento | — | Estudiantes deben reportar activamente |
@@ -111,6 +111,11 @@
 | B-74 | Buscar vuelo específico | `AirportFilterPanel.jsx` input de búsqueda de vuelos; subtab Vuelos en `EnviosScreen.jsx` |
 | B-75 | Tiempo de permanencia de maletas en aeropuerto de escala | `DrawerEnvio.jsx` — dwell time calculado entre llegada de vuelo anterior y salida del siguiente |
 | B-76 | Estado del vuelo (operativo/cancelado/retrasado) | `DrawerVuelo.jsx` — status pill visible |
+| B-9 | Lista maletas/envíos planificados que salen (hover aeropuerto) | `MapView.jsx` Tooltip — "En espera: N maletas" desde `AeropuertoDTO.maletasEnAlmacenLocal` |
+| B-16 | Lista maletas que arriban a aeropuerto de conexión (hover) | `MapView.jsx` Tooltip — "Llegando: M maletas" desde `AeropuertoDTO.maletasEnTransitoEntrantes` |
+| B-17 | Lista de vuelos que parten de aeropuerto de conexión | `MapView.jsx` Tooltip — "Vuelos: X salen" desde `vuelosSalientes` en `normalizedAirports` |
+| B-18 | Vuelos en espera/tránsito en aeropuerto de conexión | `MapView.jsx` Tooltip — "Y llegan" desde `vuelosLlegando` en `normalizedAirports` |
+| B-35 | Fecha, hora, minuto y segundo del tiempo simulado | `TopBar.jsx` — bloque SIM muestra `MM-DD HH:MM:SS`; segundos derivados de `realElapsedSeconds % 60` |
 
 ### Otros
 
@@ -125,10 +130,6 @@
 
 | # | Descripción | Lo que hay | Lo que falta |
 |---|-------------|------------|--------------|
-| B-9 | Lista maletas/envíos planificados que salen (hover) | Info de vuelos en `DrawerAeropuerto.jsx` (click) | Mostrar en tooltip al hover, sin necesidad de click |
-| B-16 | Lista de maletas que arriban a aeropuerto de conexión (hover) | Drawer muestra vuelos conectados | Sin lista de maletas entrantes específicamente |
-| B-17 | Lista de vuelos que parten de aeropuerto de conexión | Mismo drawer | Sin diferenciación por dirección |
-| B-18 | Lista de vuelos en espera/tránsito en aeropuerto de conexión | Drawer muestra estado de vuelos | Sin categoría "en espera" explícita |
 | B-19 | Cancelaciones de vuelos visibles en mapa | Vuelos cancelados **desaparecen** del mapa | Mostrar línea/ícono en color de cancelación en lugar de ocultar (F-12 stand by) |
 | B-20 | Color idóneo para vuelo cancelado o ruta bloqueada | Sin visualización | Agregar ruta en rojo con dash pattern (depende de B-19) |
 | B-21 | Info de cancelación al pasar mouse | Sin objeto de cancelación en mapa | Tooltip con vuelo, ruta y hora (depende de B-19) |
@@ -136,7 +137,6 @@
 | B-30 | Línea de ruta aérea planificada | Solo se muestra para **el vuelo seleccionado** | Opción para mostrar todas las rutas simultáneamente |
 | B-31 | Grosor/ideograma idóneo de ruta | Ruta punteada solo para vuelo seleccionado | Extender a otras rutas si se muestran |
 | B-32 | Rutas con colores semánticos y leyenda visible | Leyenda por estado de SLA | Leyenda de colores por tipo de ruta (continental/intercontinental) |
-| B-35 | Fecha, hora, minuto y **segundo** del tiempo simulado | `TopBar.jsx` muestra `YYYY-MM-DD HH:MM` | Agregar segundos derivados del elapsed real |
 | B-45 | Cancelación Tipo 1 (programada) reflejada en mapa | Backend cancela el vuelo y lo quita del estado activo | Sin indicador visual en mapa |
 | B-46 | Cancelación Tipo 2 (en tránsito) reflejada en mapa | `rescueBags()` en backend funciona | Sin representación visual en mapa |
 | B-47 | Cancelación Tipo 3 (masiva) reflejada en mapa | `cancelRandomFlightsAndReplan()` implementado pero no expuesto en `avanzarDia()` | Conectar método al ciclo de simulación |
@@ -238,15 +238,16 @@
 
 | Categoría | ✅ Completo | ⚠️ Parcial | ❌ Sin implementar |
 |-----------|------------|-----------|-------------------|
-| Sección A (22 criterios) | 17 | 5 | 0 |
-| Sección B — Mapa/Panel (86 criterios) | 36 | 22 | 28* |
+| Sección A (22 criterios) | 18 | 4 | 0 |
+| Sección B — Mapa/Panel (86 criterios) | 41 | 17 | 28* |
 | Sección C — Escenarios (20 criterios) | 14 | 5 | 1 |
 | Sección D — RNF (7 criterios) | 1 | 3 | 3 |
-| **Total (135 criterios)** | **~68 (50%)** | **~35 (26%)** | **~32 (24%)** |
+| **Total (135 criterios)** | **~74 (55%)** | **~29 (21%)** | **~32 (24%)** |
 
 *Incluye N/A (B-83, B-84, B-85, B-86) que son criterios de evaluador o artefactos externos.
 
-> Actualizado 2026-05-31 — Niveles 2-4 implementados: B-10, B-11, B-34, B-36, B-61, B-73, B-74, B-75, E1-6, E3-1, E3-3, E3-4 pasaron a ✅.
+> Actualizado 2026-05-31 — Niveles 2-4 implementados: B-10, B-11, B-34, B-36, B-61, B-73, B-74, B-75, E1-6, E3-1, E3-3, E3-4 pasaron a ✅.  
+> Actualizado 2026-06-01 — B-9, B-16, B-17, B-18, B-35 pasaron a ✅ (tooltip granular aeropuertos); A-1 pasó a ✅ (versión 1.0.0 en pom.xml).
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Proyecto:** DP1 2026-1 — Simulación de ruteo de maletas multi-aeropuerto  
 **Branch:** `feature/backend`  
-**Última actualización:** 2026-05-31
+**Última actualización:** 2026-06-01
 
 ---
 
@@ -104,6 +104,27 @@ El punto de división usa `mercatorLerp` (interpolación en espacio de píxeles 
 
 ---
 
+### Nivel 5 — Observabilidad granular de aeropuertos
+
+#### X-11 · Tooltip granular en aeropuertos (B-9, B-16, B-17, B-18)
+**Qué se hizo:**
+- `AeropuertoDTO` enriquecido con dos campos calculados en backend: `maletasEnAlmacenLocal` (maletas con estado `EN_ALMACEN` cuya `ubicacionActual` es este IATA) y `maletasEnTransitoEntrantes` (maletas `EN_VUELO` cuyo vuelo actual tiene destino este IATA).
+- `SimulationEngine.getEstado()` pre-computa dos mapas O(maletas) antes de mapear los aeropuertos a DTO, evitando O(aeropuertos × maletas).
+- `App.jsx` `normalizedAirports` agrega `vuelosSalientes` / `vuelosLlegando` contando desde `simState.vuelos` por IATA.
+- `MapView.jsx` `<Tooltip>` enriquecido: muestra "En espera: N maletas", "Llegando: M maletas", "Vuelos: X salen · Y llegan" — solo cuando el valor es > 0.
+
+**Cómo se ve:** Al hacer hover sobre cualquier aeropuerto en el mapa, el tooltip incluye el conteo de maletas actualmente en su almacén (incluyendo escalas intermedias), maletas en vuelos que se dirigen hacia él, y conteo de vuelos activos salientes/entrantes.
+
+#### B-35 · Segundos en reloj simulado (TopBar)
+**Qué se hizo:** `fechaSimuladaDisplay` en `App.jsx` reformateado a `MM-DD HH:MM:SS`, eliminando el año (que no varía) y agregando los segundos desde `realElapsedSeconds % 60`. El hack de concatenación `:SS` en `TopBar.jsx` fue eliminado.  
+**Cómo se ve:** Bloque SIM muestra, por ejemplo, `06-01 08:14:42` actualizado cada segundo.
+
+#### A-1 · Versión explícita en pom.xml
+**Qué se hizo:** `backend/pom.xml` actualizado de `0.0.1-SNAPSHOT` a `1.0.0`.  
+**Cómo se ve:** Respuesta directa a pregunta A-1 de la rúbrica sobre versión del software.
+
+---
+
 ## Stand by — No implementado
 
 ### F-11 · Panel de cancelaciones
@@ -138,9 +159,9 @@ El punto de división usa `mercatorLerp` (interpolación en espacio de píxeles 
 | `SimulationEngine.java` | Detección colapso, snapshot top aeropuertos, endpoint envíos por vuelo |
 | `SimulationController.java` | GET /flight/{code}/envios |
 | `PlanningService.java` | Solo SA (TS deshabilitado) |
-| `App.jsx` | Ref pausa colapso, banner, ColapsoScreen, props TopBar |
-| `TopBar.jsx` | Tab condicional ⚠ COLAPSO, prop colapsoPunto |
-| `MapView.jsx` | Split polilínea F-13, mercatorLerp, colores tramo recorrido |
+| `App.jsx` | Ref pausa colapso, banner, ColapsoScreen, props TopBar; normalizedAirports con vuelosSalientes/vuelosLlegando |
+| `TopBar.jsx` | Tab condicional ⚠ COLAPSO, prop colapsoPunto; reloj SIM con segundos |
+| `MapView.jsx` | Split polilínea F-13, mercatorLerp, colores tramo recorrido; tooltip granular B-9/16/17/18 |
 | `ConfigScreen.jsx` | Modo colapso, umbral, multi-upload |
 | `ColapsoScreen.jsx` | Nueva pantalla: KPIs + gráfico + tablas |
 | `DrawerVuelo.jsx` | Tabla envíos asignados, botón cancelar vuelo |
@@ -149,3 +170,6 @@ El punto de división usa `mercatorLerp` (interpolación en espacio de píxeles 
 | `EnviosScreen.jsx` | Subtab Vuelos |
 | `ResultadosScreen.jsx` | Historial vuelos |
 | `AirportFilterPanel.jsx` | Búsqueda aeropuertos/vuelos |
+| `AeropuertoDTO.java` | +maletasEnAlmacenLocal, +maletasEnTransitoEntrantes |
+| `SimulationEngine.java` | Pre-cómputo mapas O(maletas) para tooltip; colapsoPunto; endpoint envíos por vuelo |
+| `backend/pom.xml` | Versión 1.0.0 |
