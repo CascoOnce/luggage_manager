@@ -201,17 +201,46 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
     return () => map.off('zoom zoomend move moveend', update)
   }, [map])
 
-  // Draw route line for selected flight even if it's no longer in activeFlights
+  // Draw route line for selected flight even if it's no longer in activeFlights.
+  // Split into traveled (gray) and remaining (blue dashed) segments using fraction.
   const selectedRouteEl = useMemo(() => {
     if (!selectedFlightData) return null
     const a = apIdx[selectedFlightData.origin], b = apIdx[selectedFlightData.destination]
     if (!a || !b) return null
+    const fraction = selectedFlightData.fraction ?? 0
+    const color = theme === 'light' ? '#0969da' : '#4d9fff'
+    if (fraction <= 0) {
+      return (
+        <Polyline
+          key={`route-${selectedFlightData.id}-rem`}
+          positions={[[a.lat, a.lng], [b.lat, b.lng]]}
+          pathOptions={{ color, weight: 1.5, opacity: 0.7, dashArray: '6 5' }}
+        />
+      )
+    }
+    const mid = [a.lat + (b.lat - a.lat) * fraction, a.lng + (b.lng - a.lng) * fraction]
+    if (fraction >= 1) {
+      return (
+        <Polyline
+          key={`route-${selectedFlightData.id}-trav`}
+          positions={[[a.lat, a.lng], [b.lat, b.lng]]}
+          pathOptions={{ color: '#888', weight: 1.5, opacity: 0.35 }}
+        />
+      )
+    }
     return (
-      <Polyline
-        key={`route-${selectedFlightData.id}`}
-        positions={[[a.lat, a.lng], [b.lat, b.lng]]}
-        pathOptions={{ color: theme === 'light' ? '#0969da' : '#4d9fff', weight: 1.5, opacity: 0.7, dashArray: '6 5' }}
-      />
+      <>
+        <Polyline
+          key={`route-${selectedFlightData.id}-trav`}
+          positions={[[a.lat, a.lng], mid]}
+          pathOptions={{ color: '#888', weight: 1.5, opacity: 0.35 }}
+        />
+        <Polyline
+          key={`route-${selectedFlightData.id}-rem`}
+          positions={[mid, [b.lat, b.lng]]}
+          pathOptions={{ color, weight: 1.5, opacity: 0.7, dashArray: '6 5' }}
+        />
+      </>
     )
   }, [selectedFlightData, apIdx, theme])
 

@@ -1,6 +1,7 @@
 package com.tasf.backend.simulation;
 
 import com.tasf.backend.domain.Aeropuerto;
+import com.tasf.backend.domain.ColapsoPunto;
 import com.tasf.backend.domain.Cancelacion;
 import com.tasf.backend.domain.Escala;
 import com.tasf.backend.domain.Envio;
@@ -66,6 +67,8 @@ public class SimulationEngine {
     private boolean enEjecucion;
     private boolean finalizada;
     private List<String> logOperaciones = new ArrayList<>();
+
+    private ColapsoPunto colapsoPunto = null;
 
     private final Deque<String> logBuffer = new ArrayDeque<>();
     private final Map<String, String> maletaVueloActual = new HashMap<>();
@@ -186,6 +189,29 @@ public class SimulationEngine {
         }
         DeliveryStats deliveryStats = processDeliveries(envioById, airportByCode, maletasByEnvio);
         checkSlaViolations();
+
+        if (Boolean.TRUE.equals(params.getEsColapso()) && colapsoPunto == null) {
+            long retrasados = envios.stream()
+                .filter(e -> e.getEstado() == EstadoEnvio.RETRASADO).count();
+            if (!envios.isEmpty()) {
+                double pct = retrasados * 100.0 / envios.size();
+                if (pct >= params.getUmbralColapsoPorcentajeSlaVencido()) {
+                    String aerMasCritico = aeropuertos.stream()
+                        .filter(a -> a.getCapacidadAlmacen() > 0)
+                        .max(Comparator.comparingDouble(a ->
+                            (double) a.getOcupacionActual() / a.getCapacidadAlmacen()))
+                        .map(Aeropuerto::getCodigoIATA)
+                        .orElse("N/A");
+                    colapsoPunto = ColapsoPunto.builder()
+                        .dia(diaActual)
+                        .pctSlaVencido(Math.round(pct * 10.0) / 10.0)
+                        .aeropuertoMasCritico(aerMasCritico)
+                        .build();
+                    addOperationLog(String.format(
+                        "[COLAPSO] Operación colapsó en Día %d — SLA vencido: %.1f%%", diaActual, pct));
+                }
+            }
+        }
 
         throughputHistorial.add(ThroughputDiaDTO.builder()
             .dia(diaActual)
@@ -465,6 +491,7 @@ public class SimulationEngine {
                     .build())
                 .throughputHistorial(List.of())
                 .logOperaciones(List.of())
+                .colapsoPunto(null)
                 .build();
         }
 
@@ -496,6 +523,7 @@ public class SimulationEngine {
             .kpis(buildKpis())
             .throughputHistorial(List.copyOf(throughputHistorial))
             .logOperaciones(List.copyOf(logOperaciones))
+            .colapsoPunto(colapsoPunto)
             .build();
     }
 
@@ -516,6 +544,7 @@ public class SimulationEngine {
         this.logBuffer.clear();
         this.maletaVueloActual.clear();
         this.throughputHistorial.clear();
+        this.colapsoPunto = null;
     }
 
     public synchronized boolean estaInicializada() {
