@@ -202,10 +202,18 @@ public class SimulationEngine {
                             (double) a.getOcupacionActual() / a.getCapacidadAlmacen()))
                         .map(Aeropuerto::getCodigoIATA)
                         .orElse("N/A");
+                    List<String> topAps = aeropuertos.stream()
+                        .filter(a -> a.getCapacidadAlmacen() > 0)
+                        .sorted(Comparator.comparingDouble((Aeropuerto a) ->
+                            (double) a.getOcupacionActual() / a.getCapacidadAlmacen()).reversed())
+                        .limit(5)
+                        .map(Aeropuerto::getCodigoIATA)
+                        .collect(Collectors.toList());
                     colapsoPunto = ColapsoPunto.builder()
                         .dia(diaActual)
                         .pctSlaVencido(Math.round(pct * 10.0) / 10.0)
                         .aeropuertoMasCritico(aerMasCritico)
+                        .topAeropuertos(topAps)
                         .build();
                     addOperationLog(String.format(
                         "[COLAPSO] Operación colapsó en Día %d — SLA vencido: %.1f%%", diaActual, pct));
