@@ -185,7 +185,7 @@ function mercatorLerp(map, originAp, destAp, fraction) {
 
 function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData, setSelectedFlight, theme }) {
   const map = useMap()
-  const [, forceUpdate] = useState(0)
+  const [tick, forceUpdate] = useState(0)
   const iconCache = useRef(new Map())
 
   // Invalidate icon cache when theme changes so colors rebuild correctly.
@@ -218,22 +218,25 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
         />
       )
     }
-    const mid = [a.lat + (b.lat - a.lat) * fraction, a.lng + (b.lng - a.lng) * fraction]
+    const travColor = theme === 'light' ? '#64748b' : '#ffffff'
     if (fraction >= 1) {
       return (
         <Polyline
           key={`route-${selectedFlightData.id}-trav`}
           positions={[[a.lat, a.lng], [b.lat, b.lng]]}
-          pathOptions={{ color: '#888', weight: 1.5, opacity: 0.35 }}
+          pathOptions={{ color: travColor, weight: 2, opacity: 0.6 }}
         />
       )
     }
+    // Use mercatorLerp (pixel-space interpolation) so the split matches the plane icon position
+    const mid = mercatorLerp(map, a, b, fraction)
+    if (!mid) return null
     return (
       <>
         <Polyline
           key={`route-${selectedFlightData.id}-trav`}
           positions={[[a.lat, a.lng], mid]}
-          pathOptions={{ color: '#888', weight: 1.5, opacity: 0.35 }}
+          pathOptions={{ color: travColor, weight: 2, opacity: 0.6 }}
         />
         <Polyline
           key={`route-${selectedFlightData.id}-rem`}
@@ -242,7 +245,7 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
         />
       </>
     )
-  }, [selectedFlightData, apIdx, theme])
+  }, [selectedFlightData, apIdx, theme, tick, map])
 
   return (
     <>
