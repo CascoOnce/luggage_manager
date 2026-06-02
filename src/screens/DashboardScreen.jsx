@@ -117,6 +117,7 @@ export default function DashboardScreen({ simState }) {
 
   const airports = useMemo(() => normalizeAirports(simState), [simState])
   const flights = useMemo(() => normalizeFlights(simState), [simState])
+  const envios = useMemo(() => simState?.envios || [], [simState])
 
   const throughput = useMemo(() => {
     if (Array.isArray(simState?.throughputHistorial)) {
@@ -221,14 +222,17 @@ export default function DashboardScreen({ simState }) {
         ? aps.reduce((acc, airport) => acc + (airport.occupationPct || 0), 0) / aps.length
         : 0
 
-      return {
-        continent,
-        airports: aps.length,
-        flights: vuelos.length,
-        ocupProm,
-      }
+      const enviosCont = envios.filter((e) => {
+        const origCont = index[e.aeropuertoOrigen]?.continent
+        return origCont === continent
+      })
+      const slaOkCont = enviosCont.filter((e) => e.estado === 'ENTREGADO').length
+      const slaPct = enviosCont.length === 0 ? null
+        : Math.round((slaOkCont / enviosCont.length) * 100)
+
+      return { continent, airports: aps.length, flights: vuelos.length, ocupProm, slaPct }
     })
-  }, [airports, flights])
+  }, [airports, flights, envios])
 
   const airportRows = useMemo(() => {
     return [...airports].sort((a, b) => (b.occupationPct || 0) - (a.occupationPct || 0))
@@ -242,6 +246,25 @@ export default function DashboardScreen({ simState }) {
     { label: 'SLA vencidos', value: String(kpis.slaVencidos), color: kpis.slaVencidos > 0 ? 'var(--red)' : 'var(--muted)' },
     { label: 'Ocup. promedio', value: `${kpis.ocupPromedio.toFixed(1)}%`, color: 'var(--text-bright)' },
   ]
+
+  const currentDayPlugin = useMemo(() => ({
+    id: 'currentDayLine',
+    afterDraw(chart) {
+      const idx = throughput.findIndex((t) => t.label === `D${simState?.diaActual}`)
+      if (idx < 0) return
+      const { ctx, chartArea, scales } = chart
+      const x = scales.x.getPixelForIndex(idx)
+      ctx.save()
+      ctx.strokeStyle = 'rgba(255,200,0,0.55)'
+      ctx.setLineDash([4, 4])
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.moveTo(x, chartArea.top)
+      ctx.lineTo(x, chartArea.bottom)
+      ctx.stroke()
+      ctx.restore()
+    },
+  }), [simState?.diaActual, throughput])
 
   return (
     <div style={{ height: '100%', display: 'grid', gridTemplateRows: '64px 1fr 180px', gridTemplateColumns: '1fr 1fr 1fr', minHeight: 0 }}>
@@ -266,7 +289,7 @@ export default function DashboardScreen({ simState }) {
       <section style={{ gridColumn: '1 / span 2', borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: 14, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 10 }}>Throughput diario</div>
         <div style={{ minHeight: 0, flex: 1 }}>
-          <Bar data={chartData} options={chartOptions} />
+          <Bar data={chartData} options={chartOptions} plugins={[currentDayPlugin]} />
         </div>
         <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -295,6 +318,17 @@ export default function DashboardScreen({ simState }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}><span style={{ color: 'var(--muted)', fontSize: 13 }}>Aeropuertos</span><span style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>{item.airports}</span></div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}><span style={{ color: 'var(--muted)', fontSize: 13 }}>Vuelos</span><span style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>{item.flights}</span></div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--muted)', fontSize: 13 }}>Ocup.prom</span><span style={{ fontFamily: 'var(--mono)', fontSize: 13, color }}>{item.ocupProm.toFixed(1)}%</span></div>
+              {item.slaPct !== null && (
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--muted)', fontSize: 13 }}>Cumpl. SLA</span>
+                  <span style={{
+                    fontFamily: 'var(--mono)', fontSize: 13,
+                    color: item.slaPct >= 85 ? 'var(--green)' : item.slaPct >= 70 ? 'var(--amber)' : 'var(--red)'
+                  }}>
+                    {item.slaPct}%
+                  </span>
+                </div>
+              )}
             </div>
           )
         })}
