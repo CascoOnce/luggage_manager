@@ -102,7 +102,7 @@ jobs:
           echo "Waiting for service to start..."
           for i in $(seq 1 12); do
             sleep 5
-            if sudo systemctl is-active --quiet luggage-manager; then
+            if systemctl is-active --quiet luggage-manager; then
               echo "Service is running after $((i * 5))s"
               exit 0
             fi
