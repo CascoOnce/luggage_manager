@@ -34,11 +34,13 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
   const [loading, setLoading] = useState(false)
   const [loadingElapsed, setLoadingElapsed] = useState(0)
   const [error, setError] = useState(null)
-  const [uploadFile, setUploadFile] = useState(null)
+  // uploadFile: array of { file: File, status: 'pending'|'in_progress'|'done'|'error', error?: string }
+  const [uploadFile, setUploadFile] = useState([])
   const [uploadFileError, setUploadFileError] = useState(null)
   const [uploadLoading, setUploadLoading] = useState(false)
   const [uploadResult, setUploadResult] = useState(null)
   const [uploadError, setUploadError] = useState(null)
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, currentFile: '' })
   const fileInputRef = useRef(null)
 
   useEffect(() => {
@@ -74,17 +76,37 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
     setUploadResult(null)
     setUploadError(null)
     if (files.length === 0) {
-      setUploadFile(null)
+      setUploadFile([])
       setUploadFileError(null)
       return
     }
-    const invalid = files.find(f => !FILE_PATTERN.test(f.name))
-    if (invalid) {
-      setUploadFile(null)
-      setUploadFileError(`Nombre inválido: ${invalid.name}. Debe ser: _envios_XXXX_.txt`)
+    // Validación estricta de extensión .txt
+    const notTxt = files.find(f => !f.name.toLowerCase().endsWith('.txt'))
+    if (notTxt) {
+      setUploadFile([])
+      setUploadFileError('Solo se aceptan archivos .txt')
       return
     }
-    setUploadFile(files)
+
+    // Separar archivos válidos e inválidos según el patrón de nombre
+    const validFiles = files.filter(f => FILE_PATTERN.test(f.name))
+    const invalidFiles = files.filter(f => !FILE_PATTERN.test(f.name))
+
+    if (validFiles.length === 0) {
+      setUploadFile([])
+      setUploadFileError(`Ningún archivo válido. Debe ser: _envios_XXXX_.txt`)
+      return
+    }
+
+    setUploadFile(validFiles.map(f => ({ file: f, status: 'pending', error: null })))
+    setUploadFileError(invalidFiles.length > 0
+      ? `Se ignoraron ${invalidFiles.length} archivo(s): ${invalidFiles.map(f => f.name).join(', ')}`
+      : null
+    )
+  }
+
+  function removeSelectedFile(index) {
+    setUploadFile((prev) => prev.filter((_, i) => i !== index))
     setUploadFileError(null)
   }
 
@@ -93,25 +115,61 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
     setUploadLoading(true)
     setUploadError(null)
     setUploadResult(null)
+    setUploadProgress({ current: 0, total: uploadFile.length, currentFile: '' })
+
+    const initialFiles = [...uploadFile]
     let totalCount = 0
     const errors = []
-    for (const file of uploadFile) {
+    let processed = 0
+
+    for (let i = 0; i < initialFiles.length; i++) {
+      const item = initialFiles[i]
+      // mark in progress
+      setUploadFile((prev) => {
+        const copy = prev.slice()
+        if (copy[i]) copy[i] = { ...copy[i], status: 'in_progress', error: null }
+        return copy
+      })
+      setUploadProgress({ current: processed, total: initialFiles.length, currentFile: item.file.name })
       try {
-        const result = await api.uploadEnvios(file)
+        const result = await api.uploadEnvios(item.file)
         totalCount += result.count ?? 0
+        processed += 1
+        // mark done
+        setUploadFile((prev) => {
+          const copy = prev.slice()
+          if (copy[i]) copy[i] = { ...copy[i], status: 'done' }
+          return copy
+        })
+        setUploadProgress({ current: processed, total: initialFiles.length, currentFile: '' })
       } catch (err) {
-        errors.push(`${file.name}: ${err instanceof Error ? err.message : String(err)}`)
+        processed += 1
+        const msg = err instanceof Error ? err.message : String(err)
+        errors.push(`${item.file.name}: ${msg}`)
+        setUploadFile((prev) => {
+          const copy = prev.slice()
+          if (copy[i]) copy[i] = { ...copy[i], status: 'error', error: msg }
+          return copy
+        })
+        setUploadProgress({ current: processed, total: initialFiles.length, currentFile: '' })
       }
     }
-    setUploadFile(null)
+
+    const totalFiles = initialFiles.length
+    // reset input and selection
     if (fileInputRef.current) fileInputRef.current.value = ''
+    // set results / errors
     if (errors.length > 0) {
       setUploadError(errors.join(' | '))
     }
     if (totalCount > 0 || errors.length === 0) {
-      setUploadResult({ count: totalCount, files: uploadFile.length })
+      setUploadResult({ count: totalCount, files: totalFiles })
     }
+
+    // clear selection after upload completes
+    setUploadFile([])
     setUploadLoading(false)
+    setUploadProgress({ current: 0, total: 0, currentFile: '' })
   }
 
   async function handleSimular() {
@@ -241,14 +299,55 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
               </div>
             )}
 
-            {uploadFile && !uploadFileError && (
+            {uploadFile && uploadFile.length > 0 && !uploadFileError && (
               <div style={{ marginTop: 8 }}>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
-                  {uploadFile.length === 1 ? uploadFile[0].name : `${uploadFile.length} archivos seleccionados`}
-                </div>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: 160, overflowY: 'auto' }}>
+                  {uploadFile.map((item, idx) => {
+                    const name = item.file.name
+                    const ext = name.split('.').pop() || ''
+                    const status = item.status || 'pending'
+                    const statusColor = status === 'pending' ? 'var(--muted)' : status === 'in_progress' ? 'var(--blue)' : status === 'done' ? 'var(--green)' : 'var(--red)'
+                    return (
+                      <li key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 6, marginBottom: 6 }}>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                          <span style={{ width: 10, height: 10, borderRadius: '50%', background: statusColor, display: 'inline-block' }} />
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)' }}>{name}</div>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+                              <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', marginRight: 6 }}>{ext}</span>
+                              {status === 'pending' && 'Pendiente'}{status === 'in_progress' && 'En curso'}{status === 'done' && 'Completado'}{status === 'error' && `Error: ${item.error}`}
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <button
+                            onClick={() => removeSelectedFile(idx)}
+                            disabled={uploadLoading || loading}
+                            title="Eliminar"
+                            style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: uploadLoading || loading ? 'not-allowed' : 'pointer' }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+
+                {uploadLoading && uploadProgress.total > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
+                      Subiendo {uploadProgress.current}/{uploadProgress.total} {uploadProgress.currentFile ? `· ${uploadProgress.currentFile}` : ''}
+                    </div>
+                    <div style={{ width: '100%', height: 8, background: 'rgba(255,255,255,0.04)', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.round((uploadProgress.current / Math.max(1, uploadProgress.total)) * 100)}%`, height: '100%', background: 'var(--blue)', transition: 'width 300ms' }} />
+                    </div>
+                  </div>
+                )}
+
                 <button
                   onClick={handleUpload}
-                  disabled={uploadLoading || loading}
+                  disabled={uploadLoading || loading || uploadFile.length === 0}
                   style={{
                     width: '100%',
                     padding: '7px 12px',
@@ -261,6 +360,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
                     letterSpacing: 1,
                     cursor: uploadLoading || loading ? 'not-allowed' : 'pointer',
                     opacity: uploadLoading || loading ? 0.5 : 1,
+                    marginTop: 8,
                   }}
                 >
                   {uploadLoading ? 'Subiendo...' : 'Subir'}
