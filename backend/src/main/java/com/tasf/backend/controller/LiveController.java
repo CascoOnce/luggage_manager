@@ -26,7 +26,11 @@ public class LiveController {
         if (from == null || from.isBlank()) {
             fromDateTime = LocalDateTime.now();
         } else {
-            fromDateTime = LocalDateTime.parse(from);
+            try {
+                fromDateTime = LocalDateTime.parse(from);
+            } catch (java.time.format.DateTimeParseException e) {
+                return ResponseEntity.badRequest().build();
+            }
         }
         return ResponseEntity.ok(liveService.getLiveState(fromDateTime));
     }

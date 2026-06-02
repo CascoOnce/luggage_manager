@@ -42,7 +42,7 @@ public class LiveService {
         List<LiveAeropuertoDTO> aeropuertoDTOs = new ArrayList<>();
         for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
             long pending = pendingByIata.getOrDefault(a.getCodigoIATA(), 0L);
-            int maletasPendientes = (int) pending;
+            int maletasPendientes = (int) Math.min(pending, Integer.MAX_VALUE);
 
             double ocupacionPct = 0.0;
             if (a.getCapacidadAlmacen() > 0) {
@@ -89,13 +89,25 @@ public class LiveService {
             if (!overnight) {
                 // Normal flight: in-flight if depMin <= nowMin && arrMin >= nowMin
                 boolean inFlight = depMin <= nowMin && arrMin >= nowMin;
-                // Departing soon: depMin in [nowMin, endMin]
-                boolean departingSoon = depMin >= nowMin && depMin <= endMin;
+                // Departing soon: check current-day window and next-day spillover
+                boolean departingSoon;
+                if (endMin <= 1440) {
+                    departingSoon = depMin >= nowMin && depMin <= endMin;
+                } else {
+                    // window crosses midnight
+                    departingSoon = (depMin >= nowMin) || (depMin <= endMin - 1440);
+                }
                 include = inFlight || departingSoon;
             } else {
                 // Overnight: active if nowMin >= depMin OR nowMin < arrMin, or departing soon
                 boolean activeOvernight = nowMin >= depMin || nowMin < arrMin;
-                boolean departingSoon = depMin >= nowMin && depMin <= endMin;
+                boolean departingSoon;
+                if (endMin <= 1440) {
+                    departingSoon = depMin >= nowMin && depMin <= endMin;
+                } else {
+                    // window crosses midnight
+                    departingSoon = (depMin >= nowMin) || (depMin <= endMin - 1440);
+                }
                 include = activeOvernight || departingSoon;
             }
 
