@@ -53,7 +53,6 @@ export default function App() {
   const liveApplyRef = useRef(null)
   const liveWindowStartRef = useRef(null)
   const liveNextStateRef = useRef(null)
-  const liveScheduleRef = useRef(null)
 
   const [autoStep, setAutoStep] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
@@ -187,7 +186,7 @@ export default function App() {
       stopPolling()
       stopLive()
     }
-  }, [stopPolling, stopLive])
+  }, [stopPolling]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (backendState?.enEjecucion && !backendState?.finalizada) {
@@ -538,7 +537,7 @@ export default function App() {
     return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
   }
 
-  const stopLive = useCallback(() => {
+  function stopLive() {
     clearTimeout(livePollingRef.current)
     clearTimeout(liveApplyRef.current)
     livePollingRef.current = null
@@ -546,9 +545,9 @@ export default function App() {
     liveNextStateRef.current = null
     liveWindowStartRef.current = null
     setLiveState(null)
-  }, [])
+  }
 
-  const scheduleLiveTimers = useCallback(() => {
+  function scheduleLiveTimers() {
     clearTimeout(livePollingRef.current)
     clearTimeout(liveApplyRef.current)
 
@@ -570,21 +569,19 @@ export default function App() {
         getLiveState(toLocalISO(nextWindowStart)).then(setLiveState).catch(console.error)
       }
       liveNextStateRef.current = null
-      liveScheduleRef.current?.()
+      scheduleLiveTimers()
     }, 60 * 60 * 1000)
-  }, [])
-  liveScheduleRef.current = scheduleLiveTimers
+  }
 
-  const startLive = useCallback(() => {
+  function startLive() {
     stopLive()
-
     const now = new Date()
     liveWindowStartRef.current = now
-
     getLiveState(toLocalISO(now)).then(setLiveState).catch((err) => console.error('Live fetch error:', err))
     scheduleLiveTimers()
-  }, [stopLive, scheduleLiveTimers])
+  }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleNavigate = useCallback((next) => {
     setConfigOpen(false)
     if (next === 'live') {
@@ -594,7 +591,7 @@ export default function App() {
       if (screen === 'live') stopLive()
       setScreen(next)
     }
-  }, [screen, startLive, stopLive])
+  }, [screen])
 
   const handleCloseAirport = useCallback(() => setMapSelectedAirport(null), [])
   const handleCloseVuelo   = useCallback(() => { setMapSelectedVuelo(null); setSelectedFlight(null) }, [])
