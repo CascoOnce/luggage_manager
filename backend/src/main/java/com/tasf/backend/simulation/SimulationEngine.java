@@ -786,9 +786,25 @@ public class SimulationEngine {
         return new DeliveryStats(delivered, slaOk, slaBreach);
     }
 
+    private boolean isCrossWindow(Envio envio, LocalDate simEnd, Map<String, PlanDeViaje> latestPlans) {
+        if (simEnd == null) return false;
+        PlanDeViaje plan = latestPlans.get(envio.getIdEnvio());
+        if (plan == null) return false;
+        return plan.getEscalas().stream()
+            .filter(e -> !e.isCompletada() && e.getHoraLlegadaEst() != null)
+            .anyMatch(e -> e.getHoraLlegadaEst().toLocalDate().isAfter(simEnd));
+    }
+
     private void checkSlaViolations() {
+        LocalDate simEnd = params == null ? null
+            : params.getFechaInicio().plusDays(params.getDiasSimulacion() - 1);
+        Map<String, PlanDeViaje> latestPlans = buildLatestPlanByEnvio();
+
         for (Envio envio : envios) {
             if (envio.getEstado() == EstadoEnvio.ENTREGADO) {
+                continue;
+            }
+            if (isCrossWindow(envio, simEnd, latestPlans)) {
                 continue;
             }
             LocalDateTime deadline = envio.getFechaHoraIngreso().plusDays(envio.getSla());
@@ -798,10 +814,9 @@ public class SimulationEngine {
                     .filter(m -> m.getIdEnvio().equals(envio.getIdEnvio()))
                     .filter(m -> m.getEstado() != EstadoMaleta.ENTREGADA)
                     .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
-
                 long exceeded = Duration.between(deadline, fechaSimulada).toHours();
-                String message = "SLA exceeded for envio " + envio.getIdEnvio() + " by " + exceeded + " sim-hours";
-                addOperationLog("WARNING " + message);
+                addOperationLog("WARNING SLA exceeded for envio " + envio.getIdEnvio()
+                    + " by " + exceeded + " sim-hours");
             }
         }
     }
