@@ -32,7 +32,7 @@ function isActiveAtMinute(now, dep, arr) {
 
 function nowMinutes() {
   const d = new Date()
-  return d.getHours() * 60 + d.getMinutes()
+  return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60
 }
 
 export default function LiveScreen({ liveState, theme, onBack }) {
