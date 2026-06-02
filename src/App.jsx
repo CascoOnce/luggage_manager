@@ -53,6 +53,7 @@ export default function App() {
   const liveApplyRef = useRef(null)
   const liveWindowStartRef = useRef(null)
   const liveNextStateRef = useRef(null)
+  const liveScheduleRef = useRef(null)
 
   const [autoStep, setAutoStep] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
@@ -569,9 +570,10 @@ export default function App() {
         getLiveState(toLocalISO(nextWindowStart)).then(setLiveState).catch(console.error)
       }
       liveNextStateRef.current = null
-      scheduleLiveTimers()
+      liveScheduleRef.current?.()
     }, 60 * 60 * 1000)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
+  liveScheduleRef.current = scheduleLiveTimers
 
   const startLive = useCallback(() => {
     stopLive()
