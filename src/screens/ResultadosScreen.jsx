@@ -98,10 +98,10 @@ function semaforoColor(semaforo) {
 
 export default function ResultadosScreen({ simState }) {
   const isReady = simState?.finalizada === true
-  const [experSaved, setExperSaved] = useState(false)
-  const [experLoading, setExperLoading] = useState(false)
-  const [experError, setExperError] = useState(null)
-  const [exportLoading, setExportLoading] = useState(false)
+  // const [experSaved, setExperSaved] = useState(false)
+  // const [experLoading, setExperLoading] = useState(false)
+  // const [experError, setExperError] = useState(null)
+  // const [exportLoading, setExportLoading] = useState(false)
 
   const airports = useMemo(() => getAeropuertos(simState).map((airport) => {
     if (airport.codigoIATA) return airport
@@ -140,17 +140,35 @@ export default function ResultadosScreen({ simState }) {
     }
   }, [simState])
 
+  const enviosByAirport = useMemo(() => {
+    const map = {}
+    for (const envio of envios) {
+      for (const iata of [envio.aeropuertoOrigen, envio.aeropuertoDestino]) {
+        if (!iata || iata === '--') continue
+        if (!map[iata]) map[iata] = { entregados: 0, total: 0 }
+        map[iata].total++
+        if (envio.estado === 'ENTREGADO') map[iata].entregados++
+      }
+    }
+    return map
+  }, [envios])
+
   const airportRows = useMemo(() => airports
     .map((airport) => {
       const livePct = airport.capacidadAlmacen ? (airport.ocupacionActual / airport.capacidadAlmacen) * 100 : 0
+      const apStats = enviosByAirport[airport.codigoIATA] || { entregados: 0, total: 0 }
+      const slaCumplido = apStats.total === 0 ? null
+        : apStats.entregados / apStats.total >= 0.85
       return {
         aeropuerto: airport.codigoIATA,
+        ciudad: airport.ciudad || '',
         recib: airport.maletasRecibidas ?? airport.ocupacionActual,
         enviad: airport.maletasEnviadas ?? airport.ocupacionActual,
         ocupProm: Number((airport.ocupacionPromedio != null ? airport.ocupacionPromedio : livePct).toFixed(1)),
         ocupMax: Number((airport.ocupacionMaxima != null ? airport.ocupacionMaxima : livePct).toFixed(1)),
         estado: semaforoLabel(airport.semaforo),
         semaforo: airport.semaforo,
+        slaCumplido,
       }
     })
     .sort((a, b) => b.ocupMax - a.ocupMax), [airports])
@@ -181,7 +199,7 @@ export default function ResultadosScreen({ simState }) {
     }
   }, [envios])
 
-  async function handleGuardarExperimento() {
+  /* async function handleGuardarExperimento() {
     setExperLoading(true)
     setExperError(null)
     try {
@@ -192,9 +210,9 @@ export default function ResultadosScreen({ simState }) {
     } finally {
       setExperLoading(false)
     }
-  }
+  } */
 
-  async function handleDescargarExperimentos() {
+  /* async function handleDescargarExperimentos() {
     setExportLoading(true)
     setExperError(null)
     try {
@@ -204,7 +222,7 @@ export default function ResultadosScreen({ simState }) {
     } finally {
       setExportLoading(false)
     }
-  }
+  } */
 
   const totalMaletas = envios.reduce((sum, e) => sum + Number(e.cantidadMaletas || 0), 0)
   const statusColor = kpis.cumplimiento >= 95 ? 'var(--green)' : 'var(--amber)'
@@ -261,12 +279,13 @@ export default function ResultadosScreen({ simState }) {
         <div style={{ padding: '14px 18px', minHeight: 0 }}>
           <div style={headingStyle()}>Desempeño por aeropuerto</div>
           <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.7fr 0.7fr 0.9fr 0.9fr 0.9fr', gap: 8, padding: '6px 0', fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: 1.2, color: 'var(--muted)', textTransform: 'uppercase' }}>
-              <span>Aeropuerto</span><span style={{ textAlign: 'right' }}>Recib</span><span style={{ textAlign: 'right' }}>Enviad</span><span style={{ textAlign: 'right' }}>Ocup.prom</span><span style={{ textAlign: 'right' }}>Ocup.max</span><span>Estado</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.9fr 0.6fr 0.6fr 0.8fr 0.8fr 0.8fr', gap: 8, padding: '6px 0', fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: 1.2, color: 'var(--muted)', textTransform: 'uppercase' }}>
+              <span>Aeropuerto</span><span>Ciudad</span><span style={{ textAlign: 'right' }}>Recib</span><span style={{ textAlign: 'right' }}>Enviad</span><span style={{ textAlign: 'right' }}>Ocup.prom</span><span style={{ textAlign: 'right' }}>Ocup.max</span><span>Estado</span>
             </div>
             {airportRows.map((row) => (
-              <div key={row.aeropuerto} style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.7fr 0.7fr 0.9fr 0.9fr 0.9fr', gap: 8, padding: '7px 0', borderTop: '1px solid rgba(255,255,255,0.04)', fontFamily: 'var(--mono)', fontSize: 13 }}>
+              <div key={row.aeropuerto} style={{ display: 'grid', gridTemplateColumns: '1fr 0.9fr 0.6fr 0.6fr 0.8fr 0.8fr 0.8fr', gap: 8, padding: '7px 0', borderTop: '1px solid rgba(255,255,255,0.04)', fontFamily: 'var(--mono)', fontSize: 13 }}>
                 <span style={{ color: 'var(--blue)' }}>{row.aeropuerto}</span>
+                <span style={{ color: 'var(--muted)', fontSize: 11 }}>{row.ciudad || '—'}</span>
                 <span style={{ textAlign: 'right', color: 'var(--text)' }}>{row.recib}</span>
                 <span style={{ textAlign: 'right', color: 'var(--text)' }}>{row.enviad}</span>
                 <span style={{ textAlign: 'right', color: 'var(--muted)' }}>{row.ocupProm}%</span>
@@ -283,7 +302,6 @@ export default function ResultadosScreen({ simState }) {
           <div style={{ marginTop: 10 }}>
             {[
               ['Rutas evaluadas', envios.length || '--'],
-              ['Tiempo ejecución', '--'],
               ['Periodo', `${simState?.totalDays || simState?.totalDias || 0} días`],
             ].map(([label, value]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -391,7 +409,7 @@ export default function ResultadosScreen({ simState }) {
           ↓ EXPORTAR REPORTE CSV
         </button>
 
-        <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+        {/* <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
           <div style={headingStyle()}>Experimentación numérica</div>
           {experError && (
             <div style={{ marginTop: 8, borderLeft: '2px solid var(--red)', background: 'rgba(248,81,73,0.06)', padding: '6px 10px', color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>
@@ -446,7 +464,7 @@ export default function ResultadosScreen({ simState }) {
           >
             {exportLoading ? 'DESCARGANDO...' : '↓ DESCARGAR REGISTRO DE EXPERIMENTOS'}
           </button>
-        </div>
+        </div> */}
       </section>
     </div>
   )
