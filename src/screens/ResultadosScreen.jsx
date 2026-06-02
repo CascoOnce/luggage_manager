@@ -171,7 +171,7 @@ export default function ResultadosScreen({ simState }) {
         slaCumplido,
       }
     })
-    .sort((a, b) => b.ocupMax - a.ocupMax), [airports])
+    .sort((a, b) => b.ocupMax - a.ocupMax), [airports, enviosByAirport])
 
   const cancelaciones = useMemo(() => {
     if (Array.isArray(simState?.logOperaciones)) {
