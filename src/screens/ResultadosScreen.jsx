@@ -39,37 +39,59 @@ function escapeCsv(value) {
   return text
 }
 
-function csvDownload(state, rows) {
+function csvDownload(state, rows, envios) {
+  const dia = state.diaActual || state.currentDay || 0
+  const fechaRaw = state.fechaSimulada || ''
+  const fechaSlug = fechaRaw.split(' ')[0].replace(/\//g, '-') || 'sim'
+  const filename = `tasf_reporte_${fechaSlug}_dia-${dia}.csv`
+
   const metadata = [
     ['fecha_simulada', state.fechaSimulada || '--'],
     ['dias_simulacion', state.totalDias || state.totalDays || 0],
     ['cumplimiento_sla_pct', Number(state.kpis?.cumplimientoSLA ?? state.kpis?.slaCompliance ?? 0).toFixed(2)],
     ['sla_vencidos', state.kpis?.slaVencidos ?? state.kpis?.slaViolated ?? 0],
+    ['total_replanificaciones', (state.logOperaciones || []).filter((l) => /replan/i.test(l)).length],
   ]
 
-  const header = ['aeropuerto', 'recibidas', 'enviadas', 'ocup_prom_pct', 'ocup_max_pct', 'estado', 'sla_cumplido']
-  const lines = rows.map((row) => [
+  const airportHeader = ['aeropuerto', 'ciudad', 'recibidas', 'enviadas', 'ocup_prom_pct', 'ocup_max_pct', 'estado', 'sla_cumplido']
+  const airportLines = rows.map((row) => [
     row.aeropuerto,
+    row.ciudad || '',
     row.recib,
     row.enviad,
     row.ocupProm,
     row.ocupMax,
     row.estado,
-    row.estado === 'CRÍTICO' ? 'no' : 'si',
+    row.slaCumplido === null ? '--' : row.slaCumplido ? 'si' : 'no',
+  ])
+
+  const envioHeader = ['id_envio', 'origen', 'destino', 'estado', 'sla_dias', 'cumplido']
+  const envioLines = (envios || []).map((e) => [
+    e.idEnvio,
+    e.aeropuertoOrigen || '--',
+    e.aeropuertoDestino || '--',
+    e.estado,
+    e.sla || 1,
+    e.estado === 'ENTREGADO' ? 'si' : 'no',
   ])
 
   const content = [
     ...metadata.map(([k, v]) => `${escapeCsv(k)},${escapeCsv(v)}`),
     '',
-    header.join(','),
-    ...lines.map((line) => line.map(escapeCsv).join(',')),
+    '# AEROPUERTOS',
+    airportHeader.join(','),
+    ...airportLines.map((line) => line.map(escapeCsv).join(',')),
+    '',
+    '# ENVIOS',
+    envioHeader.join(','),
+    ...envioLines.map((line) => line.map(escapeCsv).join(',')),
   ].join('\n')
 
   const blob = new Blob([`﻿${content}`], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `tasf_reporte_dia_${state.diaActual || state.currentDay || 0}.csv`
+  link.download = filename
   link.click()
   URL.revokeObjectURL(url)
 }
@@ -384,7 +406,7 @@ export default function ResultadosScreen({ simState }) {
         })()}
 
         <button
-          onClick={() => csvDownload(simState, airportRows)}
+          onClick={() => csvDownload(simState, airportRows, envios)}
           style={{
             marginTop: 20,
             width: '100%',
