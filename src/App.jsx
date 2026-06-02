@@ -186,7 +186,7 @@ export default function App() {
       stopPolling()
       stopLive()
     }
-  }, [])
+  }, [stopPolling, stopLive])
 
   useEffect(() => {
     if (backendState?.enEjecucion && !backendState?.finalizada) {
@@ -537,7 +537,7 @@ export default function App() {
     return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
   }
 
-  function stopLive() {
+  const stopLive = useCallback(() => {
     clearTimeout(livePollingRef.current)
     clearTimeout(liveApplyRef.current)
     livePollingRef.current = null
@@ -545,9 +545,9 @@ export default function App() {
     liveNextStateRef.current = null
     liveWindowStartRef.current = null
     setLiveState(null)
-  }
+  }, [])
 
-  function scheduleLiveTimers() {
+  const scheduleLiveTimers = useCallback(() => {
     clearTimeout(livePollingRef.current)
     clearTimeout(liveApplyRef.current)
 
@@ -571,9 +571,9 @@ export default function App() {
       liveNextStateRef.current = null
       scheduleLiveTimers()
     }, 60 * 60 * 1000)
-  }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function startLive() {
+  const startLive = useCallback(() => {
     stopLive()
 
     const now = new Date()
@@ -581,7 +581,7 @@ export default function App() {
 
     getLiveState(toLocalISO(now)).then(setLiveState).catch((err) => console.error('Live fetch error:', err))
     scheduleLiveTimers()
-  }
+  }, [stopLive, scheduleLiveTimers])
 
   const handleNavigate = useCallback((next) => {
     setConfigOpen(false)
@@ -592,7 +592,7 @@ export default function App() {
       if (screen === 'live') stopLive()
       setScreen(next)
     }
-  }, [screen])
+  }, [screen, startLive, stopLive])
 
   const handleCloseAirport = useCallback(() => setMapSelectedAirport(null), [])
   const handleCloseVuelo   = useCallback(() => { setMapSelectedVuelo(null); setSelectedFlight(null) }, [])
