@@ -8,9 +8,11 @@ import EnviosScreen from './screens/EnviosScreen.jsx'
 import DashboardScreen from './screens/DashboardScreen.jsx'
 import ResultadosScreen from './screens/ResultadosScreen.jsx'
 import ColapsoScreen from './screens/ColapsoScreen.jsx'
+import LiveScreen from './screens/LiveScreen.jsx'
 import DrawerAeropuerto from './drawers/DrawerAeropuerto.jsx'
 import DrawerVuelo from './drawers/DrawerVuelo.jsx'
 import AirportFilterPanel from './components/AirportFilterPanel.jsx'
+import { getLiveState } from './services/api.js'
 
 export default function App() {
   const ALGORITHM = 'SIMULATED_ANNEALING'
@@ -45,6 +47,12 @@ export default function App() {
   const colapsoPuntoAlertedRef = useRef(false)
 
   const [pollingError, setPollingError] = useState(null)
+
+  const [liveState, setLiveState] = useState(null)
+  const livePollingRef = useRef(null)
+  const liveApplyRef = useRef(null)
+  const liveWindowStartRef = useRef(null)
+  const liveNextStateRef = useRef(null)
 
   const [autoStep, setAutoStep] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
@@ -174,7 +182,10 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    return () => stopPolling()
+    return () => {
+      stopPolling()
+      stopLive()
+    }
   }, [])
 
   useEffect(() => {
@@ -521,10 +532,67 @@ export default function App() {
     }
   }
 
+  function toLocalISO(date) {
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  }
+
+  function stopLive() {
+    clearTimeout(livePollingRef.current)
+    clearTimeout(liveApplyRef.current)
+    livePollingRef.current = null
+    liveApplyRef.current = null
+    liveNextStateRef.current = null
+    liveWindowStartRef.current = null
+    setLiveState(null)
+  }
+
+  function scheduleLiveTimers() {
+    clearTimeout(livePollingRef.current)
+    clearTimeout(liveApplyRef.current)
+
+    // 55-min prefetch
+    livePollingRef.current = setTimeout(() => {
+      const nextFrom = new Date(liveWindowStartRef.current.getTime() + 60 * 60 * 1000)
+      getLiveState(toLocalISO(nextFrom))
+        .then((state) => { liveNextStateRef.current = state })
+        .catch((err) => console.error('Live prefetch error:', err))
+    }, 55 * 60 * 1000)
+
+    // 60-min apply
+    liveApplyRef.current = setTimeout(() => {
+      const nextWindowStart = new Date(liveWindowStartRef.current.getTime() + 60 * 60 * 1000)
+      liveWindowStartRef.current = nextWindowStart
+      if (liveNextStateRef.current) {
+        setLiveState(liveNextStateRef.current)
+      } else {
+        getLiveState(toLocalISO(nextWindowStart)).then(setLiveState).catch(console.error)
+      }
+      liveNextStateRef.current = null
+      scheduleLiveTimers()
+    }, 60 * 60 * 1000)
+  }
+
+  function startLive() {
+    stopLive()
+
+    const now = new Date()
+    liveWindowStartRef.current = now
+
+    getLiveState(toLocalISO(now)).then(setLiveState).catch((err) => console.error('Live fetch error:', err))
+    scheduleLiveTimers()
+  }
+
   const handleNavigate = useCallback((next) => {
     setConfigOpen(false)
-    setScreen(next)
-  }, [])
+    if (next === 'live') {
+      setScreen('live')
+      startLive()
+    } else {
+      if (screen === 'live') stopLive()
+      setScreen(next)
+    }
+  }, [screen])
 
   const handleCloseAirport = useCallback(() => setMapSelectedAirport(null), [])
   const handleCloseVuelo   = useCallback(() => { setMapSelectedVuelo(null); setSelectedFlight(null) }, [])
@@ -578,6 +646,7 @@ export default function App() {
         screen={screen}
         hasSimulation={Boolean(backendState)}
         colapsoPunto={backendState?.colapsoPunto ?? null}
+        liveActive={screen === 'live'}
       />
       {backendState?.colapsoPunto && (
         <div style={{
@@ -694,8 +763,19 @@ export default function App() {
           </div>
         )}
 
+        {/* ── LIVE VIEW — full height, own layout ── */}
+        {screen === 'live' && (
+          <div style={{ height: '100%', overflow: 'hidden' }}>
+            <LiveScreen
+              liveState={liveState}
+              theme={theme}
+              onBack={() => handleNavigate('main')}
+            />
+          </div>
+        )}
+
         {/* ── OVERLAY SCREENS (replace the map entirely, no z-index fighting) ── */}
-        {(screen !== 'main' || configOpen) && (
+        {(screen !== 'main' || configOpen) && screen !== 'live' && (
           <div style={{ height: '100%', overflow: 'auto', background: 'var(--bg)' }}>
             {screen === 'envios' && (
               <EnviosScreen

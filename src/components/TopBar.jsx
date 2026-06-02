@@ -123,6 +123,7 @@ export default function TopBar({
   screen,
   hasSimulation,
   colapsoPunto,
+  liveActive,
 }) {
   const wallClock = useWallClock()
   const isBackendRunning = backendState?.enEjecucion === true
@@ -138,6 +139,7 @@ export default function TopBar({
 
   const tabs = [
     { key: 'main', label: 'OPERACIONES' },
+    { key: 'live', label: 'EN VIVO', live: true },
     { key: 'envios', label: 'ENVÍOS' },
     { key: 'dashboard', label: 'DASHBOARD' },
     { key: 'resultados', label: 'RESULTADOS' },
@@ -169,7 +171,9 @@ export default function TopBar({
       <div style={s.tabStrip}>
         {tabs.map((tab) => {
           const active = isActiveTab(tab.key)
-          const disabled = !hasSimulation && (tab.key === 'envios' || tab.key === 'dashboard')
+          const disabled =
+            (tab.key === 'live' && hasSimulation) ||
+            (!hasSimulation && (tab.key === 'envios' || tab.key === 'dashboard'))
           const isAlert = tab.alert
           return (
             <button
@@ -194,7 +198,19 @@ export default function TopBar({
                 event.currentTarget.style.background = 'transparent'
               }}
             >
-              {tab.label}
+              {tab.live && liveActive
+                ? (
+                  <>
+                    <span style={{
+                      display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
+                      background: '#22c55e', boxShadow: '0 0 6px #22c55e',
+                      animation: 'pulse-dot 2.2s ease-in-out infinite', marginRight: 6,
+                    }} />
+                    {tab.label}
+                  </>
+                )
+                : tab.label
+              }
             </button>
           )
         })}
@@ -232,7 +248,11 @@ export default function TopBar({
 
         {/* Sin simulación: solo CONFIGURAR */}
         {!hasSimulation && (
-          <button style={s.btnStart(false)} onClick={onIniciar}>
+          <button
+            style={{ ...s.btnStart(false), opacity: liveActive ? 0.4 : 1, cursor: liveActive ? 'default' : 'pointer' }}
+            onClick={liveActive ? undefined : onIniciar}
+            disabled={liveActive}
+          >
             CONFIGURAR
           </button>
         )}
