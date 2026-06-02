@@ -247,7 +247,8 @@
 *Incluye N/A (B-83, B-84, B-85, B-86) que son criterios de evaluador o artefactos externos.
 
 > Actualizado 2026-05-31 — Niveles 2-4 implementados: B-10, B-11, B-34, B-36, B-61, B-73, B-74, B-75, E1-6, E3-1, E3-3, E3-4 pasaron a ✅.  
-> Actualizado 2026-06-01 — B-9, B-16, B-17, B-18, B-35 pasaron a ✅ (tooltip granular aeropuertos); A-1 pasó a ✅ (versión 1.0.0 en pom.xml).
+> Actualizado 2026-06-01 — B-9, B-16, B-17, B-18, B-35 pasaron a ✅ (tooltip granular aeropuertos); A-1 pasó a ✅ (versión 1.0.0 en pom.xml).  
+> Actualizado 2026-06-01 — M01/M04/M05: corrección SLA cross-midnight, pulido ResultadosScreen/DashboardScreen/ColapsoScreen, CSV mejorado. Ver `RESUMEN_IMPLEMENTACION.md` para detalle.
 
 ---
 

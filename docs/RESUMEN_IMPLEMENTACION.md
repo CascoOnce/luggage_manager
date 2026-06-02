@@ -1,7 +1,7 @@
 # Resumen de Implementación — TASF.B2B Luggage Manager
 
 **Proyecto:** DP1 2026-1 — Simulación de ruteo de maletas multi-aeropuerto  
-**Branch:** `feature/backend`  
+**Branch:** `main`  
 **Última actualización:** 2026-06-01
 
 ---
@@ -149,6 +149,42 @@ El punto de división usa `mercatorLerp` (interpolación en espacio de píxeles 
 
 ---
 
+### Mejoras de corrección y pulido (M01 / M04 / M05)
+
+#### M-01 · Protección SLA para envíos cross-midnight
+**Qué se hizo:** Envíos cuyo vuelo sale el último día de simulación pero llega al día siguiente (fuera de la ventana) ya no se marcan RETRASADO incorrectamente.
+- `isCrossWindow()` helper privado: detecta si el plan activo tiene escala pendiente con `horaLlegadaEst` posterior a `simEnd`.
+- `checkSlaViolations()`: salta (`continue`) cualquier envío donde `isCrossWindow` sea true.
+- `applySimulationEnd()`: filtra los mismos envíos antes de marcar RETRASADO al cierre de simulación.
+
+**Cómo se ve:** Envíos con vuelos cross-midnight quedan en `EN_TRANSITO` en lugar de aparecer como RETRASADO en el reporte final.
+
+#### M-04 · Pulido de pantallas de reporte
+
+**ResultadosScreen:**
+- `sla_cumplido` ahora se calcula desde el ratio real de envíos entregados/total por aeropuerto (`enviosByAirport` memo), no del color del semáforo.
+- Columna "Ciudad" agregada a la tabla de aeropuertos (7 columnas).
+- Sección "Experimentación numérica" comentada (toda la UI visible al usuario).
+
+**DashboardScreen:**
+- Panel "Por continente" incluye "Cumpl. SLA %" por continente, calculado desde envíos reales (verde ≥85%, ámbar ≥70%, rojo <70%).
+- Gráfico de throughput incluye línea punteada amarilla en el día actual (`currentDayPlugin` con `afterDraw`).
+
+**ColapsoScreen:**
+- Tabla "Top aeropuertos críticos" muestra ciudad como texto muted bajo el IATA.
+- Título del panel retrasados: "Envíos retrasados (N de M)" con `totalRetrasados` calculado.
+- Empty state explícito cuando `slaData` está vacío: "Sin historial de throughput disponible para este período."
+
+#### M-05 · Revisión del reporte CSV exportado
+**Qué se hizo:** `csvDownload()` en `ResultadosScreen` rediseñado:
+- Nombre de archivo dinámico: `tasf_reporte_YYYY-MM-DD_dia-N.csv`.
+- Metadata agrega `total_replanificaciones` (count de entradas de log con "replan").
+- `sla_cumplido` por aeropuerto basado en envíos reales (null → `--`, true → `si`, false → `no`).
+- Nueva sección `# ENVIOS` con detalle completo: `id_envio, origen, destino, estado, sla_dias, cumplido`.
+- Sección `# AEROPUERTOS` incluye columna `ciudad`.
+
+---
+
 ## Resumen por archivo
 
 | Archivo | Cambios principales |
@@ -173,3 +209,7 @@ El punto de división usa `mercatorLerp` (interpolación en espacio de píxeles 
 | `AeropuertoDTO.java` | +maletasEnAlmacenLocal, +maletasEnTransitoEntrantes |
 | `SimulationEngine.java` | Pre-cómputo mapas O(maletas) para tooltip; colapsoPunto; endpoint envíos por vuelo |
 | `backend/pom.xml` | Versión 1.0.0 |
+| `SimulationEngine.java` | M01: `isCrossWindow()`, protección en `checkSlaViolations()` y `applySimulationEnd()` |
+| `ResultadosScreen.jsx` | M04: `sla_cumplido` real, columna Ciudad, experimentación comentada; M05: `csvDownload()` renovado |
+| `DashboardScreen.jsx` | M04: SLA por continente, línea día actual en gráfico |
+| `ColapsoScreen.jsx` | M04: ciudad en top airports, contador retrasados, empty state gráfico |
