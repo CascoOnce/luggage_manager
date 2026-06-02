@@ -63,7 +63,7 @@ function warehouseColor(ap, threshold) {
   return '#22d07a'
 }
 
-export default function RightPanel({ flights, airports, threshold, selectedFlight, setSelectedFlight, onVueloClick }) {
+export default function RightPanel({ flights, airports, threshold, selectedFlight, setSelectedFlight, onVueloClick, showAllAirports }) {
   const [flightQuery, setFlightQuery] = useState('')
   const flightList = flights || []
   const airportList = airports || []
@@ -85,8 +85,10 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
       const bCap = b.warehouseCapacity ?? b.capacidadAlmacen ?? 600
       return (bOcc / bCap) - (aOcc / aCap)
     })
-    const occupied = sorted.filter((ap) => (ap.currentOccupation ?? ap.ocupacionActual ?? 0) > 0)
-    return { occupiedAirports: occupied, hiddenCount: sorted.length - occupied.length }
+    const occupied = showAllAirports
+      ? sorted
+      : sorted.filter((ap) => (ap.currentOccupation ?? ap.ocupacionActual ?? 0) > 0)
+    return { occupiedAirports: occupied, hiddenCount: showAllAirports ? 0 : sorted.length - occupied.length }
   }, [airportList])
 
   return (
