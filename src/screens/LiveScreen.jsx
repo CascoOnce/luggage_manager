@@ -3,6 +3,7 @@ import MapView from '../components/MapView'
 import RightPanel from '../components/RightPanel'
 import AirportFilterPanel from '../components/AirportFilterPanel'
 import DrawerVuelo from '../drawers/DrawerVuelo'
+import DrawerAeropuerto from '../drawers/DrawerAeropuerto'
 
 const PULSE_STYLE = `
 @keyframes livePulse {
@@ -41,6 +42,7 @@ export default function LiveScreen({ liveState, theme, onBack }) {
   const [liveNowMinutes, setLiveNowMinutes] = useState(nowMinutes)
   const [originIds, setOriginIds] = useState(null)
   const [destIds, setDestIds] = useState(null)
+  const [selectedAirport, setSelectedAirport] = useState(null)
   const [threshold, setThreshold] = useState(80)
   const [filterOpen, setFilterOpen] = useState(true)
 
@@ -50,7 +52,7 @@ export default function LiveScreen({ liveState, theme, onBack }) {
   }, [])
 
   useEffect(() => {
-    const id = setInterval(() => setLiveNowMinutes(nowMinutes()), 10000)
+    const id = setInterval(() => setLiveNowMinutes(nowMinutes()), 5000)
     return () => clearInterval(id)
   }, [])
 
@@ -62,7 +64,9 @@ export default function LiveScreen({ liveState, theme, onBack }) {
       continent: a.continente,
       lat: a.lat,
       lng: a.lng,
-      currentOccupation: a.ocupacionPct,
+      // backend returns maletasPendientes (absolute) and ocupacionPct (percentage)
+      // frontend expects `currentOccupation` to be the absolute number of bags
+      currentOccupation: a.maletasPendientes,
       warehouseCapacity: a.capacidadAlmacen,
       maletasPendientes: a.maletasPendientes,
       semaforo: a.semaforo,
@@ -89,7 +93,8 @@ export default function LiveScreen({ liveState, theme, onBack }) {
           horaLlegada: v.horaLlegada,
           depMin,
           arrMin,
-          fraction: flightFractionAtMinute(liveNowMinutes, depMin, arrMin),
+          // prefer backend fraction if provided (relative to the `from` reference)
+          fraction: (typeof v.fraction === 'number' ? v.fraction : flightFractionAtMinute(liveNowMinutes, depMin, arrMin)),
         }
       })
       .filter((v) => isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
@@ -129,6 +134,11 @@ export default function LiveScreen({ liveState, theme, onBack }) {
     setSelectedFlight(null)
     setSelectedVueloData(null)
   }
+
+  // Sync the detailed vuelo state with the selection computed from visibleFlights
+  useEffect(() => {
+    setSelectedVueloData(selectedFlightData)
+  }, [selectedFlightData])
 
   if (!liveState) {
     return (
@@ -198,7 +208,7 @@ export default function LiveScreen({ liveState, theme, onBack }) {
             selectedFlight={selectedFlight}
             setSelectedFlight={setSelectedFlight}
             selectedFlightData={selectedFlightData}
-            onAirportClick={() => {}}
+            onAirportClick={setSelectedAirport}
             onMapClick={handleCloseVuelo}
             theme={theme}
           />
@@ -207,6 +217,11 @@ export default function LiveScreen({ liveState, theme, onBack }) {
             vuelo={selectedVueloData}
             onClose={handleCloseVuelo}
             onCancelFlight={null}
+          />
+          <DrawerAeropuerto
+            airport={selectedAirport}
+            vuelos={visibleFlights}
+            onClose={() => setSelectedAirport(null)}
           />
         </div>
 
