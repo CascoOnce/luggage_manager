@@ -2,6 +2,7 @@ package com.tasf.backend.repository;
 
 import com.tasf.backend.entity.EnvioEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -41,6 +42,10 @@ public interface EnvioRepository extends JpaRepository<EnvioEntity, Long> {
      * Usado por LiveService para calcular ocupación de almacenes en tiempo real.
      * Retorna List<Object[]> donde cada elemento es [String iataOrigen, Long sumMaletas].
      */
+    @Modifying
+    @Query("UPDATE EnvioEntity e SET e.estado = 'PENDIENTE'")
+    void resetAllToPendiente();
+
     @Query("SELECT e.iataOrigen, SUM(e.cantidadMaletas) FROM EnvioEntity e " +
            "WHERE e.estado = 'PENDIENTE' AND e.fechaHoraIngreso <= :from " +
            "GROUP BY e.iataOrigen")
