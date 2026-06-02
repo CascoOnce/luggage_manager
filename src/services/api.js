@@ -69,6 +69,12 @@ async function request(path, options = {}, timeoutMs = 10000) {
   }
 }
 
+export async function getLiveState(fromISO) {
+  return withHandling('getLiveState', () =>
+    request(`/live/state?from=${encodeURIComponent(fromISO)}`)
+  )
+}
+
 export async function startSimulation(params) {
   return withHandling('startSimulation', () =>
     request('/simulation/start', {
@@ -154,6 +160,10 @@ export const api = {
   getEnviosByFlight: async (code) => withHandling('getEnviosByFlight', async () => {
     return request(`/flights/${code}/envios`)
   }),
+
+  getLiveState: async (fromISO) => withHandling('getLiveState', () =>
+    request(`/live/state?from=${encodeURIComponent(fromISO)}`)
+  ),
 
   uploadEnvios: async (file) => withHandling('uploadEnvios', async () => {
     const formData = new FormData()
