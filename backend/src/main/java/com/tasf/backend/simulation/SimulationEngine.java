@@ -307,8 +307,11 @@ public class SimulationEngine {
     }
 
     private void applySimulationEnd(LocalDate simulationEndDate) {
+        Map<String, PlanDeViaje> latestPlans = buildLatestPlanByEnvio();
+
         envios.stream()
             .filter(e -> e.getEstado() != EstadoEnvio.ENTREGADO && e.getEstado() != EstadoEnvio.RETRASADO)
+            .filter(e -> !isCrossWindow(e, simulationEndDate, latestPlans))
             .forEach(e -> {
                 LocalDate deadline = e.getFechaHoraIngreso().plusDays(e.getSla()).toLocalDate();
                 if (!deadline.isAfter(simulationEndDate)) {
