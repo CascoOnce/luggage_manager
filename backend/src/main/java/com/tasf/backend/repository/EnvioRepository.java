@@ -34,4 +34,15 @@ public interface EnvioRepository extends JpaRepository<EnvioEntity, Long> {
      */
     @Query("SELECT COUNT(e) FROM EnvioEntity e WHERE e.iataOrigen = :iata")
     long countByIataOrigen(@Param("iata") String iata);
+
+    /**
+     * Suma cantidadMaletas pendientes (estado = 'PENDIENTE') por aeropuerto de origen,
+     * filtrado por fechaHoraIngreso <= :from.
+     * Usado por LiveService para calcular ocupación de almacenes en tiempo real.
+     * Retorna List<Object[]> donde cada elemento es [String iataOrigen, Long sumMaletas].
+     */
+    @Query("SELECT e.iataOrigen, SUM(e.cantidadMaletas) FROM EnvioEntity e " +
+           "WHERE e.estado = 'PENDIENTE' AND e.fechaHoraIngreso <= :from " +
+           "GROUP BY e.iataOrigen")
+    List<Object[]> sumMaletasPendientesByAeropuerto(@Param("from") LocalDateTime from);
 }
