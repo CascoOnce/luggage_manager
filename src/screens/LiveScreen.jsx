@@ -64,10 +64,12 @@ export default function LiveScreen({ liveState, theme, onBack }) {
       continent: a.continente,
       lat: a.lat,
       lng: a.lng,
-      // backend returns maletasPendientes (absolute) and ocupacionPct (percentage)
-      // frontend expects `currentOccupation` to be the absolute number of bags
-      currentOccupation: a.ocupacionPct,
-      warehouseCapacity: a.capacidadAlmacen,
+      // backend may return both `maletasPendientes` (absolute) and `ocupacionPct` (percentage)
+      // compute a sane `currentOccupation` (absolute) and ensure capacity is provided
+      warehouseCapacity: a.capacidadAlmacen ?? 600,
+      currentOccupation: (a.maletasPendientes != null)
+        ? a.maletasPendientes
+        : (a.ocupacionPct != null ? Math.round((a.ocupacionPct / 100) * (a.capacidadAlmacen ?? 600)) : 0),
       maletasPendientes: a.maletasPendientes,
       semaforo: a.semaforo,
       ciudad: a.ciudad,
@@ -80,21 +82,24 @@ export default function LiveScreen({ liveState, theme, onBack }) {
       .map((v) => {
         const depMin = parseTimeToMinutes(v.horaSalida)
         const arrMin = parseTimeToMinutes(v.horaLlegada)
+        const cap = v.capacidadTotal ?? v.capacity ?? 300
+        const fraction = (typeof v.fraction === 'number') ? v.fraction : flightFractionAtMinute(liveNowMinutes, depMin, arrMin)
+        const currentLoad = v.cargaActual ?? v.currentLoad ?? (Math.round(fraction * cap))
         return {
           id: v.codigoVuelo,
           origin: v.origen,
           destination: v.destino,
           type: v.tipo,
           status: 'active',
-          currentLoad: 0,
-          capacity: v.capacidadTotal,
+          currentLoad,
+          capacity: cap,
           hour: parseInt(v.horaSalida.split(':')[0], 10),
           horaSalida: v.horaSalida,
           horaLlegada: v.horaLlegada,
           depMin,
           arrMin,
           // prefer backend fraction if provided (relative to the `from` reference)
-          fraction: (typeof v.fraction === 'number' ? v.fraction : flightFractionAtMinute(liveNowMinutes, depMin, arrMin)),
+          fraction,
         }
       })
       .filter((v) => isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
