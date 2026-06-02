@@ -66,7 +66,7 @@ export default function LiveScreen({ liveState, theme, onBack }) {
       lng: a.lng,
       // backend returns maletasPendientes (absolute) and ocupacionPct (percentage)
       // frontend expects `currentOccupation` to be the absolute number of bags
-      currentOccupation: a.maletasPendientes,
+      currentOccupation: a.ocupacionPct,
       warehouseCapacity: a.capacidadAlmacen,
       maletasPendientes: a.maletasPendientes,
       semaforo: a.semaforo,
