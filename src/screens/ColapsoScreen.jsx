@@ -31,7 +31,7 @@ export default function ColapsoScreen({ simState, theme, onBack }) {
         const ap = aeropuertos.find((a) => (a.codigoIATA || a.id) === iata)
         const cap = ap?.capacidadAlmacen ?? ap?.warehouseCapacity ?? 0
         const ocu = ap?.ocupacionActual ?? ap?.currentOccupation ?? 0
-        return { iata, pct: cap > 0 ? Math.round((ocu / cap) * 100) : 0 }
+        return { iata, ciudad: ap?.ciudad ?? ap?.name ?? '', pct: cap > 0 ? Math.round((ocu / cap) * 100) : 0 }
       })
     }
     return aeropuertos
@@ -39,7 +39,7 @@ export default function ColapsoScreen({ simState, theme, onBack }) {
       .map((a) => {
         const cap = a.capacidadAlmacen ?? a.warehouseCapacity ?? 0
         const ocu = a.ocupacionActual ?? a.currentOccupation ?? 0
-        return { iata: a.codigoIATA || a.id, pct: Math.round((ocu / cap) * 100) }
+        return { iata: a.codigoIATA || a.id, ciudad: a.ciudad ?? a.name ?? '', pct: Math.round((ocu / cap) * 100) }
       })
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 5)
@@ -47,6 +47,10 @@ export default function ColapsoScreen({ simState, theme, onBack }) {
 
   const topRetrasados = useMemo(() =>
     envios.filter((e) => e.estado === 'RETRASADO').slice(0, 5),
+  [envios])
+
+  const totalRetrasados = useMemo(() =>
+    envios.filter((e) => e.estado === 'RETRASADO').length,
   [envios])
 
   const isDark = theme === 'dark'
@@ -143,12 +147,16 @@ export default function ColapsoScreen({ simState, theme, onBack }) {
         ))}
       </div>
 
-      {slaData.length > 0 && (
+      {slaData.length > 0 ? (
         <div style={{ ...panelStyle, marginBottom: 24 }}>
           <div style={{ ...monoSm, marginBottom: 16 }}>% SLA vencido por día</div>
           <div style={{ height: 200 }}>
             <Line data={chartData} options={chartOptions} />
           </div>
+        </div>
+      ) : (
+        <div style={{ ...panelStyle, marginBottom: 24, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>
+          Sin historial de throughput disponible para este período.
         </div>
       )}
 
@@ -165,7 +173,12 @@ export default function ColapsoScreen({ simState, theme, onBack }) {
             <tbody>
               {topAps.map((ap, i) => (
                 <tr key={ap.iata}>
-                  <td style={tdStyle}>{i + 1}. {ap.iata}</td>
+                  <td style={tdStyle}>
+                    {i + 1}. {ap.iata}
+                    {ap.ciudad && (
+                      <span style={{ color: 'var(--muted)', fontSize: 10, marginLeft: 6 }}>{ap.ciudad}</span>
+                    )}
+                  </td>
                   <td style={{ ...tdStyle, textAlign: 'right', color: ap.pct >= 85 ? 'var(--red)' : ap.pct >= 60 ? 'var(--amber)' : 'var(--green)' }}>{ap.pct}%</td>
                 </tr>
               ))}
@@ -174,7 +187,9 @@ export default function ColapsoScreen({ simState, theme, onBack }) {
         </div>
 
         <div style={panelStyle}>
-          <div style={{ ...monoSm, marginBottom: 12 }}>Envíos retrasados (muestra)</div>
+          <div style={{ ...monoSm, marginBottom: 12 }}>
+            Envíos retrasados ({topRetrasados.length} de {totalRetrasados})
+          </div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
