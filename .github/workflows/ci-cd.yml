@@ -64,9 +64,9 @@ jobs:
           path: backend/target/backend-*.jar
           retention-days: 1
 
-  # ─── Deploy to EC2 (main branch only) ─────────────────────────────────────
+  # ─── Deploy to PUCP VM (main branch only) ─────────────────────────────────
   deploy:
-    name: Deploy to EC2
+    name: Deploy to PUCP VM
     needs: build
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -87,34 +87,31 @@ jobs:
       - name: Configure SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+          ssh-private-key: ${{ secrets.PUCP_VM_SSH_KEY }}
 
-      - name: Add EC2 to known hosts
-        run: ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Ensure rsync is installed on EC2
-        run: ssh "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "which rsync || sudo apt-get install -y -q rsync"
+      - name: Add VM to known hosts
+        run: ssh-keyscan -H "${{ secrets.PUCP_VM_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Sync frontend to Nginx webroot
         run: |
           rsync -avz --delete dist/ \
-            "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/var/www/luggage-manager/"
+            "${{ secrets.PUCP_VM_USER }}@${{ secrets.PUCP_VM_HOST }}:/var/www/luggage-manager/"
 
       - name: Upload backend JAR
         run: |
           scp backend/target/backend-*.jar \
-            "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/luggage-manager/app.jar"
+            "${{ secrets.PUCP_VM_USER }}@${{ secrets.PUCP_VM_HOST }}:/opt/luggage-manager/app.jar"
 
       - name: Write environment file and restart service
         run: |
-          ssh "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" bash -s << 'REMOTE'
-            # Write .env atomically so the running service is not exposed mid-write
+          ssh "${{ secrets.PUCP_VM_USER }}@${{ secrets.PUCP_VM_HOST }}" bash -s << 'REMOTE'
             cat > /opt/luggage-manager/.env.tmp << ENV
-          SPRING_DATASOURCE_URL=${{ secrets.SPRING_DATASOURCE_URL }}
-          SPRING_DATASOURCE_USERNAME=${{ secrets.SPRING_DATASOURCE_USERNAME }}
-          SPRING_DATASOURCE_PASSWORD=${{ secrets.SPRING_DATASOURCE_PASSWORD }}
-          CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
+          SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3306/tasfb2b?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+          SPRING_DATASOURCE_USERNAME=luggage
+          SPRING_DATASOURCE_PASSWORD=${{ secrets.PUCP_DB_PASSWORD }}
+          CORS_ALLOWED_ORIGINS=${{ secrets.PUCP_CORS_ALLOWED_ORIGINS }}
           SPRING_PROFILES_ACTIVE=prod
+          SERVER_PORT=8081
           ENV
             mv /opt/luggage-manager/.env.tmp /opt/luggage-manager/.env
             chmod 600 /opt/luggage-manager/.env
