@@ -86,15 +86,15 @@ export default function LiveScreen({ liveState, theme, onBack }) {
           destination: v.destino,
           type: v.tipo,
           status: 'active',
-          currentLoad: 0,
+          currentLoad: null,
           capacity: v.capacidadTotal,
           hour: parseInt(v.horaSalida.split(':')[0], 10),
           horaSalida: v.horaSalida,
           horaLlegada: v.horaLlegada,
+          husOrigen: v.husOrigen ?? null,
           depMin,
           arrMin,
-          // prefer backend fraction if provided (relative to the `from` reference)
-          fraction: (typeof v.fraction === 'number' ? v.fraction : flightFractionAtMinute(liveNowMinutes, depMin, arrMin)),
+          fraction: flightFractionAtMinute(liveNowMinutes, depMin, arrMin),
         }
       })
       .filter((v) => isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))

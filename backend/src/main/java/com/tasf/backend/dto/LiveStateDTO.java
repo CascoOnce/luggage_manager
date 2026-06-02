@@ -45,5 +45,6 @@ public class LiveStateDTO {
         private String tipo;
         private int capacidadTotal;
         private double fraction;
+        private Integer husOrigen;
     }
 }

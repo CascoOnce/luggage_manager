@@ -97,6 +97,27 @@ function estadoColor(estado) {
   return 'var(--amber)'
 }
 
+function parseTimeStr(t) {
+  if (!t || !t.includes(':')) return null
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
+
+function minutesToHHMM(totalMin) {
+  const m = ((totalMin % 1440) + 1440) % 1440
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+}
+
+function toLocalTime(storedHHMM, huso) {
+  if (!storedHHMM || huso == null) return null
+  const storedMin = parseTimeStr(storedHHMM)
+  if (storedMin == null) return null
+  // stored time is local at origin airport (UTC+huso) → convert to browser local
+  const utcMin = storedMin - huso * 60
+  const localMin = utcMin - new Date().getTimezoneOffset()
+  return minutesToHHMM(localMin)
+}
+
 export default function DrawerVuelo({ vuelo, onClose, onCancelFlight }) {
   const [enviosAsignados, setEnviosAsignados] = useState([])
 
@@ -125,7 +146,21 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight }) {
   const estado  = vuelo.status || vuelo.estado || '—'
   const salida  = vuelo.horaSalida || '—'
   const llegada = vuelo.horaLlegada || '—'
-  const load    = vuelo.currentLoad ?? vuelo.cargaActual ?? 0
+  const husOrigen = vuelo.husOrigen ?? null
+
+  // Overnight flight: arrival clock < departure clock
+  const depMin = parseTimeStr(salida)
+  const arrMin = parseTimeStr(llegada)
+  const isOvernight = depMin != null && arrMin != null && arrMin < depMin
+  const llegadaLabel = isOvernight ? `${llegada} (+1d)` : llegada
+
+  // Local timezone conversion (only when huso known)
+  const salidaLocal  = toLocalTime(salida, husOrigen)
+  const llegadaLocal = toLocalTime(llegada, husOrigen)
+
+  // Load data — null means live mode (no simulation running)
+  const hasLoadData = vuelo.currentLoad !== null || vuelo.cargaActual != null
+  const load    = hasLoadData ? (vuelo.currentLoad ?? vuelo.cargaActual ?? 0) : 0
   const cap     = vuelo.capacity ?? vuelo.capacidadTotal ?? 300
   const pct     = cap > 0 ? Math.round((load / cap) * 100) : 0
   const color   = loadColor(pct)
@@ -150,15 +185,23 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight }) {
         {/* Carga */}
         <div style={s.section}>
           <span style={s.sectionTitle}>Carga del vuelo</span>
-          <div style={s.barTrack}>
-            <div style={s.barFill(pct, color)} />
-          </div>
-          <div style={s.barLabel}>
-            <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 9 }}>
-              {load} / {cap} maletas
-            </span>
-            <span style={{ color, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700 }}>{pct}%</span>
-          </div>
+          {hasLoadData ? (
+            <>
+              <div style={s.barTrack}>
+                <div style={s.barFill(pct, color)} />
+              </div>
+              <div style={s.barLabel}>
+                <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 9 }}>
+                  {load} / {cap} maletas
+                </span>
+                <span style={{ color, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700 }}>{pct}%</span>
+              </div>
+            </>
+          ) : (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
+              Sin datos de asignación (modo en vivo)
+            </div>
+          )}
         </div>
 
         {/* Info */}
@@ -170,11 +213,17 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight }) {
           </div>
           <div style={s.row}>
             <span style={s.rowLabel}>Hora salida</span>
-            <span style={s.rowVal}>{salida}</span>
+            <span style={s.rowVal}>
+              {salida}
+              {salidaLocal && <span style={{ color: 'var(--muted)', fontSize: 9, marginLeft: 6 }}>({salidaLocal} local)</span>}
+            </span>
           </div>
           <div style={s.row}>
             <span style={s.rowLabel}>Hora llegada</span>
-            <span style={s.rowVal}>{llegada}</span>
+            <span style={s.rowVal}>
+              {llegadaLabel}
+              {llegadaLocal && <span style={{ color: 'var(--muted)', fontSize: 9, marginLeft: 6 }}>({llegadaLocal} local)</span>}
+            </span>
           </div>
           <div style={s.row}>
             <span style={s.rowLabel}>Capacidad</span>
@@ -216,7 +265,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight }) {
               </div>
               <div style={s.tlContent}>
                 <div style={s.tlLabel}>{origin}</div>
-                <div style={s.tlMeta}>Salida {salida}</div>
+                <div style={s.tlMeta}>Salida {salida}{salidaLocal ? ` · ${salidaLocal} local` : ''}</div>
               </div>
             </div>
             {/* En vuelo */}
@@ -229,7 +278,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight }) {
                 <div style={{ ...s.tlLabel, color: isActivo ? color : 'var(--muted)' }}>
                   {isActivo ? 'En vuelo' : 'En espera'}
                 </div>
-                <div style={s.tlMeta}>{load} / {cap} maletas · {pct}% carga</div>
+                <div style={s.tlMeta}>{hasLoadData ? `${load} / ${cap} maletas · ${pct}% carga` : '—'}</div>
               </div>
             </div>
             {/* Destino */}
@@ -239,7 +288,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight }) {
               </div>
               <div style={s.tlContent}>
                 <div style={s.tlLabel}>{dest}</div>
-                <div style={s.tlMeta}>Llegada {llegada}</div>
+                <div style={s.tlMeta}>Llegada {llegadaLabel}{llegadaLocal ? ` · ${llegadaLocal} local` : ''}</div>
               </div>
             </div>
           </div>
