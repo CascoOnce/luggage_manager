@@ -113,8 +113,8 @@ function occupancyPct(ap) {
   return Math.round((ap.currentOccupation / ap.warehouseCapacity) * 100)
 }
 
-function trafficLightColor(pct) {
-  if (pct === 0) return '#6b7280'
+function trafficLightColor(pct, theme) {
+  if (pct === 0) return theme === 'light' ? '#1a6fd4' : '#4d9fff'
   if (pct >= 85) return '#f04b4b'
   if (pct >= 60) return '#f5a623'
   return '#22d07a'
@@ -123,8 +123,8 @@ function trafficLightColor(pct) {
 // FaMapMarker viewBox: 384×512 (ratio 3:4). react-icons sets width/height as HTML attrs
 // overriding any CSS — must strip them before applying correct dimensions (24×32).
 // Pin tip: center-x=12, bottom-y=32. iconAnchor=[12,32].
-function makeAirportIcon(pct) {
-  const pinColor = trafficLightColor(pct)
+function makeAirportIcon(pct, theme) {
+  const pinColor = trafficLightColor(pct, theme)
   const markerSvg = renderToStaticMarkup(React.createElement(FaMapMarker, { size: 20, color: pinColor }))
   const signSvg   = renderToStaticMarkup(React.createElement(CiAirportSign1, { size: 16, color: '#fff' }))
   const pinHtml = markerSvg
@@ -151,11 +151,8 @@ function lerpPos(originAp, destAp, fraction) {
 const PLANE_SIZE = 30  // change this one value to resize the plane icon
 
 function makeDivIcon(selected, angle, theme, flightPct) {
-  const baseColor = trafficLightColor(flightPct ?? 0)
-  const color = selected
-    ? (theme === 'light' ? '#0553b1' : '#74b3ff')
-    : baseColor
-  const shadow = selected ? `drop-shadow(0 0 4px ${color})` : 'none'
+  const color = trafficLightColor(flightPct ?? 0, theme)
+  const shadow = selected ? `drop-shadow(0 0 6px ${color})` : 'none'
   const s = PLANE_SIZE
   // Body centerline of this SVG path is at x=11.5/24 of viewBox (not perfectly centered).
   // cx/cy must match transform-origin and iconAnchor so rotation keeps the fuselage on the route line.
@@ -396,7 +393,7 @@ export default function MapView({
           <Marker
             key={ap.id}
             position={[ap.lat, ap.lng]}
-            icon={makeAirportIcon(pct)}
+            icon={makeAirportIcon(pct, theme)}
             eventHandlers={{ click: () => onAirportClick && onAirportClick(ap) }}
           >
             <Tooltip className="tasf-tooltip" direction="top" offset={[0, -32]}>
