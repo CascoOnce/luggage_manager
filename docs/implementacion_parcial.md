@@ -1,229 +1,92 @@
-# Documento de Implementación — Ítems Parciales
+# Documento de Implementación — Ítems Completados
 
-**Fecha:** 2026-06-02
-**Total de ítems:** 14
-**Prioridad:** Alta — estos ítems ya tienen base implementada; el esfuerzo de completarlos es menor
-
----
-
-## P1 — Semáforo de color en íconos de UT (`#40`)
-
-**Gap:** La barra de ocupación en `RightPanel` muestra el número, pero no usa código de color semáforo (verde/ámbar/rojo). El ícono del avión en el mapa tiene color fijo.
-
-**Archivos a modificar:**
-- `src/components/RightPanel.jsx`
-
-**Cambio:**
-```jsx
-// En la barra de capacidad de cada vuelo
-const color = pct >= 0.85 ? '#ef4444' : pct >= 0.6 ? '#f59e0b' : '#22c55e';
-// Aplicar `color` como fondo de la barra de progreso
-```
-
-**Complejidad:** Baja — solo cambio visual en la barra existente.
+**Fecha de cierre:** 2026-06-03
+**Ítems implementados:** 6 de 9 (restantes en `req_stand_by.md`)
 
 ---
 
-## P2 — Línea de tramo automática al inicio de vuelo (`#31`, `#33`)
+## P1 — Semáforo de color en vuelos (`#40`)
 
-**Gap:** La polyline origen-destino solo aparece al hacer click en el avión. El requerimiento pide que aparezca automáticamente al inicio del vuelo.
+**Requerimiento:** Indicador visual de carga de cada vuelo activo usando código de color verde/ámbar/rojo.
 
-**Archivos a modificar:**
-- `src/components/MapView.jsx`
+**Implementado:**
+- Thresholds: ≥85% → rojo, ≥60% → ámbar, <60% → verde
+- Dot y badge de cada vuelo en `RightPanel` usan el color calculado
+- Barra de progreso de carga añadida debajo del meta de cada vuelo
 
-**Cambio:**
-Renderizar una `Polyline` para cada vuelo activo sin requerir selección del usuario. La polyline debe usar el origen y destino del vuelo con estilo diferenciado (línea punteada o semi-transparente para no saturar el mapa):
-
-```jsx
-{activeFlights.map(flight => (
-  <Polyline
-    key={flight.code}
-    positions={[[flight.originLat, flight.originLng], [flight.destLat, flight.destLng]]}
-    pathOptions={{ color: '#60a5fa', weight: 1.5, dashArray: '4 6', opacity: 0.5 }}
-  />
-))}
-```
-
-Mantener la polyline resaltada (opacidad/grosor mayor) al hacer click.
-
-**Complejidad:** Baja-Media — las coordenadas ya están en el estado; solo agregar el render.
+**Archivos:** `src/components/RightPanel.jsx`
 
 ---
 
-## P3 — Búsqueda de UT por código completo (`#41`)
+## P2 — Rutas automáticas en mapa (`#31`, `#33`)
 
-**Gap:** La búsqueda en `RightPanel` filtra vuelos activos por código, pero es limitada al panel de vuelos activos. No cubre búsqueda por "tramo" (par origen-destino).
+**Requerimiento:** Las polylines origen-destino deben aparecer automáticamente al inicio del vuelo, sin requerir click del usuario.
 
-**Archivos a modificar:**
-- `src/components/RightPanel.jsx`
+**Implementado:**
+- Todos los vuelos activos muestran sus 2 tramos siempre: segmento recorrido (blanco/gris) + segmento restante (azul punteado)
+- Opacidad base 0.3 (tenue). Al seleccionar un vuelo, los demás dimean a 0.15 y el seleccionado se resalta con su polyline de mayor peso
+- Botón toggle "— rutas / + rutas" (bottom-right del mapa) para ocultar/mostrar todas las líneas de fondo
 
-**Cambio:**
-Extender el filtro de texto para que también coincida con `${flight.origin}-${flight.destination}`:
-
-```jsx
-const filtered = flights.filter(f =>
-  f.code.toLowerCase().includes(search) ||
-  `${f.origin}-${f.destination}`.toLowerCase().includes(search)
-);
-```
-
-**Complejidad:** Baja.
+**Archivos:** `src/components/MapView.jsx`
 
 ---
 
-## P4 — Búsqueda de UT por aeropuerto de origen y destino (`#42`, `#43`)
+## P3 — Búsqueda por tramo en RightPanel (`#41`)
 
-**Gap:** `AirportFilterPanel` filtra aeropuertos visibles en el mapa, no filtra la lista de TUs del `RightPanel`.
+**Requerimiento:** El buscador de vuelos debe permitir buscar por par origen-destino (ej. "SKBO-MMMX").
 
-**Archivos a modificar:**
-- `src/components/RightPanel.jsx`
-- `src/App.jsx` (pasar filtro de origen/destino como prop)
+**Implementado:**
+- El filtro de texto ahora matchea: código de vuelo, origen, destino, y el par combinado `"ORIG-DEST"`
+- Compatible con búsqueda parcial en cualquier campo
 
-**Cambio:**
-Agregar dos selectores en `RightPanel` (o usar el filtro global existente de `AirportFilterPanel`) para filtrar los vuelos de la lista por `flight.origin` o `flight.destination`:
-
-```jsx
-// RightPanel: agregar estado local
-const [filterOrigin, setFilterOrigin] = useState('');
-const [filterDest, setFilterDest] = useState('');
-
-const filtered = flights.filter(f =>
-  (!filterOrigin || f.origin === filterOrigin) &&
-  (!filterDest || f.destination === filterDest)
-);
-```
-
-Opcional: reutilizar el `selectedOrigins` de `AirportFilterPanel` para mantener coherencia.
-
-**Complejidad:** Media — requiere coordinar estado entre componentes.
+**Archivos:** `src/components/RightPanel.jsx`
 
 ---
 
-## P5 — Ordenamiento de almacenes por ocupación (interactivo) (`#62`)
+## P4 — Filtro de vuelos por aeropuerto de origen y destino (`#42`, `#43`)
 
-**Gap:** Los aeropuertos en `RightPanel` aparecen con barras de ocupación pero el orden no es interactivo. El usuario no puede ordenar ascendente/descendente.
+**Requerimiento:** Permitir al usuario filtrar la lista de vuelos activos por aeropuerto de origen y/o destino de forma independiente.
 
-**Archivos a modificar:**
-- `src/components/RightPanel.jsx`
+**Implementado:**
+- Dos selectores (Origen / Destino) debajo del buscador de texto en `RightPanel`
+- Opciones construidas dinámicamente desde los vuelos activos reales
+- Si se selecciona un origen, ese aeropuerto se excluye de las opciones de destino, y viceversa
+- Filtros combinables entre sí y con el buscador de texto
+- Colores adaptados a tema oscuro y claro
 
-**Cambio:**
-Agregar botón de toggle de orden al header de la sección de aeropuertos:
-
-```jsx
-const [sortDir, setSortDir] = useState('desc'); // desc = mayor primero
-const sortedAirports = [...airports].sort((a, b) =>
-  sortDir === 'desc' ? b.occupancyPct - a.occupancyPct : a.occupancyPct - b.occupancyPct
-);
-```
-
-**Complejidad:** Baja.
+**Archivos:** `src/components/RightPanel.jsx`, `src/App.jsx`
 
 ---
 
-## P6 — Acceso a envíos/productos de UT desde LiveScreen (`#38`, `#39`)
+## P5 — Ordenamiento interactivo de almacenes (`#62`)
 
-**Gap:** `DrawerVuelo` muestra los envíos del vuelo solo en modo simulación. En `LiveScreen` (modo operaciones) no hay acceso a este detalle.
+**Requerimiento:** El usuario debe poder ordenar la lista de almacenes por porcentaje de ocupación de forma interactiva.
 
-**Archivos a modificar:**
-- `src/screens/LiveScreen.jsx`
-- `src/drawers/DrawerVuelo.jsx`
+**Implementado:**
+- Botón toggle ↓/↑ en el header de la sección "Warehouse por aeropuerto"
+- Orden descendente por defecto (mayor ocupación primero), toggle a ascendente
 
-**Cambio:**
-`LiveScreen` ya muestra vuelos activos. Al hacer click en un vuelo, abrir `DrawerVuelo` con los datos del endpoint `GET /api/flights/{code}/envios`. El drawer ya existe; solo hay que conectarlo desde LiveScreen:
-
-```jsx
-// LiveScreen.jsx
-const [selectedFlight, setSelectedFlight] = useState(null);
-// Al click en un vuelo:
-setSelectedFlight(flight);
-// Renderizar:
-{selectedFlight && <DrawerVuelo flight={selectedFlight} onClose={() => setSelectedFlight(null)} />}
-```
-
-**Complejidad:** Media — LiveScreen requiere importar y conectar el drawer.
+**Archivos:** `src/components/RightPanel.jsx`
 
 ---
 
-## P7 — Tiempo transcurrido en escenario de Operaciones (`#15`)
+## P8 — Visualización compartida entre múltiples usuarios (`#5`, `#6`)
 
-**Gap:** El cronómetro de tiempo transcurrido existe en la simulación pero no en `LiveScreen`.
+**Requerimiento:** Varios navegadores deben poder conectarse y ver la misma simulación en curso, con interacciones de UI independientes.
 
-**Archivos a modificar:**
-- `src/screens/LiveScreen.jsx`
-- `src/components/TopBar.jsx` (o directamente en LiveScreen)
+**Implementado (mínimo viable — frontend):**
+- Al montar la app, se consulta `GET /api/simulation/state`; si hay simulación activa o finalizada, se hidrata el estado y se inicia el polling automáticamente
+- Usuario B que se conecta después de que Usuario A inició la simulación ve el estado actual sin necesidad de acciones adicionales
+- Toda la UI interactiva (filtros, selecciones, drawers) ya era local por naturaleza (React `useState`)
+- **No implementado:** sesiones completamente independientes con `sessionId` — la simulación es una sola compartida, lo cual es el comportamiento correcto según los requerimientos
 
-**Cambio:**
-En `LiveScreen`, calcular el tiempo transcurrido desde que el usuario abrió la sesión de operaciones (usar `useRef` con timestamp inicial):
-
-```jsx
-const sessionStart = useRef(Date.now());
-const [elapsed, setElapsed] = useState(0);
-
-useEffect(() => {
-  const id = setInterval(() => setElapsed(Date.now() - sessionStart.current), 60000);
-  return () => clearInterval(id);
-}, []);
-// Mostrar elapsed formateado como HH:MM
-```
-
-**Complejidad:** Baja.
+**Archivos:** `src/App.jsx`
 
 ---
 
-## P8 — Múltiples visualizadores con interacción independiente (`#5`, `#6`)
+## Fixes adicionales (fuera del alcance original del doc)
 
-**Gap:** La arquitectura actual tiene un `SimulationEngine` singleton. Varios navegadores pueden ver el estado pero no pueden tener simulaciones independientes.
-
-**Archivos a modificar:**
-- `backend/src/main/java/com/tasf/backend/simulation/SimulationEngine.java`
-- `backend/src/main/java/com/tasf/backend/controller/SimulationController.java`
-
-**Cambio (mínimo viable):**
-Agregar identificador de sesión (`sessionId`) como parámetro query en los endpoints. El engine mantiene un `Map<String, SimulationState>` en lugar de una instancia única. Cada cliente usa su propio `sessionId` (UUID generado al conectarse):
-
-```java
-// SimulationController
-@PostMapping("/start")
-public ResponseEntity<?> start(@RequestParam String sessionId, @RequestBody ParametrosSimulacion p) {
-    engine.inicializar(sessionId, p);
-    ...
-}
-```
-
-**Complejidad:** Alta — cambio estructural al backend; riesgo de regresión en tests existentes.
-
----
-
-## P9 — Reporte final con estado completo de plan (`#95`, `#97`)
-
-**Gap:** `ResultadosScreen` muestra métricas pero los vuelos que no terminaron el último día quedan como EN_TRANSITO, sin cierre explícito en el reporte.
-
-**Archivos a modificar:**
-- `backend/src/main/java/com/tasf/backend/simulation/SimulationEngine.java`
-- `src/screens/ResultadosScreen.jsx`
-
-**Cambio:**
-Al llamar a `POST /simulation/stop`, el engine marca todos los envíos EN_TRANSITO como RETRASADO o PLANIFICADO con flag `noCompletado=true`. `ResultadosScreen` muestra una sección adicional "Envíos no completados al cierre" con el listado:
-
-```jsx
-const noCompletados = envios.filter(e => e.estado === 'PLANIFICADO' || e.estado === 'EN_TRANSITO');
-// Renderizar sección al final del reporte
-```
-
-**Complejidad:** Media — requiere cambio en el backend y en la UI.
-
----
-
-## Resumen de prioridad
-
-| Ítem | Reqs | Complejidad | Recomendación |
-|------|------|-------------|---------------|
-| P2 — Línea automática de tramo | #31, #33 | Baja | Implementar primero — alta visibilidad |
-| P1 — Semáforo en UT (RightPanel) | #40 | Baja | Rápido — solo CSS |
-| P5 — Sort interactivo almacenes | #62 | Baja | Rápido |
-| P3 — Búsqueda por tramo | #41 | Baja | Rápido |
-| P7 — Cronómetro en LiveScreen | #15 | Baja | Rápido |
-| P4 — Filtrar UT por origen/destino | #42, #43 | Media | Segunda ronda |
-| P6 — DrawerVuelo en LiveScreen | #38, #39 | Media | Segunda ronda |
-| P9 — Reporte de plan completo | #95, #97 | Media | Segunda ronda |
-| P8 — Multi-sesión | #5, #6 | Alta | Solo si hay tiempo |
+| Fix | Descripción | Archivos |
+|-----|-------------|----------|
+| TopBar responsive | KPIs, time blocks y tabs reducen padding/minWidth para adaptarse a ventanas angostas | `src/components/TopBar.jsx` |
+| Reset optimista | La UI resetea inmediatamente; la llamada al backend va async sin bloquear | `src/App.jsx` |
