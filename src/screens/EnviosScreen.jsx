@@ -69,6 +69,8 @@ export default function EnviosScreen({ simState }) {
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState(new Set(STATUS_ORDER))
   const [routeFilter, setRouteFilter] = useState(new Set(ROUTE_TYPES))
+  const [filterOrigen, setFilterOrigen] = useState('')
+  const [filterDestino, setFilterDestino] = useState('')
   const [selectedEnvioId, setSelectedEnvioId] = useState(null)
 
   const envios = useMemo(() => {
@@ -87,6 +89,13 @@ export default function EnviosScreen({ simState }) {
 
   const kpis = useMemo(() => getKpis(simState), [simState])
   const aeropuertos = useMemo(() => getAeropuertos(simState), [simState])
+
+  const uniqueOrigenes = useMemo(() =>
+    [...new Set(envios.map((e) => e.aeropuertoOrigen).filter(Boolean))].sort()
+  , [envios])
+  const uniqueDestinos = useMemo(() =>
+    [...new Set(envios.map((e) => e.aeropuertoDestino).filter(Boolean))].sort()
+  , [envios])
   const throughput = useMemo(() => getThroughput(simState), [simState])
   const logEntries = useMemo(() => getLog(simState), [simState])
 
@@ -105,9 +114,11 @@ export default function EnviosScreen({ simState }) {
       const matchesSearch = !q || haystack.includes(q)
       const matchesStatus = statusFilter.has(envio.estado)
       const matchesRoute = routeFilter.has(envio.tipoRuta)
-      return matchesSearch && matchesStatus && matchesRoute
+      const matchesOrigen = !filterOrigen || envio.aeropuertoOrigen === filterOrigen
+      const matchesDestino = !filterDestino || envio.aeropuertoDestino === filterDestino
+      return matchesSearch && matchesStatus && matchesRoute && matchesOrigen && matchesDestino
     })
-  }, [envios, query, statusFilter, routeFilter])
+  }, [envios, query, statusFilter, routeFilter, filterOrigen, filterDestino])
 
   const summary = useMemo(() => {
     const totalEnvios = visible.length
@@ -156,6 +167,27 @@ export default function EnviosScreen({ simState }) {
             outline: 'none',
           }}
         />
+
+        <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+          {[
+            { label: 'Origen', value: filterOrigen, set: setFilterOrigen, opts: uniqueOrigenes },
+            { label: 'Destino', value: filterDestino, set: setFilterDestino, opts: uniqueDestinos },
+          ].map(({ label, value, set, opts }) => (
+            <select
+              key={label}
+              value={value}
+              onChange={(e) => set(e.target.value)}
+              style={{
+                flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)',
+                color: value ? 'var(--text)' : 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12,
+                padding: '6px 6px', borderRadius: 2, outline: 'none', cursor: 'pointer',
+              }}
+            >
+              <option value="">{label}</option>
+              {opts.map((iata) => <option key={iata} value={iata}>{iata}</option>)}
+            </select>
+          ))}
+        </div>
 
         <div style={{ marginTop: 16 }}>
           <div style={headingStyle()}>Estado</div>

@@ -485,8 +485,8 @@ export default function App() {
     // If vuelo not found in current frame, keep the previous drawer content open.
   }, [selectedFlight, backendState, backendFlights])
 
-  const activeKpis = useMemo(() =>
-    backendState?.kpis
+  const activeKpis = useMemo(() => {
+    const base = backendState?.kpis
       ? {
           bagsInTransit: backendState.kpis.maletasEnTransito,
           bagsDelivered: backendState.kpis.maletasEntregadas,
@@ -498,8 +498,16 @@ export default function App() {
           bagsInTransit: 0, bagsDelivered: 0,
           slaCompliance: 0, activeFlights: 0,
           slaViolated: 0,
-        },
-  [backendState?.kpis, simState?.kpis])
+        }
+    const globalFleetOccupancy = backendFlights.length > 0
+      ? backendFlights.reduce((acc, f) => acc + (f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0), 0) / backendFlights.length
+      : 0
+    const withCap = clockedAirports.filter((a) => (a.warehouseCapacity ?? 0) > 0)
+    const globalWarehouseOccupancy = withCap.length > 0
+      ? withCap.reduce((acc, a) => acc + (a.currentOccupation / a.warehouseCapacity) * 100, 0) / withCap.length
+      : 0
+    return { ...base, globalFleetOccupancy, globalWarehouseOccupancy }
+  }, [backendState?.kpis, simState?.kpis, backendFlights, clockedAirports])
 
   async function handleReset() {
     prefetchFiredRef.current = false

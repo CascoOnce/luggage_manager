@@ -130,11 +130,15 @@ export default function TopBar({
   const isBackendFinished = backendState?.finalizada === true
   const effectiveRunning = isRunning !== undefined ? isRunning : running
 
+  const occColor = (pct) => pct >= 85 ? 'var(--red)' : pct >= 60 ? 'var(--amber)' : pct > 0 ? 'var(--green)' : 'var(--muted)'
+
   const kpiCards = [
     { label: 'En tránsito',    value: hasSimulation ? kpis.bagsInTransit.toLocaleString() : '—', color: hasSimulation ? 'var(--text-bright)' : 'var(--muted)' },
     { label: 'Cumpl. SLA',     value: hasSimulation ? `${Number(kpis.slaCompliance).toFixed(1)}%` : '—', color: hasSimulation ? (kpis.slaCompliance >= 90 ? 'var(--green)' : kpis.slaCompliance >= 75 ? 'var(--amber)' : 'var(--red)') : 'var(--muted)' },
     { label: 'Vuelos activos', value: hasSimulation ? String(kpis.activeFlights) : '—', color: hasSimulation ? 'var(--blue-bright)' : 'var(--muted)' },
     { label: 'SLA vencidos',   value: hasSimulation ? String(kpis.slaViolated) : '—', color: hasSimulation && kpis.slaViolated > 0 ? 'var(--red)' : 'var(--muted)' },
+    { label: 'Flota',          value: hasSimulation ? `${Math.round(kpis.globalFleetOccupancy ?? 0)}%` : '—', color: hasSimulation ? occColor(kpis.globalFleetOccupancy ?? 0) : 'var(--muted)' },
+    { label: 'Almacenes',      value: hasSimulation ? `${Math.round(kpis.globalWarehouseOccupancy ?? 0)}%` : '—', color: hasSimulation ? occColor(kpis.globalWarehouseOccupancy ?? 0) : 'var(--muted)' },
   ]
 
   const tabs = [

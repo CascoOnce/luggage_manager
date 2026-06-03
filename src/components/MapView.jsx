@@ -113,11 +113,18 @@ function occupancyPct(ap) {
   return Math.round((ap.currentOccupation / ap.warehouseCapacity) * 100)
 }
 
+function trafficLightColor(pct) {
+  if (pct === 0) return '#6b7280'
+  if (pct >= 85) return '#ef4444'
+  if (pct >= 60) return '#f59e0b'
+  return '#22c55e'
+}
+
 // FaMapMarker viewBox: 384×512 (ratio 3:4). react-icons sets width/height as HTML attrs
 // overriding any CSS — must strip them before applying correct dimensions (24×32).
 // Pin tip: center-x=12, bottom-y=32. iconAnchor=[12,32].
-function makeAirportIcon(theme) {
-  const pinColor = theme === 'light' ? '#1a6fd4' : '#4d9fff'
+function makeAirportIcon(pct) {
+  const pinColor = trafficLightColor(pct)
   const markerSvg = renderToStaticMarkup(React.createElement(FaMapMarker, { size: 20, color: pinColor }))
   const signSvg   = renderToStaticMarkup(React.createElement(CiAirportSign1, { size: 16, color: '#fff' }))
   const pinHtml = markerSvg
@@ -143,10 +150,11 @@ function lerpPos(originAp, destAp, fraction) {
 
 const PLANE_SIZE = 30  // change this one value to resize the plane icon
 
-function makeDivIcon(selected, angle, theme) {
+function makeDivIcon(selected, angle, theme, flightPct) {
+  const baseColor = trafficLightColor(flightPct ?? 0)
   const color = selected
     ? (theme === 'light' ? '#0553b1' : '#74b3ff')
-    : (theme === 'light' ? '#0969da' : '#4d9fff')
+    : baseColor
   const shadow = selected ? `drop-shadow(0 0 4px ${color})` : 'none'
   const s = PLANE_SIZE
   // Body centerline of this SVG path is at x=11.5/24 of viewBox (not perfectly centered).
@@ -297,9 +305,11 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
         if (!pos) return null
         const isSelected = selectedFlight === flight.id
         const angle = screenAngle(map, a, b)
-        const cacheKey = `${isSelected ? 1 : 0}-${Math.round(angle)}-${theme}`
+        const flightPct = flight.capacity > 0 ? Math.round((flight.currentLoad / flight.capacity) * 100) : 0
+        const flightBucket = flightPct === 0 ? 0 : flightPct >= 85 ? 85 : flightPct >= 60 ? 60 : 1
+        const cacheKey = `${isSelected ? 1 : 0}-${Math.round(angle)}-${theme}-${flightBucket}`
         if (!iconCache.current.has(cacheKey)) {
-          iconCache.current.set(cacheKey, makeDivIcon(isSelected, angle, theme))
+          iconCache.current.set(cacheKey, makeDivIcon(isSelected, angle, theme, flightPct))
         }
         const icon = iconCache.current.get(cacheKey)
         return (
@@ -386,7 +396,7 @@ export default function MapView({
           <Marker
             key={ap.id}
             position={[ap.lat, ap.lng]}
-            icon={makeAirportIcon(theme)}
+            icon={makeAirportIcon(pct)}
             eventHandlers={{ click: () => onAirportClick && onAirportClick(ap) }}
           >
             <Tooltip className="tasf-tooltip" direction="top" offset={[0, -32]}>
