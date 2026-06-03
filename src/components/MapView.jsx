@@ -115,9 +115,9 @@ function occupancyPct(ap) {
 
 function trafficLightColor(pct) {
   if (pct === 0) return '#6b7280'
-  if (pct >= 85) return '#ef4444'
-  if (pct >= 60) return '#f59e0b'
-  return '#22c55e'
+  if (pct >= 85) return '#f04b4b'
+  if (pct >= 60) return '#f5a623'
+  return '#22d07a'
 }
 
 // FaMapMarker viewBox: 384×512 (ratio 3:4). react-icons sets width/height as HTML attrs
