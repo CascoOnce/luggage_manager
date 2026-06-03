@@ -816,6 +816,7 @@ export default function App() {
                 simState={simState}
                 theme={theme}
                 onBack={handleBackToMain}
+                globalKpis={activeKpis}
               />
             )}
             {screen === 'resultados' && (
