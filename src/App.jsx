@@ -166,6 +166,17 @@ export default function App() {
     api.getAirportGraph().then(setAirportGraph).catch(() => {})
   }, [])
 
+  // On mount: check if a simulation is already running (another tab/user started it)
+  useEffect(() => {
+    api.getState().then((state) => {
+      if (state && (state.enEjecucion || state.finalizada)) {
+        setBackendState(state)
+        startPolling()
+        if (state.finalizada) setScreen('resultados')
+      }
+    }).catch(() => {})
+  }, [startPolling])
+
   useEffect(() => {
     api.getAirports()
       .then((data) => setStaticAirports(
@@ -482,16 +493,12 @@ export default function App() {
     prefetchFiredRef.current = false
     nextDayStateRef.current = null
     colapsoPuntoAlertedRef.current = false
-    try {
-      await api.resetSimulation()
-    } catch (err) {
-      console.error('Reset backend error:', err)
-    }
     stopPolling()
     pollingErrorsRef.current = 0
     setPollingError(null)
     onReset()
     setBackendState(null)
+    api.resetSimulation().catch((err) => console.error('Reset backend error:', err))
   }
 
   async function handleStop() {
