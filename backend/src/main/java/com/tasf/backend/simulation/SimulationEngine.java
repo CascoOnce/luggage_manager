@@ -148,6 +148,7 @@ public class SimulationEngine {
         this.enEjecucion = true;
         this.finalizada = false;
         updateWarehouseOccupation();
+        aeropuertos.forEach(a -> a.setOcupacionInicioDia(a.getOcupacionActual()));
 
         String algoritmoInicial = params.getAlgoritmo() != null ? params.getAlgoritmo() : "N/A";
         addOperationLog("Simulation initialized - Day 1 - " + this.envios.size()
@@ -172,6 +173,7 @@ public class SimulationEngine {
         // post-delivery state and updates the domain field used by the API.
         updateWarehouseOccupation();
         accumulateOccupationSample();
+        aeropuertos.forEach(a -> a.setOcupacionInicioDia(a.getOcupacionActual()));
 
         // Build lookup maps once per day — shared across all passes and processDeliveries.
         Map<String, Envio> envioById = envios.stream().collect(Collectors.toMap(Envio::getIdEnvio, e -> e, (a, b) -> a));
@@ -285,6 +287,7 @@ public class SimulationEngine {
         this.finalizada = false;
 
         updateWarehouseOccupation();
+        aeropuertos.forEach(a -> a.setOcupacionInicioDia(a.getOcupacionActual()));
         addOperationLog("Simulation restarted - Day 1 - reusing previous plans");
         return getEstado();
     }
@@ -1119,6 +1122,7 @@ public class SimulationEngine {
             .lng(airport.getLng())
             .capacidadAlmacen(capacidad)
             .ocupacionActual(ocupacion)
+            .ocupacionInicioDia(airport.getOcupacionInicioDia())
             .semaforo(semaforo)
             .maletasRecibidas(airport.getMaletasRecibidas())
             .maletasEnviadas(airport.getMaletasEnviadas())

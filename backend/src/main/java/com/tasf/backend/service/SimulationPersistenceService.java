@@ -138,6 +138,8 @@ public class SimulationPersistenceService {
         }
         envioRepository.saveAll(toSave);
 
+        envioRepository.resetAllToPendiente();
+
         log.info("Simulation results persisted successfully.");
     }
 }

@@ -351,6 +351,8 @@ export default function App() {
     const vuelosList = simState?.vuelos || []
     return airports.map((airport) => {
       const iata = airport.codigoIATA || airport.id
+      const ocupFin = airport.currentOccupation ?? airport.ocupacionActual ?? 0
+      const ocupIni = airport.ocupacionInicioDia ?? ocupFin
       return {
         ...airport,
         id: iata,
@@ -358,13 +360,23 @@ export default function App() {
         continent: airport.continent || airport.continente,
         lat: airport.lat,
         lng: airport.lng,
-        currentOccupation: airport.currentOccupation ?? airport.ocupacionActual ?? 0,
+        currentOccupation: ocupFin,
+        ocupacionInicioDia: ocupIni,
         warehouseCapacity: airport.warehouseCapacity ?? airport.capacidadAlmacen ?? 600,
         vuelosSalientes: vuelosList.filter((v) => (v.origen || v.origin) === iata && v.enUso).length,
         vuelosLlegando:  vuelosList.filter((v) => (v.destino || v.destination) === iata && v.enUso).length,
       }
     })
   }, [simState?.aeropuertos, simState?.airports, simState?.vuelos])
+
+  const clockedAirports = useMemo(() => {
+    if (!backendState?.enEjecucion) return normalizedAirports
+    const fraction = Math.min(simClockMinutes / 1440, 1)
+    return normalizedAirports.map((ap) => ({
+      ...ap,
+      currentOccupation: Math.round(ap.ocupacionInicioDia + (ap.currentOccupation - ap.ocupacionInicioDia) * fraction),
+    }))
+  }, [normalizedAirports, simClockMinutes, backendState?.enEjecucion])
 
   const normalizedFlights = useMemo(() =>
     simState?.vuelos
@@ -390,14 +402,14 @@ export default function App() {
   const destSet = useMemo(() => destIds ? new Set(destIds) : null, [destIds])
 
   const visibleAirports = useMemo(() => {
-    if (!originSet && !destSet) return normalizedAirports
+    if (!originSet && !destSet) return clockedAirports
     const visible = new Set()
-    for (const ap of normalizedAirports) {
+    for (const ap of clockedAirports) {
       if (!originSet || originSet.has(ap.id)) visible.add(ap.id)
       if (!destSet || destSet.has(ap.id)) visible.add(ap.id)
     }
-    return normalizedAirports.filter((a) => visible.has(a.id))
-  }, [normalizedAirports, originSet, destSet])
+    return clockedAirports.filter((a) => visible.has(a.id))
+  }, [clockedAirports, originSet, destSet])
 
   const normalizedRoutes = useMemo(() =>
     simState?.envios
