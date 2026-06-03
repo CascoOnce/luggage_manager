@@ -249,6 +249,17 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
 
   return (
     <>
+      {activeFlights.map((flight) => {
+        const a = apIdx[flight.origin], b = apIdx[flight.destination]
+        if (!a || !b) return null
+        return (
+          <Polyline
+            key={`bg-route-${flight.id}`}
+            positions={[[a.lat, a.lng], [b.lat, b.lng]]}
+            pathOptions={{ color: '#60a5fa', weight: 1.5, dashArray: '4 6', opacity: 0.35 }}
+          />
+        )
+      })}
       {selectedRouteEl}
       {activeFlights.map((flight) => {
         const a = apIdx[flight.origin], b = apIdx[flight.destination]

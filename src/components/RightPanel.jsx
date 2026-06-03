@@ -65,6 +65,7 @@ function warehouseColor(ap, threshold) {
 
 export default function RightPanel({ flights, airports, threshold, selectedFlight, setSelectedFlight, onVueloClick, showAllAirports }) {
   const [flightQuery, setFlightQuery] = useState('')
+  const [sortDir, setSortDir] = useState('desc')
   const flightList = flights || []
   const airportList = airports || []
   const activeFlights = useMemo(() => {
@@ -74,7 +75,8 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
     return active.filter((f) =>
       f.id?.toLowerCase().includes(q) ||
       f.origin?.toLowerCase().includes(q) ||
-      f.destination?.toLowerCase().includes(q)
+      f.destination?.toLowerCase().includes(q) ||
+      `${f.origin}-${f.destination}`.toLowerCase().includes(q)
     )
   }, [flightList, flightQuery])
   const { occupiedAirports, hiddenCount } = useMemo(() => {
@@ -83,13 +85,14 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
       const aCap = a.warehouseCapacity ?? a.capacidadAlmacen ?? 600
       const bOcc = b.currentOccupation ?? b.ocupacionActual ?? 0
       const bCap = b.warehouseCapacity ?? b.capacidadAlmacen ?? 600
-      return (bOcc / bCap) - (aOcc / aCap)
+      const diff = (bOcc / bCap) - (aOcc / aCap)
+      return sortDir === 'desc' ? diff : -diff
     })
     const occupied = showAllAirports
       ? sorted
       : sorted.filter((ap) => (ap.currentOccupation ?? ap.ocupacionActual ?? 0) > 0)
     return { occupiedAirports: occupied, hiddenCount: showAllAirports ? 0 : sorted.length - occupied.length }
-  }, [airportList])
+  }, [airportList, sortDir])
 
   return (
     <div style={s.panel}>
@@ -114,7 +117,7 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
           {activeFlights.map((f) => {
             const isSelected = selectedFlight === f.id
             const loadPct    = Math.round((f.currentLoad / f.capacity) * 100)
-            const color      = loadPct >= 90 ? '#f04b4b' : loadPct >= 70 ? '#f5a623' : '#22d07a'
+            const color      = loadPct >= 85 ? '#f04b4b' : loadPct >= 60 ? '#f5a623' : '#22d07a'
             return (
               <div key={f.id} style={s.flightItem(isSelected)}
                 onClick={() => { setSelectedFlight(isSelected ? null : f.id); if (onVueloClick) onVueloClick(f) }}>
@@ -122,6 +125,9 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={s.flightRoute}>{f.origin} → {f.destination}</div>
                   <div style={s.flightMeta}>{f.currentLoad}/{f.capacity} · {f.type === 'continental' ? 'CONT' : 'INT'}</div>
+                  <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 3, overflow: 'hidden', marginTop: 4 }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, loadPct)}%`, background: color, borderRadius: 3, transition: 'width 0.4s ease' }} />
+                  </div>
                 </div>
                 <div style={s.badge(color)}>{loadPct}%</div>
               </div>
@@ -137,7 +143,16 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
 
       {/* ── WAREHOUSE PER AIRPORT ─────────────────────────────────────── */}
       <div style={{ ...s.sectionPad, flex: '0 0 50%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderTop: '1px solid var(--border)' }}>
-        <span style={s.title}>Warehouse por aeropuerto</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <span style={{ ...s.title, marginBottom: 0 }}>Warehouse por aeropuerto</span>
+          <button
+            onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13, padding: '0 2px', lineHeight: 1 }}
+            title={sortDir === 'desc' ? 'Mayor primero' : 'Menor primero'}
+          >
+            {sortDir === 'desc' ? '↓' : '↑'}
+          </button>
+        </div>
         <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 8 }}>
         {occupiedAirports.map((ap) => {
           const color = warehouseColor(ap, threshold)
