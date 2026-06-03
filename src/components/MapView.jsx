@@ -337,7 +337,7 @@ export default function MapView({
       <button
         onClick={() => setShowRoutes(v => !v)}
         style={{
-          position: 'absolute', bottom: 16, right: 16, zIndex: 1000,
+          position: 'absolute', bottom: 16, left: 32, zIndex: 1000,
           background: showRoutes ? 'rgba(61,139,255,0.15)' : 'rgba(255,255,255,0.05)',
           border: `1px solid ${showRoutes ? '#3d8bff55' : 'rgba(255,255,255,0.1)'}`,
           color: showRoutes ? '#60a5fa' : 'rgba(255,255,255,0.3)',

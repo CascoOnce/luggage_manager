@@ -180,7 +180,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose }) {
             ) : salidas.map((v, i) => {
               const code = v.id || v.codigoVuelo || `FL-${i}`
               const dest = v.destination || v.destino || '?'
-              const load = v.currentLoad ?? v.cargaActual ?? 0
+              const load = v.maletasAsignadas ?? v.currentLoad ?? v.cargaActual ?? 0
               const vcap = v.capacity ?? v.capacidadTotal ?? 300
               const c = flightColor(load, vcap)
               return (
@@ -202,7 +202,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose }) {
             ) : llegadas.map((v, i) => {
               const code = v.id || v.codigoVuelo || `FL-${i}`
               const origin = v.origin || v.origen || '?'
-              const load = v.currentLoad ?? v.cargaActual ?? 0
+              const load = v.maletasAsignadas ?? v.currentLoad ?? v.cargaActual ?? 0
               const vcap = v.capacity ?? v.capacidadTotal ?? 300
               const c = flightColor(load, vcap)
               return (
