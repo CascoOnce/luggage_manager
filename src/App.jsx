@@ -764,6 +764,7 @@ export default function App() {
                 selectedFlight={selectedFlight}
                 setSelectedFlight={setSelectedFlight}
                 onVueloClick={setMapSelectedVuelo}
+                theme={theme}
               />
             </div>
           </div>

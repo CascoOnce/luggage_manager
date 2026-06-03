@@ -63,7 +63,7 @@ function warehouseColor(ap, threshold) {
   return '#22d07a'
 }
 
-export default function RightPanel({ flights, airports, threshold, selectedFlight, setSelectedFlight, onVueloClick, showAllAirports }) {
+export default function RightPanel({ flights, airports, threshold, selectedFlight, setSelectedFlight, onVueloClick, showAllAirports, theme = 'dark' }) {
   const [flightQuery, setFlightQuery] = useState('')
   const [sortDir, setSortDir] = useState('desc')
   const [filterOrigin, setFilterOrigin] = useState('')
@@ -71,8 +71,12 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
   const flightList = flights || []
   const airportList = airports || []
   const allActive = useMemo(() => flightList.filter((f) => f.status === 'active'), [flightList])
-  const originOptions = useMemo(() => [...new Set(allActive.map(f => f.origin).filter(Boolean))].sort(), [allActive])
-  const destOptions   = useMemo(() => [...new Set(allActive.map(f => f.destination).filter(Boolean))].sort(), [allActive])
+  const originOptions = useMemo(() =>
+    [...new Set(allActive.map(f => f.origin).filter(Boolean))].sort().filter(ap => !filterDest || ap !== filterDest)
+  , [allActive, filterDest])
+  const destOptions = useMemo(() =>
+    [...new Set(allActive.map(f => f.destination).filter(Boolean))].sort().filter(ap => !filterOrigin || ap !== filterOrigin)
+  , [allActive, filterOrigin])
   const activeFlights = useMemo(() => {
     const q = flightQuery.trim().toLowerCase()
     return allActive.filter((f) => {
@@ -125,23 +129,32 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
           {[
             { label: 'Origen', value: filterOrigin, set: setFilterOrigin, options: originOptions },
             { label: 'Destino', value: filterDest,   set: setFilterDest,   options: destOptions   },
-          ].map(({ label, value, set, options }) => (
-            <select
-              key={label}
-              value={value}
-              onChange={(e) => set(e.target.value)}
-              style={{
-                flex: 1, background: 'rgba(255,255,255,0.04)',
-                border: `1px solid ${value ? '#3d8bff88' : 'rgba(255,255,255,0.15)'}`,
-                color: value ? '#60a5fa' : 'rgba(255,255,255,0.45)',
-                fontFamily: 'var(--mono)', fontSize: 10,
-                padding: '4px 6px', borderRadius: 2, outline: 'none', cursor: 'pointer',
-              }}
-            >
-              <option value="">{label}</option>
-              {options.map(ap => <option key={ap} value={ap}>{ap}</option>)}
-            </select>
-          ))}
+          ].map(({ label, value, set, options }) => {
+            const isDark = theme === 'dark'
+            const optBg   = isDark ? '#16171e' : '#ffffff'
+            const optText = isDark ? '#e2e8f0' : '#1a202c'
+            const optMuted = isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)'
+            return (
+              <select
+                key={label}
+                value={value}
+                onChange={(e) => set(e.target.value)}
+                style={{
+                  flex: 1,
+                  background: isDark ? '#1e2130' : '#f1f5f9',
+                  border: `1px solid ${value ? '#3d8bff88' : (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)')}`,
+                  color: value ? '#60a5fa' : (isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)'),
+                  fontFamily: 'var(--mono)', fontSize: 10,
+                  padding: '4px 6px', borderRadius: 2, outline: 'none', cursor: 'pointer',
+                }}
+              >
+                <option value="" style={{ background: optBg, color: optMuted }}>{label}</option>
+                {options.map(ap => (
+                  <option key={ap} value={ap} style={{ background: optBg, color: optText }}>{ap}</option>
+                ))}
+              </select>
+            )
+          })}
         </div>
         <div style={s.scrollable}>
           {activeFlights.map((f) => {
