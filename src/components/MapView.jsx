@@ -183,7 +183,7 @@ function mercatorLerp(map, originAp, destAp, fraction) {
   return [latlng.lat, latlng.lng]
 }
 
-function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData, setSelectedFlight, theme }) {
+function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData, setSelectedFlight, theme, showAllRoutes }) {
   const map = useMap()
   const [tick, forceUpdate] = useState(0)
   const iconCache = useRef(new Map())
@@ -247,17 +247,47 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
     )
   }, [selectedFlightData, apIdx, theme, tick, map])
 
+  const bgOpacity = selectedFlight ? 0.15 : 0.3
+  const travColor = theme === 'light' ? '#64748b' : '#ffffff'
+
   return (
     <>
-      {activeFlights.map((flight) => {
+      {showAllRoutes && activeFlights.map((flight) => {
+        if (flight.id === selectedFlight) return null
         const a = apIdx[flight.origin], b = apIdx[flight.destination]
         if (!a || !b) return null
+        const fraction = flight.fraction ?? 0
+        if (fraction <= 0) {
+          return (
+            <Polyline
+              key={`bg-route-${flight.id}-rem`}
+              positions={[[a.lat, a.lng], [b.lat, b.lng]]}
+              pathOptions={{ color: '#60a5fa', weight: 1.5, dashArray: '4 6', opacity: bgOpacity }}
+            />
+          )
+        }
+        if (fraction >= 1) {
+          return (
+            <Polyline
+              key={`bg-route-${flight.id}-trav`}
+              positions={[[a.lat, a.lng], [b.lat, b.lng]]}
+              pathOptions={{ color: travColor, weight: 1.5, opacity: bgOpacity }}
+            />
+          )
+        }
+        const mid = mercatorLerp(map, a, b, fraction)
+        if (!mid) return null
         return (
-          <Polyline
-            key={`bg-route-${flight.id}`}
-            positions={[[a.lat, a.lng], [b.lat, b.lng]]}
-            pathOptions={{ color: '#60a5fa', weight: 1.5, dashArray: '4 6', opacity: 0.35 }}
-          />
+          <React.Fragment key={`bg-route-${flight.id}`}>
+            <Polyline
+              positions={[[a.lat, a.lng], mid]}
+              pathOptions={{ color: travColor, weight: 1.5, opacity: bgOpacity }}
+            />
+            <Polyline
+              positions={[mid, [b.lat, b.lng]]}
+              pathOptions={{ color: '#60a5fa', weight: 1.5, dashArray: '4 6', opacity: bgOpacity }}
+            />
+          </React.Fragment>
         )
       })}
       {selectedRouteEl}
@@ -293,6 +323,7 @@ export default function MapView({
   onMapClick,
   theme = 'dark',
 }) {
+  const [showRoutes, setShowRoutes] = useState(true)
   const airportList = airports || []
   const flightList = flights || []
 
@@ -302,6 +333,22 @@ export default function MapView({
   const activeFlights = flightList.filter((f) => f.status === 'active')
 
   return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <button
+        onClick={() => setShowRoutes(v => !v)}
+        style={{
+          position: 'absolute', bottom: 16, right: 16, zIndex: 1000,
+          background: showRoutes ? 'rgba(61,139,255,0.15)' : 'rgba(255,255,255,0.05)',
+          border: `1px solid ${showRoutes ? '#3d8bff55' : 'rgba(255,255,255,0.1)'}`,
+          color: showRoutes ? '#60a5fa' : 'rgba(255,255,255,0.3)',
+          fontFamily: 'var(--mono)', fontSize: 10, padding: '5px 10px',
+          borderRadius: 4, cursor: 'pointer', letterSpacing: 0.8,
+          textTransform: 'uppercase', backdropFilter: 'blur(4px)',
+          transition: 'all 0.2s ease',
+        }}
+      >
+        {showRoutes ? '— rutas' : '+ rutas'}
+      </button>
     <MapContainer
       center={[20, 0]} zoom={3} minZoom={1} maxZoom={7}
       zoomSnap={0.1} zoomDelta={0.5}
@@ -329,6 +376,7 @@ export default function MapView({
         selectedFlightData={selectedFlightData}
         setSelectedFlight={setSelectedFlight}
         theme={theme}
+        showAllRoutes={showRoutes}
       />
 
       {/* ── AIRPORT NODES ─────────────────────────────────────────────────── */}
@@ -352,5 +400,6 @@ export default function MapView({
         )
       })}
     </MapContainer>
+    </div>
   )
 }
