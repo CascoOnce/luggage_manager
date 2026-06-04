@@ -149,4 +149,10 @@ public class SimulationController {
         if (!simulationEngine.estaInicializada()) return ResponseEntity.noContent().build();
         return ResponseEntity.ok(simulationEngine.getEnviosByFlight(code));
     }
+
+    @GetMapping("/airports/{iata}/inventory")
+    public ResponseEntity<com.tasf.backend.dto.AirportInventoryDTO> airportInventory(@PathVariable String iata) {
+        if (!simulationEngine.estaInicializada()) return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(simulationEngine.getAirportInventory(iata));
+    }
 }

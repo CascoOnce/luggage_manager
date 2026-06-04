@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
+import { api } from '../services/api.js'
 
 const s = {
   overlay: {
@@ -101,13 +102,52 @@ function flightColor(load, cap) {
   return 'var(--green)'
 }
 
+const TAB_STYLE = (active) => ({
+  fontFamily: 'var(--mono)', fontSize: 10, textTransform: 'uppercase',
+  letterSpacing: 1.2, padding: '8px 12px', cursor: 'pointer',
+  background: 'transparent', border: 'none', outline: 'none',
+  borderBottom: active ? '2px solid var(--blue)' : '2px solid transparent',
+  color: active ? 'var(--text-bright)' : 'var(--muted)',
+})
+
+function EnvioRow({ e }) {
+  return (
+    <div style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--blue)' }}>{e.idEnvio}</span>
+        {e.hora && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--amber)' }}>{e.hora}</span>}
+      </div>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>
+        {e.aeropuertoOrigen} → {e.aeropuertoDestino}
+        {e.codigoVuelo && <span style={{ color: 'var(--text)' }}> · {e.codigoVuelo}</span>}
+        <span style={{ marginLeft: 6 }}>{e.cantidadMaletas} maletas</span>
+      </div>
+    </div>
+  )
+}
+
 export default function DrawerAeropuerto({ airport, vuelos, onClose }) {
+  const [tab, setTab] = useState('info')
+  const [inventory, setInventory] = useState(null)
+  const [loadingInv, setLoadingInv] = useState(false)
+
   useEffect(() => {
     if (!airport) return
+    setTab('info')
+    setInventory(null)
     function onKey(e) { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [airport, onClose])
+
+  useEffect(() => {
+    if (!airport || tab === 'info') return
+    setLoadingInv(true)
+    api.getAirportInventory(airport.id)
+      .then(setInventory)
+      .catch(() => setInventory(null))
+      .finally(() => setLoadingInv(false))
+  }, [airport, tab])
 
   if (!airport) return null
 
@@ -133,6 +173,51 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose }) {
           <button style={s.closeBtn} onClick={onClose} aria-label="Cerrar">✕</button>
         </div>
 
+        {/* Tabs */}
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          <button style={TAB_STYLE(tab === 'info')}        onClick={() => setTab('info')}>Info</button>
+          <button style={TAB_STYLE(tab === 'inventario')}  onClick={() => setTab('inventario')}>Inventario</button>
+          <button style={TAB_STYLE(tab === 'planificado')} onClick={() => setTab('planificado')}>Planificado</button>
+        </div>
+
+        {tab === 'inventario' && (
+          <div style={{ padding: 14, flex: 1, overflowY: 'auto' }}>
+            {loadingInv && <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Cargando...</div>}
+            {!loadingInv && inventory && (
+              <>
+                <span style={s.sectionTitle}>En almacén ({inventory.enAlmacen?.length ?? 0})</span>
+                {(inventory.enAlmacen?.length ?? 0) === 0
+                  ? <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 16 }}>Sin envíos en almacén</div>
+                  : inventory.enAlmacen.map((e) => <EnvioRow key={e.idEnvio} e={e} />)
+                }
+              </>
+            )}
+          </div>
+        )}
+
+        {tab === 'planificado' && (
+          <div style={{ padding: 14, flex: 1, overflowY: 'auto' }}>
+            {loadingInv && <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Cargando...</div>}
+            {!loadingInv && inventory && (
+              <>
+                <span style={{ ...s.sectionTitle, color: 'var(--green)' }}>Entrando hoy ({inventory.planificadosEntrando?.length ?? 0})</span>
+                {(inventory.planificadosEntrando?.length ?? 0) === 0
+                  ? <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 16 }}>Sin llegadas planificadas</div>
+                  : inventory.planificadosEntrando.map((e, i) => <EnvioRow key={`in-${i}`} e={e} />)
+                }
+                <div style={{ marginTop: 16 }}>
+                  <span style={{ ...s.sectionTitle, color: 'var(--blue)' }}>Saliendo hoy ({inventory.planificadosSaliendo?.length ?? 0})</span>
+                  {(inventory.planificadosSaliendo?.length ?? 0) === 0
+                    ? <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Sin salidas planificadas</div>
+                    : inventory.planificadosSaliendo.map((e, i) => <EnvioRow key={`out-${i}`} e={e} />)
+                  }
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {tab === 'info' && <>
         {/* Occupancy */}
         <div style={s.section}>
           <span style={s.sectionTitle}>Ocupación de almacén</span>
@@ -234,6 +319,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose }) {
             <span style={s.statLabel}>Ocupación</span>
           </div>
         </div>
+        </>}
 
       </aside>
     </div>
