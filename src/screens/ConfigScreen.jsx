@@ -31,6 +31,8 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
   const [tiempoRecogida, setTiempoRecogida] = useState(10)
   const [semaforo, setSemaforo] = useState({ verde: 60, ambar: 85 })
   const [umbralColapso, setUmbralColapso] = useState(50)
+  const [cancelacionesAleatorias, setCancelacionesAleatorias] = useState(false)
+  const [porcentajeCancelacion, setPorcentajeCancelacion] = useState(5)
   const [loading, setLoading] = useState(false)
   const [loadingElapsed, setLoadingElapsed] = useState(0)
   const [error, setError] = useState(null)
@@ -190,6 +192,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
       fechaInicio,
       horaInicio,
       umbralColapsoPorcentajeSlaVencido: esColapso ? Number(umbralColapso) : 50,
+      porcentajeCancelacionAleatoria: cancelacionesAleatorias ? Number(porcentajeCancelacion) : 0,
     }
 
     setLoading(true)
@@ -465,6 +468,49 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
             ))}
             {semaforoError && (
               <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11, marginTop: 4 }}>{semaforoError}</div>
+            )}
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <span style={sectionHeaderStyle()}>Cancelaciones Aleatorias</span>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => setCancelacionesAleatorias((v) => !v)}
+              style={rowStyle(cancelacionesAleatorias)}
+            >
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>
+                {cancelacionesAleatorias ? 'Habilitadas' : 'Deshabilitadas'}
+              </span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+                {cancelacionesAleatorias ? 'ON' : 'OFF'}
+              </span>
+            </button>
+            {cancelacionesAleatorias && (
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', flexShrink: 0 }}>
+                  % por día
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={porcentajeCancelacion}
+                  disabled={loading}
+                  onChange={(e) => setPorcentajeCancelacion(e.target.value)}
+                  style={{
+                    width: 70,
+                    background: 'rgba(255,255,255,0.04)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text)',
+                    fontFamily: 'var(--mono)',
+                    fontSize: 13,
+                    padding: '6px 8px',
+                    borderRadius: 2,
+                    outline: 'none',
+                  }}
+                />
+              </div>
             )}
           </div>
 
