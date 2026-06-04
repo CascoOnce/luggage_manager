@@ -56,3 +56,30 @@ El backend expone `GET /api/airports/{iata}/inventory` que devuelve un `AirportI
 **Archivos modificados:** `src/drawers/DrawerAeropuerto.jsx`, `src/services/api.js`
 **Archivos nuevos (backend):** `AirportInventoryDTO.java`, `EnvioSummaryDTO.java`
 **Archivos modificados (backend):** `SimulationEngine.java`, `SimulationController.java`
+
+---
+
+## Pendiente — Prioridad Media (a cargo de otro compañero)
+
+### Área B — Filtros y ordenamiento de TU (`#44`, `#45`, `#46`, `#48`, `#49`, `#50`, `#51`)
+
+`RightPanel` solo ordena vuelos por ocupación y tiene búsqueda básica. Implementar: filtro por código-patrón (con wildcard `*`), filtro por origen IATA, filtro por destino IATA, orden por hora de salida, orden por hora de llegada, orden por origen, orden por destino. Los campos `departureTime`, `arrivalTime`, `origin`, `destination` ya vienen en el state de vuelos.
+
+**Archivo a modificar:** `src/components/RightPanel.jsx`
+
+---
+
+### Área D — Filtros de almacenes en panel (`#60`, `#61`, `#63`, `#64`)
+
+`RightPanel` lista aeropuertos sin filtros interactivos. Implementar: filtro por código-patrón IATA, filtro por continente, orden por hora de salida de la UT más próxima, orden por hora de llegada de la UT más próxima. Los dos últimos requieren agregar `nextDeparture` y `nextArrival` al `AeropuertoDTO` en backend.
+
+**Archivo a modificar:** `src/components/RightPanel.jsx`
+**Backend (menor):** agregar 2 campos a `AeropuertoDTO` y calcularlos en `SimulationController.getAirports()`
+
+---
+
+### Área G — Vinculación panel → mapa y filtros reflejados (`#74`, `#84`, `#85`, `#86`, `#87`)
+
+Solo el sentido mapa→panel está implementado. Implementar: click en aeropuerto del panel hace `flyTo` en el mapa; filtros de semáforo activos en el panel reducen opacidad de íconos no filtrados en el mapa (pasar `filteredAirportIatas` a `MapView`).
+
+**Archivos a modificar:** `src/App.jsx`, `src/components/MapView.jsx`, `src/components/RightPanel.jsx`
