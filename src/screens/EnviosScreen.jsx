@@ -65,7 +65,7 @@ function headingStyle() {
   }
 }
 
-export default function EnviosScreen({ simState, onShowInMap }) {
+export default function EnviosScreen({ simState, onShowInMap, onCancelFlight }) {
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState(new Set(STATUS_ORDER))
   const [routeFilter, setRouteFilter] = useState(new Set(ROUTE_TYPES))
@@ -110,7 +110,7 @@ export default function EnviosScreen({ simState, onShowInMap }) {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
     return envios.filter((envio) => {
-      const haystack = `${envio.idEnvio} ${envio.aeropuertoOrigen} ${envio.aeropuertoDestino}`.toLowerCase()
+      const haystack = `${envio.idEnvio} ${envio.aeropuertoOrigen} ${envio.aeropuertoDestino} ${envio.planResumen}`.toLowerCase()
       const matchesSearch = !q || haystack.includes(q)
       const matchesStatus = statusFilter.has(envio.estado)
       const matchesRoute = routeFilter.has(envio.tipoRuta)
@@ -326,6 +326,7 @@ export default function EnviosScreen({ simState, onShowInMap }) {
         envioId={selectedEnvioId}
         onClose={() => setSelectedEnvioId(null)}
         onShowInMap={onShowInMap}
+        onCancelFlight={onCancelFlight}
       />
     </div>
   )

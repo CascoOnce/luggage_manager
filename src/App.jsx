@@ -794,7 +794,7 @@ export default function App() {
               <DrawerVuelo
                 vuelo={mapSelectedVuelo}
                 onClose={handleCloseVuelo}
-                onCancelFlight={handleCancelFlight}
+                onCancelFlight={null}
               />
             </div>
 
@@ -833,6 +833,7 @@ export default function App() {
                 theme={theme}
                 onBack={handleBackToMain}
                 onShowInMap={handleShowEnvioRoute}
+                onCancelFlight={handleCancelFlight}
               />
             )}
             {screen === 'dashboard' && (
