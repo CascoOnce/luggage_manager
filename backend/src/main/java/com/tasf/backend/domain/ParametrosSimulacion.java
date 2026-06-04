@@ -28,4 +28,6 @@ public class ParametrosSimulacion {
     private String horaInicio; // HH:mm format, e.g. "08:30"
     @Builder.Default
     private double umbralColapsoPorcentajeSlaVencido = 50.0;
+    @Builder.Default
+    private double porcentajeCancelacionAleatoria = 0.0;
 }

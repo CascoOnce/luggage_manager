@@ -99,6 +99,28 @@ class SimulationScenarioTest {
         System.out.println("Logs of simulation: " + log);
     }
 
+    @Test
+    void randomCancelacionesDeshabilitadasPorDefecto() {
+        ParametrosSimulacion params = ParametrosSimulacion.builder()
+            .fechaInicio(LocalDate.of(2026, 1, 2))
+            .dias(3)
+            .diasSimulacion(3)
+            .esColapso(false)
+            .porcentajeCancelacionAleatoria(0.0)
+            .build();
+
+        simulationEngine.inicializar(params, sampleEnvios);
+        simulationEngine.avanzarDia();
+        simulationEngine.avanzarDia();
+        var state = simulationEngine.avanzarDia();
+
+        long randomCancels = state.getLogOperaciones().stream()
+            .filter(l -> l.contains("[INCIDENCIA] Vuelo") && l.contains("cancelado."))
+            .count();
+        assertEquals(0, randomCancels,
+            "No debe haber cancelaciones aleatorias cuando porcentajeCancelacionAleatoria=0");
+    }
+
     private List<Envio> createSampleEnvios(int count) {
         List<Envio> list = new ArrayList<>();
         List<Aeropuerto> airports = dataLoaderService.getAeropuertos();

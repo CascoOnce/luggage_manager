@@ -230,6 +230,10 @@ public class SimulationEngine {
             .slaBreach(deliveryStats.slaBreach)
             .build());
 
+        if (params.getPorcentajeCancelacionAleatoria() > 0) {
+            cancelRandomFlightsAndReplan();
+        }
+
         if (diaActual >= params.getDiasSimulacion()) {
             updateWarehouseOccupation();
             this.finalizada = true;
@@ -924,7 +928,7 @@ public class SimulationEngine {
     }
 
     private List<Vuelo> detectCancellations(LocalDate today) {
-        double probability = 0.05d + (random.nextDouble() * 0.03d);
+        double probability = params.getPorcentajeCancelacionAleatoria() / 100.0;
         Set<String> plannedToday = planes.stream()
             .flatMap(plan -> plan.getEscalas().stream())
             .filter(e -> e.getHoraSalidaEst() != null && e.getHoraSalidaEst().toLocalDate().equals(today))
