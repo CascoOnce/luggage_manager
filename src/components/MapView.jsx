@@ -329,6 +329,7 @@ export default function MapView({
   onAirportClick,
   onMapClick,
   theme = 'dark',
+  highlightedRoute = null,
 }) {
   const [showRoutes, setShowRoutes] = useState(true)
   const airportList = airports || []
@@ -385,6 +386,15 @@ export default function MapView({
         theme={theme}
         showAllRoutes={showRoutes}
       />
+
+      {/* ── HIGHLIGHTED ENVIO ROUTE ───────────────────────────────────────── */}
+      {highlightedRoute?.legs.map((leg, i) => (
+        <Polyline
+          key={`hr-${highlightedRoute.envioId}-${i}`}
+          positions={[[leg.originLat, leg.originLng], [leg.destLat, leg.destLng]]}
+          pathOptions={{ color: '#a3e635', weight: 3, opacity: 0.9 }}
+        />
+      ))}
 
       {/* ── AIRPORT NODES ─────────────────────────────────────────────────── */}
       {airportList.map((ap) => {

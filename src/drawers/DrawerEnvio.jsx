@@ -113,7 +113,7 @@ function fmtDwell(min) {
   return `${m}m`
 }
 
-export default function DrawerEnvio({ envioId, onClose }) {
+export default function DrawerEnvio({ envioId, onClose, onShowInMap }) {
   const [envio, setEnvio]   = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]   = useState(null)
@@ -163,6 +163,15 @@ export default function DrawerEnvio({ envioId, onClose }) {
             </span>
           )}
           {envio?.estado && <span style={s.pill(eColor)}>{envio.estado}</span>}
+          {onShowInMap && escalas.length >= 2 && (
+            <button
+              style={{ ...s.closeBtn, color: 'var(--blue-bright)', fontSize: 11, padding: '3px 8px', border: '1px solid rgba(61,139,255,0.3)', borderRadius: 4 }}
+              onClick={() => { onShowInMap(envioId); onClose() }}
+              title="Ver ruta en mapa"
+            >
+              ↗ mapa
+            </button>
+          )}
           <button style={s.closeBtn} onClick={onClose} aria-label="Cerrar">✕</button>
         </div>
 

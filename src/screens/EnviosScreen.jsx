@@ -65,7 +65,7 @@ function headingStyle() {
   }
 }
 
-export default function EnviosScreen({ simState }) {
+export default function EnviosScreen({ simState, onShowInMap }) {
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState(new Set(STATUS_ORDER))
   const [routeFilter, setRouteFilter] = useState(new Set(ROUTE_TYPES))
@@ -325,6 +325,7 @@ export default function EnviosScreen({ simState }) {
       <DrawerEnvio
         envioId={selectedEnvioId}
         onClose={() => setSelectedEnvioId(null)}
+        onShowInMap={onShowInMap}
       />
     </div>
   )

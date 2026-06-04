@@ -34,6 +34,7 @@ export default function App() {
   const [selectedFlight, setSelectedFlight] = useState(null)
   const [mapSelectedAirport, setMapSelectedAirport] = useState(null)
   const [mapSelectedVuelo, setMapSelectedVuelo] = useState(null)
+  const [highlightedRoute, setHighlightedRoute] = useState(null)
   const [simClockMinutes, setSimClockMinutes] = useState(0)
 
   const realStartRef = useRef(null)
@@ -622,6 +623,27 @@ export default function App() {
 
   const handleCloseAirport = useCallback(() => setMapSelectedAirport(null), [])
   const handleCloseVuelo   = useCallback(() => { setMapSelectedVuelo(null); setSelectedFlight(null) }, [])
+
+  const handleShowEnvioRoute = useCallback(async (envioId) => {
+    try {
+      const envio = await api.getEnvioById(envioId)
+      const escalas = envio?.planDetalle?.escalas || []
+      if (escalas.length < 2) return
+      const apMap = Object.fromEntries(clockedAirports.map((a) => [a.id, a]))
+      const legs = []
+      for (let i = 0; i < escalas.length - 1; i++) {
+        const o = apMap[escalas[i].codigoAeropuerto]
+        const d = apMap[escalas[i + 1].codigoAeropuerto]
+        if (o && d) legs.push({ originIata: escalas[i].codigoAeropuerto, destIata: escalas[i + 1].codigoAeropuerto, originLat: o.lat, originLng: o.lng, destLat: d.lat, destLng: d.lng })
+      }
+      if (legs.length > 0) {
+        setHighlightedRoute({ envioId, legs })
+        setScreen('main')
+      }
+    } catch (e) {
+      console.error('handleShowEnvioRoute', e)
+    }
+  }, [clockedAirports])
   const handleCancelFlight = useCallback(async (codigoVuelo) => {
     try {
       await api.cancelFlight(codigoVuelo)
@@ -744,8 +766,9 @@ export default function App() {
                 setSelectedFlight={setSelectedFlight}
                 selectedFlightData={mapSelectedVuelo}
                 onAirportClick={setMapSelectedAirport}
-                onMapClick={handleCloseVuelo}
+                onMapClick={() => { handleCloseVuelo(); setHighlightedRoute(null) }}
                 theme={theme}
+                highlightedRoute={highlightedRoute}
               />
 
               {!mapSelectedVuelo && !mapSelectedAirport && (
@@ -809,6 +832,7 @@ export default function App() {
                 simState={simState}
                 theme={theme}
                 onBack={handleBackToMain}
+                onShowInMap={handleShowEnvioRoute}
               />
             )}
             {screen === 'dashboard' && (
