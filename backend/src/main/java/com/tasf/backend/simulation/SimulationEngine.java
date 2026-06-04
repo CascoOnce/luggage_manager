@@ -14,6 +14,7 @@ import com.tasf.backend.domain.PlanDeViaje;
 import com.tasf.backend.domain.PlanningResult;
 import com.tasf.backend.domain.Vuelo;
 import com.tasf.backend.dto.AeropuertoDTO;
+import com.tasf.backend.dto.CancelacionDTO;
 import com.tasf.backend.dto.EnvioDTO;
 import com.tasf.backend.dto.KpisDTO;
 import com.tasf.backend.dto.SimulationStateDTO;
@@ -510,6 +511,7 @@ public class SimulationEngine {
                 .throughputHistorial(List.of())
                 .logOperaciones(List.of())
                 .colapsoPunto(null)
+                .cancelaciones(List.of())
                 .build();
         }
 
@@ -558,6 +560,14 @@ public class SimulationEngine {
             .throughputHistorial(List.copyOf(throughputHistorial))
             .logOperaciones(List.copyOf(logOperaciones))
             .colapsoPunto(colapsoPunto)
+            .cancelaciones(cancelaciones.stream()
+                .map(c -> CancelacionDTO.builder()
+                    .id(c.getId())
+                    .codigoVuelo(c.getCodigoVuelo())
+                    .fecha(c.getFecha() != null ? c.getFecha().toString() : null)
+                    .hora(c.getHora() != null ? c.getHora().toString() : null)
+                    .build())
+                .toList())
             .build();
     }
 

@@ -27,4 +27,5 @@ public class SimulationStateDTO {
     private List<ThroughputDiaDTO> throughputHistorial;
     private List<String> logOperaciones;
     private ColapsoPunto colapsoPunto;
+    private List<CancelacionDTO> cancelaciones;
 }
