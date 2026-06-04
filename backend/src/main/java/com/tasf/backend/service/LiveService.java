@@ -86,6 +86,9 @@ public class LiveService {
 
         List<LiveVueloDTO> vueloDTOs = new ArrayList<>();
         for (Vuelo v : dataLoaderService.getVuelos()) {
+            if (dataLoaderService.isFlightCancelledForSession(v.getCodigoVuelo())) {
+                continue;
+            }
             int depMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
             int arrMin = v.getHoraLlegada().getHour() * 60 + v.getHoraLlegada().getMinute();
 
@@ -156,5 +159,9 @@ public class LiveService {
                 .aeropuertos(aeropuertoDTOs)
                 .vuelos(vueloDTOs)
                 .build();
+    }
+
+    public void cancelFlight(String codigoVuelo) {
+        dataLoaderService.cancelFlightForSession(codigoVuelo);
     }
 }

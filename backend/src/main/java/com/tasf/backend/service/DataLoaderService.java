@@ -48,6 +48,8 @@ public class DataLoaderService {
     private List<Aeropuerto> aeropuertos = new ArrayList<>();
     private List<Vuelo> vuelos = new ArrayList<>();
     private Map<String, Set<String>> airportGraph = new HashMap<>();
+    private final Set<String> sessionCancelledFlights =
+        Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
 
     public DataLoaderService(
             AeropuertoRepository aeropuertoRepository,
@@ -196,6 +198,18 @@ public class DataLoaderService {
 
     public Map<String, Set<String>> getAirportGraph() {
         return Collections.unmodifiableMap(airportGraph);
+    }
+
+    public void cancelFlightForSession(String codigoVuelo) {
+        sessionCancelledFlights.add(codigoVuelo);
+    }
+
+    public boolean isFlightCancelledForSession(String codigoVuelo) {
+        return sessionCancelledFlights.contains(codigoVuelo);
+    }
+
+    public void clearSessionCancellations() {
+        sessionCancelledFlights.clear();
     }
 
     // Nota: El método getTodosLosEnvios() se elimina porque ya no cargamos todo en memoria.
