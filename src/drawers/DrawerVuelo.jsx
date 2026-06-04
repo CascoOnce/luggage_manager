@@ -167,7 +167,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight }) {
   const eColor  = estadoColor(estado)
   const isActivo = estado === 'active' || estado === 'activo'
   const isCancelado = estado === 'cancelled' || estado === 'cancelado'
-  const canCancel = !isActivo && !isCancelado && !!onCancelFlight
+  const canCancel = !isCancelado && !!onCancelFlight
 
   return (
     <div style={s.overlay}>

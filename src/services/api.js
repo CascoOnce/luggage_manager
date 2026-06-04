@@ -153,6 +153,10 @@ export const api = {
     return request(`/simulation/cancel-flight/${codigoVuelo}`, { method: 'POST' })
   }),
 
+  cancelLiveFlight: async (codigoVuelo) => withHandling('cancelLiveFlight', async () => {
+    return request(`/live/cancel-flight/${codigoVuelo}`, { method: 'POST' })
+  }),
+
   cancelEnvio: async (idEnvio) => withHandling('cancelEnvio', async () => {
     return request(`/simulation/cancel-envio/${idEnvio}`, { method: 'POST' })
   }),
