@@ -4,6 +4,7 @@ import RightPanel from '../components/RightPanel'
 import AirportFilterPanel from '../components/AirportFilterPanel'
 import DrawerVuelo from '../drawers/DrawerVuelo'
 import DrawerAeropuerto from '../drawers/DrawerAeropuerto'
+import { api } from '../services/api.js'
 
 const PULSE_STYLE = `
 @keyframes livePulse {
@@ -135,6 +136,15 @@ export default function LiveScreen({ liveState, theme, onBack }) {
     setSelectedVueloData(null)
   }
 
+  async function handleCancelLiveFlight(codigoVuelo) {
+    try {
+      await api.cancelLiveFlight(codigoVuelo)
+      handleCloseVuelo()
+    } catch (err) {
+      alert('Error al cancelar vuelo: ' + (err instanceof Error ? err.message : String(err)))
+    }
+  }
+
   // Sync the detailed vuelo state with the selection computed from visibleFlights
   useEffect(() => {
     setSelectedVueloData(selectedFlightData)
@@ -216,7 +226,7 @@ export default function LiveScreen({ liveState, theme, onBack }) {
           <DrawerVuelo
             vuelo={selectedVueloData}
             onClose={handleCloseVuelo}
-            onCancelFlight={null}
+            onCancelFlight={handleCancelLiveFlight}
           />
           <DrawerAeropuerto
             airport={selectedAirport}
