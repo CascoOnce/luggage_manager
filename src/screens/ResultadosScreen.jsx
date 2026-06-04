@@ -39,7 +39,7 @@ function escapeCsv(value) {
   return text
 }
 
-function csvDownload(state, rows, envios) {
+function csvDownload(state, rows, envios, cancelacionesList) {
   const dia = state.diaActual || state.currentDay || 0
   const fechaRaw = state.fechaSimulada || ''
   const fechaSlug = fechaRaw.split(' ')[0].replace(/\//g, '-') || 'sim'
@@ -51,6 +51,7 @@ function csvDownload(state, rows, envios) {
     ['cumplimiento_sla_pct', Number(state.kpis?.cumplimientoSLA ?? state.kpis?.slaCompliance ?? 0).toFixed(2)],
     ['sla_vencidos', state.kpis?.slaVencidos ?? state.kpis?.slaViolated ?? 0],
     ['total_replanificaciones', (state.logOperaciones || []).filter((l) => /replan/i.test(l)).length],
+    ['total_cancelaciones', (cancelacionesList || []).length],
   ]
 
   const airportHeader = ['aeropuerto', 'ciudad', 'recibidas', 'enviadas', 'ocup_prom_pct', 'ocup_max_pct', 'estado', 'sla_cumplido']
@@ -85,6 +86,12 @@ function csvDownload(state, rows, envios) {
     '# ENVIOS',
     envioHeader.join(','),
     ...envioLines.map((line) => line.map(escapeCsv).join(',')),
+    '',
+    '# CANCELACIONES',
+    'id,codigo_vuelo,fecha,hora',
+    ...(cancelacionesList || []).map((c) =>
+      [c.id, c.codigoVuelo, c.fecha, c.hora ? String(c.hora).substring(0, 5) : ''].map(escapeCsv).join(',')
+    ),
   ].join('\n')
 
   const blob = new Blob([`﻿${content}`], { type: 'text/csv;charset=utf-8;' })
@@ -196,11 +203,11 @@ export default function ResultadosScreen({ simState }) {
     .sort((a, b) => b.ocupMax - a.ocupMax), [airports, enviosByAirport])
 
   const cancelaciones = useMemo(() => {
-    if (Array.isArray(simState?.logOperaciones)) {
-      return getLog(simState).filter((line) => /cancel/i.test(line)).length
+    if (Array.isArray(simState?.cancelaciones)) {
+      return simState.cancelaciones
     }
-    return envios.filter((envio) => envio.estado === 'RETRASADO').length
-  }, [simState, envios])
+    return []
+  }, [simState])
 
   const replanificaciones = useMemo(() => {
     if (Array.isArray(simState?.logOperaciones)) {
@@ -287,7 +294,7 @@ export default function ResultadosScreen({ simState }) {
             ['Total maletas', totalMaletas],
             ['Entregadas', kpis.entregadas],
             ['Cumpl. SLA', `${kpis.cumplimiento.toFixed(1)}%`],
-            ['Cancelaciones', cancelaciones],
+            ['Cancelaciones', cancelaciones.length],
             ['Replanificaciones', replanificaciones],
             ['Duración sim', `${simState?.totalDays || simState?.totalDias || 0}d`],
           ].map(([label, value], idx) => (
@@ -405,8 +412,29 @@ export default function ResultadosScreen({ simState }) {
           )
         })()}
 
+        {cancelaciones.length > 0 && (
+          <div style={{ marginTop: 20 }}>
+            <div style={headingStyle()}>Cancelaciones ({cancelaciones.length})</div>
+            <div style={{ marginTop: 8, border: '1px solid var(--border)', overflowX: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 0.8fr 0.8fr', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                <span>ID</span><span>Vuelo</span><span>Fecha</span><span>Hora</span>
+              </div>
+              <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+                {cancelaciones.map((c) => (
+                  <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 0.8fr 0.8fr', gap: 8, padding: '5px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)', fontFamily: 'var(--mono)', fontSize: 12 }}>
+                    <span style={{ color: 'var(--red)', fontSize: 10 }}>{c.id}</span>
+                    <span style={{ color: 'var(--blue)' }}>{c.codigoVuelo}</span>
+                    <span style={{ color: 'var(--muted)' }}>{c.fecha}</span>
+                    <span style={{ color: 'var(--muted)' }}>{c.hora ? String(c.hora).substring(0, 5) : '—'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         <button
-          onClick={() => csvDownload(simState, airportRows, envios)}
+          onClick={() => csvDownload(simState, airportRows, envios, cancelaciones)}
           style={{
             marginTop: 20,
             width: '100%',
