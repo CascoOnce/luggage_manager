@@ -32,7 +32,7 @@ function isActiveAtMinute(now, dep, arr) {
 
 function nowMinutes() {
   const d = new Date()
-  return d.getHours() * 60 + d.getMinutes()
+  return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60
 }
 
 export default function LiveScreen({ liveState, theme, onBack }) {
@@ -91,15 +91,15 @@ export default function LiveScreen({ liveState, theme, onBack }) {
           destination: v.destino,
           type: v.tipo,
           status: 'active',
-          currentLoad,
-          capacity: cap,
+          currentLoad: null,
+          capacity: v.capacidadTotal,
           hour: parseInt(v.horaSalida.split(':')[0], 10),
           horaSalida: v.horaSalida,
           horaLlegada: v.horaLlegada,
+          husOrigen: v.husOrigen ?? null,
           depMin,
           arrMin,
-          // prefer backend fraction if provided (relative to the `from` reference)
-          fraction,
+          fraction: flightFractionAtMinute(liveNowMinutes, depMin, arrMin),
         }
       })
       .filter((v) => isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))

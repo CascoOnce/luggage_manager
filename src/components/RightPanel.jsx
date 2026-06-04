@@ -63,33 +63,48 @@ function warehouseColor(ap, threshold) {
   return '#22d07a'
 }
 
-export default function RightPanel({ flights, airports, threshold, selectedFlight, setSelectedFlight, onVueloClick, showAllAirports }) {
+export default function RightPanel({ flights, airports, threshold, selectedFlight, setSelectedFlight, onVueloClick, showAllAirports, theme = 'dark' }) {
   const [flightQuery, setFlightQuery] = useState('')
+  const [sortDir, setSortDir] = useState('desc')
+  const [filterOrigin, setFilterOrigin] = useState('')
+  const [filterDest, setFilterDest] = useState('')
   const flightList = flights || []
   const airportList = airports || []
+  const allActive = useMemo(() => flightList.filter((f) => f.status === 'active'), [flightList])
+  const originOptions = useMemo(() =>
+    [...new Set(allActive.map(f => f.origin).filter(Boolean))].sort().filter(ap => !filterDest || ap !== filterDest)
+  , [allActive, filterDest])
+  const destOptions = useMemo(() =>
+    [...new Set(allActive.map(f => f.destination).filter(Boolean))].sort().filter(ap => !filterOrigin || ap !== filterOrigin)
+  , [allActive, filterOrigin])
   const activeFlights = useMemo(() => {
-    const active = flightList.filter((f) => f.status === 'active')
     const q = flightQuery.trim().toLowerCase()
-    if (!q) return active
-    return active.filter((f) =>
-      f.id?.toLowerCase().includes(q) ||
-      f.origin?.toLowerCase().includes(q) ||
-      f.destination?.toLowerCase().includes(q)
-    )
-  }, [flightList, flightQuery])
+    return allActive.filter((f) => {
+      if (filterOrigin && f.origin !== filterOrigin) return false
+      if (filterDest   && f.destination !== filterDest) return false
+      if (!q) return true
+      return (
+        f.id?.toLowerCase().includes(q) ||
+        f.origin?.toLowerCase().includes(q) ||
+        f.destination?.toLowerCase().includes(q) ||
+        `${f.origin}-${f.destination}`.toLowerCase().includes(q)
+      )
+    })
+  }, [allActive, flightQuery, filterOrigin, filterDest])
   const { occupiedAirports, hiddenCount } = useMemo(() => {
     const sorted = [...airportList].sort((a, b) => {
       const aOcc = a.currentOccupation ?? a.ocupacionActual ?? 0
       const aCap = a.warehouseCapacity ?? a.capacidadAlmacen ?? 600
       const bOcc = b.currentOccupation ?? b.ocupacionActual ?? 0
       const bCap = b.warehouseCapacity ?? b.capacidadAlmacen ?? 600
-      return (bOcc / bCap) - (aOcc / aCap)
+      const diff = (bOcc / bCap) - (aOcc / aCap)
+      return sortDir === 'desc' ? diff : -diff
     })
     const occupied = showAllAirports
       ? sorted
       : sorted.filter((ap) => (ap.currentOccupation ?? ap.ocupacionActual ?? 0) > 0)
     return { occupiedAirports: occupied, hiddenCount: showAllAirports ? 0 : sorted.length - occupied.length }
-  }, [airportList])
+  }, [airportList, sortDir])
 
   return (
     <div style={s.panel}>
@@ -102,7 +117,7 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
           onChange={(e) => setFlightQuery(e.target.value)}
           placeholder="Buscar vuelo, origen, destino..."
           style={{
-            flexShrink: 0, marginBottom: 8,
+            flexShrink: 0, marginBottom: 6,
             background: 'rgba(255,255,255,0.04)',
             border: '1px solid var(--border)',
             color: 'var(--text)',
@@ -110,11 +125,42 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
             padding: '5px 8px', borderRadius: 2, outline: 'none',
           }}
         />
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginBottom: 8 }}>
+          {[
+            { label: 'Origen', value: filterOrigin, set: setFilterOrigin, options: originOptions },
+            { label: 'Destino', value: filterDest,   set: setFilterDest,   options: destOptions   },
+          ].map(({ label, value, set, options }) => {
+            const isDark = theme === 'dark'
+            const optBg   = isDark ? '#16171e' : '#ffffff'
+            const optText = isDark ? '#e2e8f0' : '#1a202c'
+            const optMuted = isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)'
+            return (
+              <select
+                key={label}
+                value={value}
+                onChange={(e) => set(e.target.value)}
+                style={{
+                  flex: 1,
+                  background: isDark ? '#1e2130' : '#f1f5f9',
+                  border: `1px solid ${value ? '#3d8bff88' : (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)')}`,
+                  color: value ? '#60a5fa' : (isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)'),
+                  fontFamily: 'var(--mono)', fontSize: 10,
+                  padding: '4px 6px', borderRadius: 2, outline: 'none', cursor: 'pointer',
+                }}
+              >
+                <option value="" style={{ background: optBg, color: optMuted }}>{label}</option>
+                {options.map(ap => (
+                  <option key={ap} value={ap} style={{ background: optBg, color: optText }}>{ap}</option>
+                ))}
+              </select>
+            )
+          })}
+        </div>
         <div style={s.scrollable}>
           {activeFlights.map((f) => {
             const isSelected = selectedFlight === f.id
             const loadPct    = Math.round((f.currentLoad / f.capacity) * 100)
-            const color      = loadPct >= 90 ? '#f04b4b' : loadPct >= 70 ? '#f5a623' : '#22d07a'
+            const color      = loadPct >= 85 ? '#f04b4b' : loadPct >= 60 ? '#f5a623' : '#22d07a'
             return (
               <div key={f.id} style={s.flightItem(isSelected)}
                 onClick={() => { setSelectedFlight(isSelected ? null : f.id); if (onVueloClick) onVueloClick(f) }}>
@@ -122,6 +168,9 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={s.flightRoute}>{f.origin} → {f.destination}</div>
                   <div style={s.flightMeta}>{f.currentLoad}/{f.capacity} · {f.type === 'continental' ? 'CONT' : 'INT'}</div>
+                  <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 3, overflow: 'hidden', marginTop: 4 }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, loadPct)}%`, background: color, borderRadius: 3, transition: 'width 0.4s ease' }} />
+                  </div>
                 </div>
                 <div style={s.badge(color)}>{loadPct}%</div>
               </div>
@@ -137,7 +186,16 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
 
       {/* ── WAREHOUSE PER AIRPORT ─────────────────────────────────────── */}
       <div style={{ ...s.sectionPad, flex: '0 0 50%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderTop: '1px solid var(--border)' }}>
-        <span style={s.title}>Warehouse por aeropuerto</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <span style={{ ...s.title, marginBottom: 0 }}>Warehouse por aeropuerto</span>
+          <button
+            onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13, padding: '0 2px', lineHeight: 1 }}
+            title={sortDir === 'desc' ? 'Mayor primero' : 'Menor primero'}
+          >
+            {sortDir === 'desc' ? '↓' : '↑'}
+          </button>
+        </div>
         <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 8 }}>
         {occupiedAirports.map((ap) => {
           const color = warehouseColor(ap, threshold)

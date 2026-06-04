@@ -148,6 +148,7 @@ public class SimulationEngine {
         this.enEjecucion = true;
         this.finalizada = false;
         updateWarehouseOccupation();
+        aeropuertos.forEach(a -> a.setOcupacionInicioDia(a.getOcupacionActual()));
 
         String algoritmoInicial = params.getAlgoritmo() != null ? params.getAlgoritmo() : "N/A";
         addOperationLog("Simulation initialized - Day 1 - " + this.envios.size()
@@ -172,6 +173,7 @@ public class SimulationEngine {
         // post-delivery state and updates the domain field used by the API.
         updateWarehouseOccupation();
         accumulateOccupationSample();
+        aeropuertos.forEach(a -> a.setOcupacionInicioDia(a.getOcupacionActual()));
 
         // Build lookup maps once per day — shared across all passes and processDeliveries.
         Map<String, Envio> envioById = envios.stream().collect(Collectors.toMap(Envio::getIdEnvio, e -> e, (a, b) -> a));
@@ -285,6 +287,7 @@ public class SimulationEngine {
         this.finalizada = false;
 
         updateWarehouseOccupation();
+        aeropuertos.forEach(a -> a.setOcupacionInicioDia(a.getOcupacionActual()));
         addOperationLog("Simulation restarted - Day 1 - reusing previous plans");
         return getEstado();
     }
@@ -638,6 +641,85 @@ public class SimulationEngine {
             .filter(e -> envioIds.contains(e.getIdEnvio()))
             .map(e -> toEnvioDto(e, false, latestPlanByEnvio.get(e.getIdEnvio())))
             .collect(Collectors.toList());
+    }
+
+    public synchronized com.tasf.backend.dto.AirportInventoryDTO getAirportInventory(String iata) {
+        Map<String, Envio> envioById = envios.stream()
+            .collect(Collectors.toMap(Envio::getIdEnvio, e -> e, (a, b) -> a));
+
+        // Envíos actualmente en almacén
+        Set<String> idsEnAlmacen = maletas.stream()
+            .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN && iata.equals(m.getUbicacionActual()))
+            .map(com.tasf.backend.domain.Maleta::getIdEnvio)
+            .collect(Collectors.toSet());
+        Map<String, Long> maletasPorEnvio = maletas.stream()
+            .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN && iata.equals(m.getUbicacionActual()))
+            .collect(Collectors.groupingBy(com.tasf.backend.domain.Maleta::getIdEnvio, Collectors.counting()));
+
+        List<com.tasf.backend.dto.EnvioSummaryDTO> enAlmacen = idsEnAlmacen.stream()
+            .map(id -> {
+                Envio e = envioById.get(id);
+                if (e == null) return null;
+                return com.tasf.backend.dto.EnvioSummaryDTO.builder()
+                    .idEnvio(id)
+                    .aeropuertoOrigen(e.getAeropuertoOrigen())
+                    .aeropuertoDestino(e.getAeropuertoDestino())
+                    .cantidadMaletas(maletasPorEnvio.getOrDefault(id, 0L).intValue())
+                    .estado(e.getEstado().name())
+                    .build();
+            })
+            .filter(java.util.Objects::nonNull)
+            .sorted(java.util.Comparator.comparing(com.tasf.backend.dto.EnvioSummaryDTO::getIdEnvio))
+            .collect(Collectors.toList());
+
+        // Escalas planificadas hoy en este aeropuerto
+        LocalDate today = fechaSimulada != null ? fechaSimulada.toLocalDate() : LocalDate.now();
+        List<com.tasf.backend.dto.EnvioSummaryDTO> entrando = new java.util.ArrayList<>();
+        List<com.tasf.backend.dto.EnvioSummaryDTO> saliendo = new java.util.ArrayList<>();
+
+        planes.stream()
+            .filter(PlanDeViaje::isEsActivo)
+            .forEach(plan -> {
+                Envio e = envioById.get(plan.getIdEnvio());
+                if (e == null || e.getEstado() == EstadoEnvio.ENTREGADO || e.getEstado() == EstadoEnvio.CANCELADO) return;
+                for (Escala esc : plan.getEscalas()) {
+                    if (esc.isCompletada() || !iata.equals(esc.getCodigoAeropuerto())) continue;
+                    if (esc.getHoraLlegadaEst() != null && esc.getHoraLlegadaEst().toLocalDate().equals(today)) {
+                        entrando.add(com.tasf.backend.dto.EnvioSummaryDTO.builder()
+                            .idEnvio(plan.getIdEnvio())
+                            .aeropuertoOrigen(e.getAeropuertoOrigen())
+                            .aeropuertoDestino(e.getAeropuertoDestino())
+                            .cantidadMaletas(e.getCantidadMaletas())
+                            .estado(e.getEstado().name())
+                            .codigoVuelo(esc.getCodigoVuelo())
+                            .hora(esc.getHoraLlegadaEst().toLocalTime().toString().substring(0, 5))
+                            .build());
+                    }
+                    if (esc.getHoraSalidaEst() != null && esc.getHoraSalidaEst().toLocalDate().equals(today)) {
+                        saliendo.add(com.tasf.backend.dto.EnvioSummaryDTO.builder()
+                            .idEnvio(plan.getIdEnvio())
+                            .aeropuertoOrigen(e.getAeropuertoOrigen())
+                            .aeropuertoDestino(e.getAeropuertoDestino())
+                            .cantidadMaletas(e.getCantidadMaletas())
+                            .estado(e.getEstado().name())
+                            .codigoVuelo(esc.getCodigoVuelo())
+                            .hora(esc.getHoraSalidaEst().toLocalTime().toString().substring(0, 5))
+                            .build());
+                    }
+                }
+            });
+
+        entrando.sort(java.util.Comparator.comparing(com.tasf.backend.dto.EnvioSummaryDTO::getHora,
+            java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())));
+        saliendo.sort(java.util.Comparator.comparing(com.tasf.backend.dto.EnvioSummaryDTO::getHora,
+            java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())));
+
+        return com.tasf.backend.dto.AirportInventoryDTO.builder()
+            .iata(iata)
+            .enAlmacen(enAlmacen)
+            .planificadosEntrando(entrando)
+            .planificadosSaliendo(saliendo)
+            .build();
     }
 
     private Map<String, PlanDeViaje> buildLatestPlanByEnvio() {
@@ -1119,6 +1201,7 @@ public class SimulationEngine {
             .lng(airport.getLng())
             .capacidadAlmacen(capacidad)
             .ocupacionActual(ocupacion)
+            .ocupacionInicioDia(airport.getOcupacionInicioDia())
             .semaforo(semaforo)
             .maletasRecibidas(airport.getMaletasRecibidas())
             .maletasEnviadas(airport.getMaletasEnviadas())

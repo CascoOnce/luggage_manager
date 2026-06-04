@@ -34,6 +34,7 @@ export default function App() {
   const [selectedFlight, setSelectedFlight] = useState(null)
   const [mapSelectedAirport, setMapSelectedAirport] = useState(null)
   const [mapSelectedVuelo, setMapSelectedVuelo] = useState(null)
+  const [highlightedRoute, setHighlightedRoute] = useState(null)
   const [simClockMinutes, setSimClockMinutes] = useState(0)
 
   const realStartRef = useRef(null)
@@ -165,6 +166,17 @@ export default function App() {
   useEffect(() => {
     api.getAirportGraph().then(setAirportGraph).catch(() => {})
   }, [])
+
+  // On mount: check if a simulation is already running (another tab/user started it)
+  useEffect(() => {
+    api.getState().then((state) => {
+      if (state && (state.enEjecucion || state.finalizada)) {
+        setBackendState(state)
+        startPolling()
+        if (state.finalizada) setScreen('resultados')
+      }
+    }).catch(() => {})
+  }, [startPolling])
 
   useEffect(() => {
     api.getAirports()
@@ -340,6 +352,8 @@ export default function App() {
     const vuelosList = simState?.vuelos || []
     return airports.map((airport) => {
       const iata = airport.codigoIATA || airport.id
+      const ocupFin = airport.currentOccupation ?? airport.ocupacionActual ?? 0
+      const ocupIni = airport.ocupacionInicioDia ?? ocupFin
       return {
         ...airport,
         id: iata,
@@ -347,13 +361,23 @@ export default function App() {
         continent: airport.continent || airport.continente,
         lat: airport.lat,
         lng: airport.lng,
-        currentOccupation: airport.currentOccupation ?? airport.ocupacionActual ?? 0,
+        currentOccupation: ocupFin,
+        ocupacionInicioDia: ocupIni,
         warehouseCapacity: airport.warehouseCapacity ?? airport.capacidadAlmacen ?? 600,
         vuelosSalientes: vuelosList.filter((v) => (v.origen || v.origin) === iata && v.enUso).length,
         vuelosLlegando:  vuelosList.filter((v) => (v.destino || v.destination) === iata && v.enUso).length,
       }
     })
   }, [simState?.aeropuertos, simState?.airports, simState?.vuelos])
+
+  const clockedAirports = useMemo(() => {
+    if (!backendState?.enEjecucion) return normalizedAirports
+    const fraction = Math.min(simClockMinutes / 1440, 1)
+    return normalizedAirports.map((ap) => ({
+      ...ap,
+      currentOccupation: Math.round(ap.ocupacionInicioDia + (ap.currentOccupation - ap.ocupacionInicioDia) * fraction),
+    }))
+  }, [normalizedAirports, simClockMinutes, backendState?.enEjecucion])
 
   const normalizedFlights = useMemo(() =>
     simState?.vuelos
@@ -379,14 +403,14 @@ export default function App() {
   const destSet = useMemo(() => destIds ? new Set(destIds) : null, [destIds])
 
   const visibleAirports = useMemo(() => {
-    if (!originSet && !destSet) return normalizedAirports
+    if (!originSet && !destSet) return clockedAirports
     const visible = new Set()
-    for (const ap of normalizedAirports) {
+    for (const ap of clockedAirports) {
       if (!originSet || originSet.has(ap.id)) visible.add(ap.id)
       if (!destSet || destSet.has(ap.id)) visible.add(ap.id)
     }
-    return normalizedAirports.filter((a) => visible.has(a.id))
-  }, [normalizedAirports, originSet, destSet])
+    return clockedAirports.filter((a) => visible.has(a.id))
+  }, [clockedAirports, originSet, destSet])
 
   const normalizedRoutes = useMemo(() =>
     simState?.envios
@@ -462,8 +486,8 @@ export default function App() {
     // If vuelo not found in current frame, keep the previous drawer content open.
   }, [selectedFlight, backendState, backendFlights])
 
-  const activeKpis = useMemo(() =>
-    backendState?.kpis
+  const activeKpis = useMemo(() => {
+    const base = backendState?.kpis
       ? {
           bagsInTransit: backendState.kpis.maletasEnTransito,
           bagsDelivered: backendState.kpis.maletasEntregadas,
@@ -475,23 +499,27 @@ export default function App() {
           bagsInTransit: 0, bagsDelivered: 0,
           slaCompliance: 0, activeFlights: 0,
           slaViolated: 0,
-        },
-  [backendState?.kpis, simState?.kpis])
+        }
+    const globalFleetOccupancy = backendFlights.length > 0
+      ? backendFlights.reduce((acc, f) => acc + (f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0), 0) / backendFlights.length
+      : 0
+    const withCap = clockedAirports.filter((a) => (a.warehouseCapacity ?? 0) > 0)
+    const globalWarehouseOccupancy = withCap.length > 0
+      ? withCap.reduce((acc, a) => acc + (a.currentOccupation / a.warehouseCapacity) * 100, 0) / withCap.length
+      : 0
+    return { ...base, globalFleetOccupancy, globalWarehouseOccupancy }
+  }, [backendState?.kpis, simState?.kpis, backendFlights, clockedAirports])
 
   async function handleReset() {
     prefetchFiredRef.current = false
     nextDayStateRef.current = null
     colapsoPuntoAlertedRef.current = false
-    try {
-      await api.resetSimulation()
-    } catch (err) {
-      console.error('Reset backend error:', err)
-    }
     stopPolling()
     pollingErrorsRef.current = 0
     setPollingError(null)
     onReset()
     setBackendState(null)
+    api.resetSimulation().catch((err) => console.error('Reset backend error:', err))
   }
 
   async function handleStop() {
@@ -595,6 +623,27 @@ export default function App() {
 
   const handleCloseAirport = useCallback(() => setMapSelectedAirport(null), [])
   const handleCloseVuelo   = useCallback(() => { setMapSelectedVuelo(null); setSelectedFlight(null) }, [])
+
+  const handleShowEnvioRoute = useCallback(async (envioId) => {
+    try {
+      const envio = await api.getEnvioById(envioId)
+      const escalas = envio?.planDetalle?.escalas || []
+      if (escalas.length < 2) return
+      const apMap = Object.fromEntries(clockedAirports.map((a) => [a.id, a]))
+      const legs = []
+      for (let i = 0; i < escalas.length - 1; i++) {
+        const o = apMap[escalas[i].codigoAeropuerto]
+        const d = apMap[escalas[i + 1].codigoAeropuerto]
+        if (o && d) legs.push({ originIata: escalas[i].codigoAeropuerto, destIata: escalas[i + 1].codigoAeropuerto, originLat: o.lat, originLng: o.lng, destLat: d.lat, destLng: d.lng })
+      }
+      if (legs.length > 0) {
+        setHighlightedRoute({ envioId, legs })
+        setScreen('main')
+      }
+    } catch (e) {
+      console.error('handleShowEnvioRoute', e)
+    }
+  }, [clockedAirports])
   const handleCancelFlight = useCallback(async (codigoVuelo) => {
     try {
       await api.cancelFlight(codigoVuelo)
@@ -717,8 +766,9 @@ export default function App() {
                 setSelectedFlight={setSelectedFlight}
                 selectedFlightData={mapSelectedVuelo}
                 onAirportClick={setMapSelectedAirport}
-                onMapClick={handleCloseVuelo}
+                onMapClick={() => { handleCloseVuelo(); setHighlightedRoute(null) }}
                 theme={theme}
+                highlightedRoute={highlightedRoute}
               />
 
               {!mapSelectedVuelo && !mapSelectedAirport && (
@@ -757,6 +807,7 @@ export default function App() {
                 selectedFlight={selectedFlight}
                 setSelectedFlight={setSelectedFlight}
                 onVueloClick={setMapSelectedVuelo}
+                theme={theme}
               />
             </div>
           </div>
@@ -781,6 +832,7 @@ export default function App() {
                 simState={simState}
                 theme={theme}
                 onBack={handleBackToMain}
+                onShowInMap={handleShowEnvioRoute}
               />
             )}
             {screen === 'dashboard' && (
@@ -788,6 +840,7 @@ export default function App() {
                 simState={simState}
                 theme={theme}
                 onBack={handleBackToMain}
+                globalKpis={activeKpis}
               />
             )}
             {screen === 'resultados' && (

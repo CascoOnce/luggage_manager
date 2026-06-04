@@ -113,11 +113,18 @@ function occupancyPct(ap) {
   return Math.round((ap.currentOccupation / ap.warehouseCapacity) * 100)
 }
 
+function trafficLightColor(pct, theme) {
+  if (pct === 0) return theme === 'light' ? '#1a6fd4' : '#4d9fff'
+  if (pct >= 85) return '#f04b4b'
+  if (pct >= 60) return '#f5a623'
+  return '#22d07a'
+}
+
 // FaMapMarker viewBox: 384×512 (ratio 3:4). react-icons sets width/height as HTML attrs
 // overriding any CSS — must strip them before applying correct dimensions (24×32).
 // Pin tip: center-x=12, bottom-y=32. iconAnchor=[12,32].
-function makeAirportIcon(theme) {
-  const pinColor = theme === 'light' ? '#1a6fd4' : '#4d9fff'
+function makeAirportIcon(pct, theme) {
+  const pinColor = trafficLightColor(pct, theme)
   const markerSvg = renderToStaticMarkup(React.createElement(FaMapMarker, { size: 20, color: pinColor }))
   const signSvg   = renderToStaticMarkup(React.createElement(CiAirportSign1, { size: 16, color: '#fff' }))
   const pinHtml = markerSvg
@@ -143,11 +150,9 @@ function lerpPos(originAp, destAp, fraction) {
 
 const PLANE_SIZE = 30  // change this one value to resize the plane icon
 
-function makeDivIcon(selected, angle, theme) {
-  const color = selected
-    ? (theme === 'light' ? '#0553b1' : '#74b3ff')
-    : (theme === 'light' ? '#0969da' : '#4d9fff')
-  const shadow = selected ? `drop-shadow(0 0 4px ${color})` : 'none'
+function makeDivIcon(selected, angle, theme, flightPct) {
+  const color = trafficLightColor(flightPct ?? 0, theme)
+  const shadow = selected ? `drop-shadow(0 0 6px ${color})` : 'none'
   const s = PLANE_SIZE
   // Body centerline of this SVG path is at x=11.5/24 of viewBox (not perfectly centered).
   // cx/cy must match transform-origin and iconAnchor so rotation keeps the fuselage on the route line.
@@ -183,7 +188,7 @@ function mercatorLerp(map, originAp, destAp, fraction) {
   return [latlng.lat, latlng.lng]
 }
 
-function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData, setSelectedFlight, theme }) {
+function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData, setSelectedFlight, theme, showAllRoutes }) {
   const map = useMap()
   const [tick, forceUpdate] = useState(0)
   const iconCache = useRef(new Map())
@@ -247,8 +252,49 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
     )
   }, [selectedFlightData, apIdx, theme, tick, map])
 
+  const bgOpacity = selectedFlight ? 0.15 : 0.3
+  const travColor = theme === 'light' ? '#64748b' : '#ffffff'
+
   return (
     <>
+      {showAllRoutes && activeFlights.map((flight) => {
+        if (flight.id === selectedFlight) return null
+        const a = apIdx[flight.origin], b = apIdx[flight.destination]
+        if (!a || !b) return null
+        const fraction = flight.fraction ?? 0
+        if (fraction <= 0) {
+          return (
+            <Polyline
+              key={`bg-route-${flight.id}-rem`}
+              positions={[[a.lat, a.lng], [b.lat, b.lng]]}
+              pathOptions={{ color: '#60a5fa', weight: 1.5, dashArray: '4 6', opacity: bgOpacity }}
+            />
+          )
+        }
+        if (fraction >= 1) {
+          return (
+            <Polyline
+              key={`bg-route-${flight.id}-trav`}
+              positions={[[a.lat, a.lng], [b.lat, b.lng]]}
+              pathOptions={{ color: travColor, weight: 1.5, opacity: bgOpacity }}
+            />
+          )
+        }
+        const mid = mercatorLerp(map, a, b, fraction)
+        if (!mid) return null
+        return (
+          <React.Fragment key={`bg-route-${flight.id}`}>
+            <Polyline
+              positions={[[a.lat, a.lng], mid]}
+              pathOptions={{ color: travColor, weight: 1.5, opacity: bgOpacity }}
+            />
+            <Polyline
+              positions={[mid, [b.lat, b.lng]]}
+              pathOptions={{ color: '#60a5fa', weight: 1.5, dashArray: '4 6', opacity: bgOpacity }}
+            />
+          </React.Fragment>
+        )
+      })}
       {selectedRouteEl}
       {activeFlights.map((flight) => {
         const a = apIdx[flight.origin], b = apIdx[flight.destination]
@@ -256,9 +302,11 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
         if (!pos) return null
         const isSelected = selectedFlight === flight.id
         const angle = screenAngle(map, a, b)
-        const cacheKey = `${isSelected ? 1 : 0}-${Math.round(angle)}-${theme}`
+        const flightPct = flight.capacity > 0 ? Math.round((flight.currentLoad / flight.capacity) * 100) : 0
+        const flightBucket = flightPct === 0 ? 0 : flightPct >= 85 ? 85 : flightPct >= 60 ? 60 : 1
+        const cacheKey = `${isSelected ? 1 : 0}-${Math.round(angle)}-${theme}-${flightBucket}`
         if (!iconCache.current.has(cacheKey)) {
-          iconCache.current.set(cacheKey, makeDivIcon(isSelected, angle, theme))
+          iconCache.current.set(cacheKey, makeDivIcon(isSelected, angle, theme, flightPct))
         }
         const icon = iconCache.current.get(cacheKey)
         return (
@@ -281,7 +329,9 @@ export default function MapView({
   onAirportClick,
   onMapClick,
   theme = 'dark',
+  highlightedRoute = null,
 }) {
+  const [showRoutes, setShowRoutes] = useState(true)
   const airportList = airports || []
   const flightList = flights || []
 
@@ -291,6 +341,22 @@ export default function MapView({
   const activeFlights = flightList.filter((f) => f.status === 'active')
 
   return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <button
+        onClick={() => setShowRoutes(v => !v)}
+        style={{
+          position: 'absolute', bottom: 16, left: 32, zIndex: 1000,
+          background: showRoutes ? 'rgba(61,139,255,0.15)' : 'rgba(255,255,255,0.05)',
+          border: `1px solid ${showRoutes ? '#3d8bff55' : 'rgba(255,255,255,0.1)'}`,
+          color: showRoutes ? '#60a5fa' : 'rgba(255,255,255,0.3)',
+          fontFamily: 'var(--mono)', fontSize: 10, padding: '5px 10px',
+          borderRadius: 4, cursor: 'pointer', letterSpacing: 0.8,
+          textTransform: 'uppercase', backdropFilter: 'blur(4px)',
+          transition: 'all 0.2s ease',
+        }}
+      >
+        {showRoutes ? '— rutas' : '+ rutas'}
+      </button>
     <MapContainer
       center={[20, 0]} zoom={3} minZoom={1} maxZoom={7}
       zoomSnap={0.1} zoomDelta={0.5}
@@ -318,7 +384,17 @@ export default function MapView({
         selectedFlightData={selectedFlightData}
         setSelectedFlight={setSelectedFlight}
         theme={theme}
+        showAllRoutes={showRoutes}
       />
+
+      {/* ── HIGHLIGHTED ENVIO ROUTE ───────────────────────────────────────── */}
+      {highlightedRoute?.legs.map((leg, i) => (
+        <Polyline
+          key={`hr-${highlightedRoute.envioId}-${i}`}
+          positions={[[leg.originLat, leg.originLng], [leg.destLat, leg.destLng]]}
+          pathOptions={{ color: '#a3e635', weight: 3, opacity: 0.9 }}
+        />
+      ))}
 
       {/* ── AIRPORT NODES ─────────────────────────────────────────────────── */}
       {airportList.map((ap) => {
@@ -327,7 +403,7 @@ export default function MapView({
           <Marker
             key={ap.id}
             position={[ap.lat, ap.lng]}
-            icon={makeAirportIcon(theme)}
+            icon={makeAirportIcon(pct, theme)}
             eventHandlers={{ click: () => onAirportClick && onAirportClick(ap) }}
           >
             <Tooltip className="tasf-tooltip" direction="top" offset={[0, -32]}>
@@ -341,5 +417,6 @@ export default function MapView({
         )
       })}
     </MapContainer>
+    </div>
   )
 }

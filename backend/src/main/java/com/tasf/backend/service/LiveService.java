@@ -38,6 +38,12 @@ public class LiveService {
             pendingByIata.put(iata, count);
         }
 
+        // 1b. Build huso map: iata -> UTC offset
+        Map<String, Integer> husoByIata = new HashMap<>();
+        for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
+            husoByIata.put(a.getCodigoIATA(), a.getHuso());
+        }
+
         // 2. Build LiveAeropuertoDTO list
         List<LiveAeropuertoDTO> aeropuertoDTOs = new ArrayList<>();
         for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
@@ -142,6 +148,7 @@ public class LiveService {
                     .tipo(v.getTipo())
                     .capacidadTotal(v.getCapacidadTotal())
                     .fraction(fraction)
+                    .husOrigen(husoByIata.get(v.getOrigen()))
                     .build());
         }
 

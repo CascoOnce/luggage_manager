@@ -161,6 +161,10 @@ export const api = {
     return request(`/flights/${code}/envios`)
   }),
 
+  getAirportInventory: async (iata) => withHandling('getAirportInventory', async () => {
+    return request(`/airports/${iata}/inventory`)
+  }),
+
   getLiveState: async (fromISO) => withHandling('getLiveState', () =>
     request(`/live/state?from=${encodeURIComponent(fromISO)}`)
   ),

@@ -112,7 +112,7 @@ function semaforoColor(semaforo) {
   return 'var(--green)'
 }
 
-export default function DashboardScreen({ simState }) {
+export default function DashboardScreen({ simState, globalKpis }) {
   const [selectedAp, setSelectedAp] = useState(null)
 
   const airports = useMemo(() => normalizeAirports(simState), [simState])
@@ -238,13 +238,18 @@ export default function DashboardScreen({ simState }) {
     return [...airports].sort((a, b) => (b.occupationPct || 0) - (a.occupationPct || 0))
   }, [airports])
 
+  const occColor = (pct) => pct >= 85 ? 'var(--red)' : pct >= 60 ? 'var(--amber)' : pct > 0 ? 'var(--green)' : 'var(--muted)'
+  const fleetPct = globalKpis?.globalFleetOccupancy ?? 0
+  const warehousePct = globalKpis?.globalWarehouseOccupancy ?? kpis.ocupPromedio
+
   const kpiCells = [
-    { label: 'En tránsito', value: kpis.enTransito.toLocaleString(), color: 'var(--text-bright)' },
-    { label: 'Entregadas', value: kpis.entregadas.toLocaleString(), color: 'var(--green)' },
-    { label: 'Cumpl. SLA', value: `${kpis.cumplimiento.toFixed(1)}%`, color: kpis.cumplimiento >= 90 ? 'var(--green)' : kpis.cumplimiento >= 75 ? 'var(--amber)' : 'var(--red)' },
-    { label: 'Vuelos activos', value: String(kpis.vuelosActivos), color: 'var(--blue)' },
-    { label: 'SLA vencidos', value: String(kpis.slaVencidos), color: kpis.slaVencidos > 0 ? 'var(--red)' : 'var(--muted)' },
-    { label: 'Ocup. promedio', value: `${kpis.ocupPromedio.toFixed(1)}%`, color: 'var(--text-bright)' },
+    { label: 'En tránsito',    value: kpis.enTransito.toLocaleString(),           color: 'var(--text-bright)' },
+    { label: 'Entregadas',     value: kpis.entregadas.toLocaleString(),            color: 'var(--green)' },
+    { label: 'Cumpl. SLA',     value: `${kpis.cumplimiento.toFixed(1)}%`,          color: kpis.cumplimiento >= 90 ? 'var(--green)' : kpis.cumplimiento >= 75 ? 'var(--amber)' : 'var(--red)' },
+    { label: 'Vuelos activos', value: String(kpis.vuelosActivos),                  color: 'var(--blue)' },
+    { label: 'SLA vencidos',   value: String(kpis.slaVencidos),                    color: kpis.slaVencidos > 0 ? 'var(--red)' : 'var(--muted)' },
+    { label: 'Flota',          value: `${Math.round(fleetPct)}%`,                  color: occColor(fleetPct) },
+    { label: 'Almacenes',      value: `${Math.round(warehousePct)}%`,              color: occColor(warehousePct) },
   ]
 
   const currentDayPlugin = useMemo(() => ({
@@ -268,7 +273,7 @@ export default function DashboardScreen({ simState }) {
 
   return (
     <div style={{ height: '100%', display: 'grid', gridTemplateRows: '64px 1fr 180px', gridTemplateColumns: '1fr 1fr 1fr', minHeight: 0 }}>
-      <section style={{ gridColumn: '1 / span 3', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', borderBottom: '1px solid var(--border)', background: 'var(--panel)' }}>
+      <section style={{ gridColumn: '1 / span 3', display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--border)', background: 'var(--panel)' }}>
         {kpiCells.map((cell, idx) => (
           <div
             key={cell.label}

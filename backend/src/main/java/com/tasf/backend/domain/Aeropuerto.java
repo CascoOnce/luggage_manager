@@ -31,4 +31,6 @@ public class Aeropuerto {
     private int ocupacionMuestras = 0;
     @Builder.Default
     private int ocupacionMaximaBolsas = 0;
+    @Builder.Default
+    private int ocupacionInicioDia = 0;
 }

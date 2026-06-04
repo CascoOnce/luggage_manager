@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -96,9 +97,11 @@ public class SimulationController {
         return ResponseEntity.ok(simulationEngine.reiniciar());
     }
 
+    @Transactional
     @PostMapping("/simulation/reset")
     public ResponseEntity<Void> reset() {
         simulationEngine.reset();
+        envioRepository.resetAllToPendiente();
         return ResponseEntity.ok().build();
     }
 
@@ -145,5 +148,11 @@ public class SimulationController {
     public ResponseEntity<List<EnvioDTO>> enviosByFlight(@PathVariable String code) {
         if (!simulationEngine.estaInicializada()) return ResponseEntity.noContent().build();
         return ResponseEntity.ok(simulationEngine.getEnviosByFlight(code));
+    }
+
+    @GetMapping("/airports/{iata}/inventory")
+    public ResponseEntity<com.tasf.backend.dto.AirportInventoryDTO> airportInventory(@PathVariable String iata) {
+        if (!simulationEngine.estaInicializada()) return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(simulationEngine.getAirportInventory(iata));
     }
 }
