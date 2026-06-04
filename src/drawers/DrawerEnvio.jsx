@@ -9,7 +9,7 @@ const s = {
   },
   backdrop: {
     flex: 1, height: '100%', border: 'none',
-    background: 'rgba(0,0,0,0.5)', cursor: 'pointer',
+    background: 'transparent', cursor: 'pointer',
   },
   panel: {
     position: 'relative', width: 400, height: '100%',
