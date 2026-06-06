@@ -1220,7 +1220,7 @@ public class SimulationEngine {
                         if (candidate.isBefore(now) || candidate.isEqual(now)) candidate = candidate.plusDays(1);
                         return candidate;
                     })
-                    .min(java.time.Comparator.comparingLong(d -> java.time.Duration.between(now, d).toMillis()));
+                    .min(java.util.Comparator.comparingLong(d -> java.time.Duration.between(now, d).toMillis()));
                 if (nd.isPresent()) nextDepStr = TS_FORMAT.format(nd.get());
 
                 java.util.Optional<java.time.LocalDateTime> na = vuelos.stream()
@@ -1231,7 +1231,7 @@ public class SimulationEngine {
                         if (candidate.isBefore(now) || candidate.isEqual(now)) candidate = candidate.plusDays(1);
                         return candidate;
                     })
-                    .min(java.time.Comparator.comparingLong(d -> java.time.Duration.between(now, d).toMillis()));
+                    .min(java.util.Comparator.comparingLong(d -> java.time.Duration.between(now, d).toMillis()));
                 if (na.isPresent()) nextArrStr = TS_FORMAT.format(na.get());
             }
         } catch (Exception ex) {
