@@ -65,6 +65,8 @@ function warehouseColor(ap, threshold) {
 
 export default function RightPanel({ flights, airports, threshold, selectedFlight, setSelectedFlight, onVueloClick, showAllAirports, theme = 'dark' }) {
   const [flightQuery, setFlightQuery] = useState('')
+  const [flightPattern, setFlightPattern] = useState('')
+  const [sortField, setSortField] = useState('occupancy')
   const [sortDir, setSortDir] = useState('desc')
   const [filterOrigin, setFilterOrigin] = useState('')
   const [filterDest, setFilterDest] = useState('')
@@ -79,9 +81,40 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
   , [allActive, filterOrigin])
   const activeFlights = useMemo(() => {
     const q = flightQuery.trim().toLowerCase()
-    return allActive.filter((f) => {
+    const patternRaw = (flightPattern || '').trim()
+
+    function patternToRegExp(pat) {
+      // escape regexp special chars except * then replace * -> .* for wildcard
+      const esc = pat.replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&')
+      const reText = esc.replace(/\\\*/g, '.*')
+      try {
+        return new RegExp(`^${reText}$`, 'i')
+      } catch (e) {
+        return null
+      }
+    }
+
+    const patternRe = patternRaw ? patternToRegExp(patternRaw.includes('*') ? patternRaw : `*${patternRaw}*`) : null
+
+    function getTimeVal(val) {
+      if (val == null) return null
+      const t = typeof val === 'number' ? val : Date.parse(val)
+      return Number.isFinite(t) ? t : null
+    }
+
+    function occupancyPct(f) {
+      const load = f.currentLoad ?? 0
+      const cap = f.capacity ?? 1
+      return cap > 0 ? (load / cap) * 100 : 0
+    }
+
+    const filtered = allActive.filter((f) => {
       if (filterOrigin && f.origin !== filterOrigin) return false
       if (filterDest   && f.destination !== filterDest) return false
+      if (patternRe) {
+        const id = f.id ?? ''
+        if (!patternRe.test(id)) return false
+      }
       if (!q) return true
       return (
         f.id?.toLowerCase().includes(q) ||
@@ -90,7 +123,37 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
         `${f.origin}-${f.destination}`.toLowerCase().includes(q)
       )
     })
-  }, [allActive, flightQuery, filterOrigin, filterDest])
+
+    // sorting
+    const sorted = [...filtered].sort((a, b) => {
+      let av, bv
+      switch (sortField) {
+        case 'departureTime':
+          av = getTimeVal(a.departureTime); bv = getTimeVal(b.departureTime); break
+        case 'arrivalTime':
+          av = getTimeVal(a.arrivalTime); bv = getTimeVal(b.arrivalTime); break
+        case 'origin':
+          av = (a.origin || '').toLowerCase(); bv = (b.origin || '').toLowerCase(); break
+        case 'destination':
+          av = (a.destination || '').toLowerCase(); bv = (b.destination || '').toLowerCase(); break
+        case 'occupancy':
+        default:
+          av = occupancyPct(a); bv = occupancyPct(b); break
+      }
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+      if (typeof av === 'number' && typeof bv === 'number') {
+        return sortDir === 'desc' ? bv - av : av - bv
+      }
+      // fallback string compare
+      if (av < bv) return sortDir === 'desc' ? 1 : -1
+      if (av > bv) return sortDir === 'desc' ? -1 : 1
+      return 0
+    })
+
+    return sorted
+  }, [allActive, flightQuery, flightPattern, filterOrigin, filterDest, sortField, sortDir])
   const { occupiedAirports, hiddenCount } = useMemo(() => {
     const sorted = [...airportList].sort((a, b) => {
       const aOcc = a.currentOccupation ?? a.ocupacionActual ?? 0
@@ -119,6 +182,19 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
           style={{
             flexShrink: 0, marginBottom: 6,
             background: 'rgba(255,255,255,0.04)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+            fontFamily: 'var(--mono)', fontSize: 11,
+            padding: '5px 8px', borderRadius: 2, outline: 'none',
+          }}
+        />
+        <input
+          value={flightPattern}
+          onChange={(e) => setFlightPattern(e.target.value)}
+          placeholder="Código‑patrón (usa * como wildcard)"
+          style={{
+            flexShrink: 0, marginBottom: 8,
+            background: 'rgba(255,255,255,0.03)',
             border: '1px solid var(--border)',
             color: 'var(--text)',
             fontFamily: 'var(--mono)', fontSize: 11,
@@ -155,6 +231,32 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
               </select>
             )
           })}
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <select
+                value={sortField}
+                onChange={(e) => setSortField(e.target.value)}
+                title="Ordenar por"
+                style={{
+                  background: theme === 'dark' ? '#1e2130' : '#f1f5f9',
+                  border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)'}`,
+                  color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 10,
+                  padding: '4px 6px', borderRadius: 2, outline: 'none', cursor: 'pointer',
+                }}
+              >
+                <option value="occupancy">Ocupación</option>
+                <option value="departureTime">Hora salida</option>
+                <option value="arrivalTime">Hora llegada</option>
+                <option value="origin">Origen</option>
+                <option value="destination">Destino</option>
+              </select>
+              <button
+                onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+                title={sortDir === 'desc' ? 'Descendente' : 'Ascendente'}
+                style={{ background: 'none', border: '1px solid var(--border)', padding: '4px 6px', cursor: 'pointer', borderRadius: 2, color: 'var(--muted)', fontFamily: 'var(--mono)' }}
+              >
+                {sortDir === 'desc' ? '↓' : '↑'}
+              </button>
+            </div>
         </div>
         <div style={s.scrollable}>
           {activeFlights.map((f) => {
