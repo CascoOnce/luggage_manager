@@ -1192,6 +1192,38 @@ public class SimulationEngine {
         double ocupMax = capacidad > 0
             ? (airport.getOcupacionMaximaBolsas() * 100.0 / capacidad) : 0.0;
 
+        // compute next departure/arrival for this airport relative to current simulated time
+        String nextDepStr = null;
+        String nextArrStr = null;
+        try {
+            if (fechaSimulada != null && vuelos != null) {
+                java.time.LocalDateTime now = fechaSimulada;
+                java.util.Optional<java.time.LocalDateTime> nd = vuelos.stream()
+                    .filter(v -> v.getOrigen() != null && v.getOrigen().equals(airport.getCodigoIATA()))
+                    .filter(v -> !v.isCancelado())
+                    .map(v -> {
+                        java.time.LocalDateTime candidate = java.time.LocalDateTime.of(now.toLocalDate(), v.getHoraSalida());
+                        if (candidate.isBefore(now) || candidate.isEqual(now)) candidate = candidate.plusDays(1);
+                        return candidate;
+                    })
+                    .min(java.time.Comparator.comparingLong(d -> java.time.Duration.between(now, d).toMillis()));
+                if (nd.isPresent()) nextDepStr = TS_FORMAT.format(nd.get());
+
+                java.util.Optional<java.time.LocalDateTime> na = vuelos.stream()
+                    .filter(v -> v.getDestino() != null && v.getDestino().equals(airport.getCodigoIATA()))
+                    .filter(v -> !v.isCancelado())
+                    .map(v -> {
+                        java.time.LocalDateTime candidate = java.time.LocalDateTime.of(now.toLocalDate(), v.getHoraLlegada());
+                        if (candidate.isBefore(now) || candidate.isEqual(now)) candidate = candidate.plusDays(1);
+                        return candidate;
+                    })
+                    .min(java.time.Comparator.comparingLong(d -> java.time.Duration.between(now, d).toMillis()));
+                if (na.isPresent()) nextArrStr = TS_FORMAT.format(na.get());
+            }
+        } catch (Exception ex) {
+            // ignore and keep nulls
+        }
+
         return AeropuertoDTO.builder()
             .codigoIATA(airport.getCodigoIATA())
             .nombre(airport.getNombre())
@@ -1209,6 +1241,8 @@ public class SimulationEngine {
             .ocupacionMaxima(ocupMax)
             .maletasEnAlmacenLocal(maletasPorAlmacen.getOrDefault(airport.getCodigoIATA(), 0L).intValue())
             .maletasEnTransitoEntrantes(maletasPorDestino.getOrDefault(airport.getCodigoIATA(), 0L).intValue())
+                .nextDeparture(nextDepStr)
+                .nextArrival(nextArrStr)
             .build();
     }
 
