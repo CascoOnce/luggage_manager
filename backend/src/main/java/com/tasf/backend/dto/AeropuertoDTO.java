@@ -26,4 +26,6 @@ public class AeropuertoDTO {
     private int maletasEnAlmacenLocal;
     private int maletasEnTransitoEntrantes;
     private int ocupacionInicioDia;
+    private String nextDeparture;
+    private String nextArrival;
 }

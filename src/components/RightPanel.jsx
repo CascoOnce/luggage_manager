@@ -65,11 +65,16 @@ function warehouseColor(ap, threshold) {
 
 export default function RightPanel({ flights, airports, threshold, selectedFlight, setSelectedFlight, onVueloClick, showAllAirports, theme = 'dark' }) {
   const [flightQuery, setFlightQuery] = useState('')
+  const [flightPattern, setFlightPattern] = useState('')
+  const [sortField, setSortField] = useState('occupancy')
   const [sortDir, setSortDir] = useState('desc')
   const [filterOrigin, setFilterOrigin] = useState('')
   const [filterDest, setFilterDest] = useState('')
   const flightList = flights || []
   const airportList = airports || []
+  const [airportPattern, setAirportPattern] = useState('')
+  const [airportContinent, setAirportContinent] = useState('')
+  const [airportSortField, setAirportSortField] = useState('occupation')
   const allActive = useMemo(() => flightList.filter((f) => f.status === 'active'), [flightList])
   const originOptions = useMemo(() =>
     [...new Set(allActive.map(f => f.origin).filter(Boolean))].sort().filter(ap => !filterDest || ap !== filterDest)
@@ -79,9 +84,40 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
   , [allActive, filterOrigin])
   const activeFlights = useMemo(() => {
     const q = flightQuery.trim().toLowerCase()
-    return allActive.filter((f) => {
+    const patternRaw = (flightPattern || '').trim()
+
+    function patternToRegExp(pat) {
+      // escape regexp special chars except * then replace * -> .* for wildcard
+      const esc = pat.replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&')
+      const reText = esc.replace(/\\\*/g, '.*')
+      try {
+        return new RegExp(`^${reText}$`, 'i')
+      } catch (e) {
+        return null
+      }
+    }
+
+    const patternRe = patternRaw ? patternToRegExp(patternRaw.includes('*') ? patternRaw : `*${patternRaw}*`) : null
+
+    function getTimeVal(val) {
+      if (val == null) return null
+      const t = typeof val === 'number' ? val : Date.parse(val)
+      return Number.isFinite(t) ? t : null
+    }
+
+    function occupancyPct(f) {
+      const load = f.currentLoad ?? 0
+      const cap = f.capacity ?? 1
+      return cap > 0 ? (load / cap) * 100 : 0
+    }
+
+    const filtered = allActive.filter((f) => {
       if (filterOrigin && f.origin !== filterOrigin) return false
       if (filterDest   && f.destination !== filterDest) return false
+      if (patternRe) {
+        const id = f.id ?? ''
+        if (!patternRe.test(id)) return false
+      }
       if (!q) return true
       return (
         f.id?.toLowerCase().includes(q) ||
@@ -90,21 +126,79 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
         `${f.origin}-${f.destination}`.toLowerCase().includes(q)
       )
     })
-  }, [allActive, flightQuery, filterOrigin, filterDest])
+
+    // sorting
+    const sorted = [...filtered].sort((a, b) => {
+      let av, bv
+      switch (sortField) {
+        case 'departureTime':
+          av = getTimeVal(a.departureTime); bv = getTimeVal(b.departureTime); break
+        case 'arrivalTime':
+          av = getTimeVal(a.arrivalTime); bv = getTimeVal(b.arrivalTime); break
+        case 'origin':
+          av = (a.origin || '').toLowerCase(); bv = (b.origin || '').toLowerCase(); break
+        case 'destination':
+          av = (a.destination || '').toLowerCase(); bv = (b.destination || '').toLowerCase(); break
+        case 'occupancy':
+        default:
+          av = occupancyPct(a); bv = occupancyPct(b); break
+      }
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+      if (typeof av === 'number' && typeof bv === 'number') {
+        return sortDir === 'desc' ? bv - av : av - bv
+      }
+      // fallback string compare
+      if (av < bv) return sortDir === 'desc' ? 1 : -1
+      if (av > bv) return sortDir === 'desc' ? -1 : 1
+      return 0
+    })
+
+    return sorted
+  }, [allActive, flightQuery, flightPattern, filterOrigin, filterDest, sortField, sortDir])
   const { occupiedAirports, hiddenCount } = useMemo(() => {
-    const sorted = [...airportList].sort((a, b) => {
+    const patternRaw = (airportPattern || '').trim()
+    function patternToRegExp(pat) {
+      const esc = pat.replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&')
+      const reText = esc.replace(/\\\*/g, '.*')
+      try { return new RegExp(`^${reText}$`, 'i') } catch (e) { return null }
+    }
+    const patternRe = patternRaw ? patternToRegExp(patternRaw.includes('*') ? patternRaw : `*${patternRaw}*`) : null
+
+    const filtered = airportList.filter(ap => {
+      if (airportContinent && (ap.continente || ap.continent || '').toLowerCase() !== airportContinent.toLowerCase()) return false
+      if (patternRe) {
+        const code = (ap.codigoIATA || ap.id || '').toString()
+        if (!patternRe.test(code)) return false
+      }
+      return true
+    })
+
+    const sorted = [...filtered].sort((a, b) => {
       const aOcc = a.currentOccupation ?? a.ocupacionActual ?? 0
       const aCap = a.warehouseCapacity ?? a.capacidadAlmacen ?? 600
       const bOcc = b.currentOccupation ?? b.ocupacionActual ?? 0
       const bCap = b.warehouseCapacity ?? b.capacidadAlmacen ?? 600
+      if (airportSortField === 'nextDeparture' || airportSortField === 'nextArrival') {
+        const aVal = Date.parse(a[airportSortField])
+        const bVal = Date.parse(b[airportSortField])
+        const aNull = Number.isNaN(aVal)
+        const bNull = Number.isNaN(bVal)
+        if (aNull && bNull) return 0
+        if (aNull) return 1
+        if (bNull) return -1
+        return sortDir === 'desc' ? bVal - aVal : aVal - bVal
+      }
       const diff = (bOcc / bCap) - (aOcc / aCap)
       return sortDir === 'desc' ? diff : -diff
     })
+
     const occupied = showAllAirports
       ? sorted
       : sorted.filter((ap) => (ap.currentOccupation ?? ap.ocupacionActual ?? 0) > 0)
     return { occupiedAirports: occupied, hiddenCount: showAllAirports ? 0 : sorted.length - occupied.length }
-  }, [airportList, sortDir])
+  }, [airportList, sortDir, airportPattern, airportContinent, airportSortField])
 
   return (
     <div style={s.panel}>
@@ -112,24 +206,41 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
       {/* ── ACTIVE FLIGHTS ────────────────────────────────────────────── */}
       <div style={{ ...s.sectionPad, flex: '0 0 50%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <span style={s.title}>Vuelos activos</span>
-        <input
-          value={flightQuery}
-          onChange={(e) => setFlightQuery(e.target.value)}
-          placeholder="Buscar vuelo, origen, destino..."
-          style={{
-            flexShrink: 0, marginBottom: 6,
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid var(--border)',
-            color: 'var(--text)',
-            fontFamily: 'var(--mono)', fontSize: 11,
-            padding: '5px 8px', borderRadius: 2, outline: 'none',
-          }}
-        />
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginBottom: 8 }}>
-          {[
-            { label: 'Origen', value: filterOrigin, set: setFilterOrigin, options: originOptions },
-            { label: 'Destino', value: filterDest,   set: setFilterDest,   options: destOptions   },
-          ].map(({ label, value, set, options }) => {
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 6, flex: '1 1 100%', minWidth: 0 }}>
+            <input
+              value={flightQuery}
+              onChange={(e) => setFlightQuery(e.target.value)}
+              placeholder="Buscar vuelo, origen, destino..."
+              style={{
+                flex: 1, minWidth: 0,
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+                fontFamily: 'var(--mono)', fontSize: 11,
+                padding: '5px 8px', borderRadius: 2, outline: 'none',
+              }}
+            />
+            <input
+              value={flightPattern}
+              onChange={(e) => setFlightPattern(e.target.value)}
+              placeholder="Código‑patrón (usa * como wildcard)"
+              style={{
+                width: 200, flex: '0 0 200px',
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+                fontFamily: 'var(--mono)', fontSize: 11,
+                padding: '5px 8px', borderRadius: 2, outline: 'none',
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 6, flex: '1 1 100%', marginTop: 6, minWidth: 0, flexDirection: 'column' }}>
+            <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+              {[
+              { label: 'Origen', value: filterOrigin, set: setFilterOrigin, options: originOptions },
+              { label: 'Destino', value: filterDest,   set: setFilterDest,   options: destOptions   },
+            ].map(({ label, value, set, options }) => {
             const isDark = theme === 'dark'
             const optBg   = isDark ? '#16171e' : '#ffffff'
             const optText = isDark ? '#e2e8f0' : '#1a202c'
@@ -140,7 +251,7 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
                 value={value}
                 onChange={(e) => set(e.target.value)}
                 style={{
-                  flex: 1,
+                  flex: '1 1 120px', minWidth: 0,
                   background: isDark ? '#1e2130' : '#f1f5f9',
                   border: `1px solid ${value ? '#3d8bff88' : (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)')}`,
                   color: value ? '#60a5fa' : (isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)'),
@@ -155,6 +266,29 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
               </select>
             )
           })}
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
+                <select
+                  value={sortField}
+                  onChange={(e) => setSortField(e.target.value)}
+                  title="Ordenar por"
+                  style={{ width: 160, background: theme === 'dark' ? '#1e2130' : '#f1f5f9', border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)'}`, color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 10, padding: '4px 6px', borderRadius: 2, outline: 'none', cursor: 'pointer' }}
+                >
+                  <option value="occupancy">Ocupación</option>
+                  <option value="departureTime">Hora salida</option>
+                  <option value="arrivalTime">Hora llegada</option>
+                  <option value="origin">Origen</option>
+                  <option value="destination">Destino</option>
+                </select>
+                <button
+                  onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+                  title={sortDir === 'desc' ? 'Descendente' : 'Ascendente'}
+                  style={{ background: 'none', border: '1px solid var(--border)', padding: '4px 8px', cursor: 'pointer', borderRadius: 2, color: 'var(--muted)', fontFamily: 'var(--mono)' }}
+                >
+                  {sortDir === 'desc' ? '↓' : '↑'}
+                </button>
+              </div>
+            </div>
         </div>
         <div style={s.scrollable}>
           {activeFlights.map((f) => {
@@ -186,15 +320,51 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
 
       {/* ── WAREHOUSE PER AIRPORT ─────────────────────────────────────── */}
       <div style={{ ...s.sectionPad, flex: '0 0 50%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderTop: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <span style={{ ...s.title, marginBottom: 0 }}>Warehouse por aeropuerto</span>
-          <button
-            onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13, padding: '0 2px', lineHeight: 1 }}
-            title={sortDir === 'desc' ? 'Mayor primero' : 'Menor primero'}
-          >
-            {sortDir === 'desc' ? '↓' : '↑'}
-          </button>
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ ...s.title, marginBottom: 0 }}>Warehouse por aeropuerto</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+            <div>
+              <input
+                value={airportPattern}
+                onChange={(e) => setAirportPattern(e.target.value)}
+                placeholder="IATA patrón (usa * como wildcard)"
+                style={{ width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '5px 8px', borderRadius: 2, outline: 'none' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <select
+                value={airportContinent}
+                onChange={(e) => setAirportContinent(e.target.value)}
+                style={{ flex: 1, background: theme === 'dark' ? '#1e2130' : '#f1f5f9', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '5px 8px', borderRadius: 2 }}
+              >
+                <option value="">Continente</option>
+                {[...new Set(airportList.map(a => (a.continente || a.continent || '').toString()).filter(Boolean))].sort().map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flex: 1 }}>
+                <select
+                  value={airportSortField}
+                  onChange={(e) => setAirportSortField(e.target.value)}
+                  title="Ordenar aeropuertos por"
+                  style={{ flex: 1, background: theme === 'dark' ? '#1e2130' : '#f1f5f9', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '5px 8px', borderRadius: 2 }}
+                >
+                  <option value="occupation">Ocupación</option>
+                  <option value="nextDeparture">Próxima salida</option>
+                  <option value="nextArrival">Próxima llegada</option>
+                </select>
+                <button
+                  onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+                  style={{ background: 'none', border: '1px solid var(--border)', padding: '4px 8px', cursor: 'pointer', borderRadius: 2, color: 'var(--muted)', fontFamily: 'var(--mono)' }}
+                  title={sortDir === 'desc' ? 'Mayor primero' : 'Menor primero'}
+                >
+                  {sortDir === 'desc' ? '↓' : '↑'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
         <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 8 }}>
         {occupiedAirports.map((ap) => {
