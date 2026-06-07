@@ -379,6 +379,58 @@ export default function App() {
     }))
   }, [normalizedAirports, simClockMinutes, backendState?.enEjecucion])
 
+  // Enrich airports with nextDeparture / nextArrival as ISO strings (used for sorting)
+  const clockedAirportsWithTimes = useMemo(() => {
+    const vuelos = backendState?.vuelos || []
+    // base date for constructing ISO timestamps (midnight of simulated day)
+    let baseDate = null
+    if (backendState?.fechaSimulada) {
+      baseDate = new Date(backendState.fechaSimulada)
+      baseDate.setHours(0, 0, 0, 0)
+    }
+
+    function toISOFromMinutes(min) {
+      if (min == null || !baseDate) return null
+      const dt = new Date(baseDate.getTime() + min * 60000)
+      return dt.toISOString()
+    }
+
+    // build per-airport next times (relative to simClockMinutes)
+    const byAirport = {}
+    for (const v of vuelos) {
+      const origin = v.origen || v.origin
+      const dest = v.destino || v.destination
+      const depMin = v.horaSalida ? parseTimeToMinutes(v.horaSalida) : null
+      const arrMin = v.horaLlegada ? parseTimeToMinutes(v.horaLlegada) : null
+
+      if (origin) {
+        if (!byAirport[origin]) byAirport[origin] = { nextDep: null, nextArr: null }
+        if (depMin != null && depMin >= simClockMinutes) {
+          if (byAirport[origin].nextDep == null || depMin < byAirport[origin].nextDep) {
+            byAirport[origin].nextDep = depMin
+          }
+        }
+      }
+      if (dest) {
+        if (!byAirport[dest]) byAirport[dest] = { nextDep: null, nextArr: null }
+        if (arrMin != null && arrMin >= simClockMinutes) {
+          if (byAirport[dest].nextArr == null || arrMin < byAirport[dest].nextArr) {
+            byAirport[dest].nextArr = arrMin
+          }
+        }
+      }
+    }
+
+    return clockedAirports.map((ap) => {
+      const info = byAirport[ap.id] || {}
+      return {
+        ...ap,
+        nextDeparture: toISOFromMinutes(info.nextDep),
+        nextArrival: toISOFromMinutes(info.nextArr),
+      }
+    })
+  }, [backendState?.vuelos, clockedAirports, simClockMinutes, backendState?.fechaSimulada])
+
   const normalizedFlights = useMemo(() =>
     simState?.vuelos
       ? simState.vuelos.map((flight, idx) => ({
@@ -403,14 +455,14 @@ export default function App() {
   const destSet = useMemo(() => destIds ? new Set(destIds) : null, [destIds])
 
   const visibleAirports = useMemo(() => {
-    if (!originSet && !destSet) return clockedAirports
+    if (!originSet && !destSet) return clockedAirportsWithTimes
     const visible = new Set()
-    for (const ap of clockedAirports) {
+    for (const ap of clockedAirportsWithTimes) {
       if (!originSet || originSet.has(ap.id)) visible.add(ap.id)
       if (!destSet || destSet.has(ap.id)) visible.add(ap.id)
     }
-    return clockedAirports.filter((a) => visible.has(a.id))
-  }, [clockedAirports, originSet, destSet])
+    return clockedAirportsWithTimes.filter((a) => visible.has(a.id))
+  }, [clockedAirportsWithTimes, originSet, destSet])
 
   const normalizedRoutes = useMemo(() =>
     simState?.envios
@@ -629,7 +681,7 @@ export default function App() {
       const envio = await api.getEnvioById(envioId)
       const escalas = envio?.planDetalle?.escalas || []
       if (escalas.length < 2) return
-      const apMap = Object.fromEntries(clockedAirports.map((a) => [a.id, a]))
+      const apMap = Object.fromEntries(clockedAirportsWithTimes.map((a) => [a.id, a]))
       const legs = []
       for (let i = 0; i < escalas.length - 1; i++) {
         const o = apMap[escalas[i].codigoAeropuerto]
@@ -643,7 +695,7 @@ export default function App() {
     } catch (e) {
       console.error('handleShowEnvioRoute', e)
     }
-  }, [clockedAirports])
+  }, [clockedAirportsWithTimes])
   const handleCancelFlight = useCallback(async (codigoVuelo) => {
     try {
       await api.cancelFlight(codigoVuelo)
