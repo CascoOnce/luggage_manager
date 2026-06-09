@@ -6,7 +6,7 @@ import com.tasf.backend.entity.EnvioEntity;
 import com.tasf.backend.parser.BaggageParser;
 import com.tasf.backend.repository.AeropuertoRepository;
 import com.tasf.backend.repository.EnvioRepository;
-import com.tasf.backend.repository.ops.OpsEnvioRepository;
+import com.tasf.backend.ops.repository.OpsEnvioRepository;
 import com.tasf.backend.simulation.SimulationEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

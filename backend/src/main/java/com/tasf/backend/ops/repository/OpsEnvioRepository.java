@@ -1,4 +1,4 @@
-package com.tasf.backend.repository.ops;
+package com.tasf.backend.ops.repository;
 
 import com.tasf.backend.entity.EnvioEntity;
 import org.springframework.data.jpa.repository.JpaRepository;

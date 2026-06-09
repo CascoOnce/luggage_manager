@@ -13,7 +13,7 @@ import com.tasf.backend.dto.LiveStateDTO.LiveVueloDTO;
 import com.tasf.backend.dto.OpsEnvioRequestDTO;
 import com.tasf.backend.dto.OpsReporteDTO;
 import com.tasf.backend.entity.EnvioEntity;
-import com.tasf.backend.repository.ops.OpsEnvioRepository;
+import com.tasf.backend.ops.repository.OpsEnvioRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;

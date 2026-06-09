@@ -18,7 +18,7 @@ import java.util.Map;
 
 @Configuration
 @EnableJpaRepositories(
-    basePackages = "com.tasf.backend.repository.ops",
+    basePackages = "com.tasf.backend.ops.repository",
     entityManagerFactoryRef = "opsEntityManagerFactory",
     transactionManagerRef = "opsTransactionManager"
 )
