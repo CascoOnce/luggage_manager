@@ -47,7 +47,7 @@ public class OpsDataSourceConfig {
                 .dataSource(dataSource)
                 .packages("com.tasf.backend.entity")
                 .persistenceUnit("ops")
-                .properties(Map.of("hibernate.hbm2ddl.auto", "update"))
+                .properties(Map.of("hibernate.hbm2ddl.auto", "validate"))
                 .build();
     }
 
