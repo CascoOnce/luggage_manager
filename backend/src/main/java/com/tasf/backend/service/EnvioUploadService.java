@@ -6,6 +6,7 @@ import com.tasf.backend.entity.EnvioEntity;
 import com.tasf.backend.parser.BaggageParser;
 import com.tasf.backend.repository.AeropuertoRepository;
 import com.tasf.backend.repository.EnvioRepository;
+import com.tasf.backend.repository.ops.OpsEnvioRepository;
 import com.tasf.backend.simulation.SimulationEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,16 +31,19 @@ public class EnvioUploadService {
     private static final int BATCH_SIZE = 5000;
 
     private final EnvioRepository envioRepository;
+    private final OpsEnvioRepository opsEnvioRepository;
     private final AeropuertoRepository aeropuertoRepository;
     private final BaggageParser baggageParser;
     private final SimulationEngine simulationEngine;
 
     public EnvioUploadService(
             EnvioRepository envioRepository,
+            OpsEnvioRepository opsEnvioRepository,
             AeropuertoRepository aeropuertoRepository,
             BaggageParser baggageParser,
             SimulationEngine simulationEngine) {
         this.envioRepository = envioRepository;
+        this.opsEnvioRepository = opsEnvioRepository;
         this.aeropuertoRepository = aeropuertoRepository;
         this.baggageParser = baggageParser;
         this.simulationEngine = simulationEngine;
@@ -95,6 +99,54 @@ public class EnvioUploadService {
         }
         if (!batch.isEmpty()) {
             envioRepository.saveAll(batch);
+        }
+    }
+
+    @Transactional("opsTransactionManager")
+    public List<Envio> processOpsUpload(MultipartFile file) throws IOException {
+        String filename = file.getOriginalFilename();
+        Matcher matcher = IATA_PATTERN.matcher(filename != null ? filename : "");
+        if (!matcher.find()) {
+            throw new IllegalArgumentException("Invalid filename format. Expected: _envios_XXXX_.txt");
+        }
+
+        String iata = matcher.group(1).toUpperCase();
+        Map<String, String> continentByAirport = aeropuertoRepository.findAll().stream()
+            .collect(Collectors.toMap(e -> e.getCodigoIata(), e -> e.getContinente()));
+
+        List<Envio> domainEnvios;
+        try (InputStream in = file.getInputStream()) {
+            domainEnvios = baggageParser.parseEnvios(in, iata, java.time.LocalDate.MIN, null, continentByAirport);
+        }
+
+        // Filtrar duplicados (por idPedido de dominio)
+        List<Envio> newDomainEnvios = domainEnvios.stream()
+            .filter(e -> !opsEnvioRepository.existsByIdPedido(e.getIdEnvio()))
+            .toList();
+
+        if (newDomainEnvios.isEmpty()) {
+            log.info("No new ops envios found in file (all were duplicates).");
+            return List.of();
+        }
+
+        // Persistir en lotes
+        saveOpsEnviosInBatches(newDomainEnvios);
+        log.info("Successfully uploaded and saved {} new ops envios from {}", newDomainEnvios.size(), filename);
+
+        return newDomainEnvios;
+    }
+
+    private void saveOpsEnviosInBatches(List<Envio> domainEnvios) {
+        List<EnvioEntity> batch = new ArrayList<>();
+        for (int i = 0; i < domainEnvios.size(); i++) {
+            batch.add(mapToEntity(domainEnvios.get(i)));
+            if (batch.size() >= BATCH_SIZE) {
+                opsEnvioRepository.saveAll(batch);
+                batch.clear();
+            }
+        }
+        if (!batch.isEmpty()) {
+            opsEnvioRepository.saveAll(batch);
         }
     }
 
