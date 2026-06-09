@@ -1,11 +1,11 @@
 -- Ops Schema for Luggage Manager "Operaciones Día a Día" Mode
--- Separate MySQL schema (luggage_ops) for operational data
+-- Separate MySQL schema (daily_simulation) for operational data
 
-CREATE SCHEMA IF NOT EXISTS luggage_ops
+CREATE SCHEMA IF NOT EXISTS daily_simulation
 CHARACTER SET utf8mb4
 COLLATE utf8mb4_unicode_ci;
 
-USE luggage_ops;
+USE daily_simulation;
 
 -- Table: envios
 -- Stores baggage shipment records with full routing state
