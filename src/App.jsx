@@ -9,10 +9,11 @@ import DashboardScreen from './screens/DashboardScreen.jsx'
 import ResultadosScreen from './screens/ResultadosScreen.jsx'
 import ColapsoScreen from './screens/ColapsoScreen.jsx'
 import LiveScreen from './screens/LiveScreen.jsx'
+import OpsScreen from './screens/OpsScreen.jsx'
 import DrawerAeropuerto from './drawers/DrawerAeropuerto.jsx'
 import DrawerVuelo from './drawers/DrawerVuelo.jsx'
 import AirportFilterPanel from './components/AirportFilterPanel.jsx'
-import { getLiveState } from './services/api.js'
+import { getLiveState, getOpsState } from './services/api.js'
 
 export default function App() {
   const ALGORITHM = 'SIMULATED_ANNEALING'
@@ -54,6 +55,12 @@ export default function App() {
   const liveApplyRef = useRef(null)
   const liveWindowStartRef = useRef(null)
   const liveNextStateRef = useRef(null)
+
+  const [opsState, setOpsState] = useState(null)
+  const opsPollingRef = useRef(null)
+  const opsApplyRef = useRef(null)
+  const opsWindowStartRef = useRef(null)
+  const opsNextStateRef = useRef(null)
 
   const [autoStep, setAutoStep] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
@@ -197,6 +204,7 @@ export default function App() {
     return () => {
       stopPolling()
       stopLive()
+      stopOps()
     }
   }, [stopPolling]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -609,14 +617,61 @@ export default function App() {
     scheduleLiveTimers()
   }
 
+  function stopOps() {
+    clearTimeout(opsPollingRef.current)
+    clearTimeout(opsApplyRef.current)
+    opsPollingRef.current = null
+    opsApplyRef.current = null
+    opsNextStateRef.current = null
+    opsWindowStartRef.current = null
+    setOpsState(null)
+  }
+
+  function scheduleOpsTimers() {
+    clearTimeout(opsPollingRef.current)
+    clearTimeout(opsApplyRef.current)
+
+    opsPollingRef.current = setTimeout(() => {
+      const nextFrom = new Date(opsWindowStartRef.current.getTime() + 60 * 60 * 1000)
+      getOpsState(toLocalISO(nextFrom))
+        .then((state) => { opsNextStateRef.current = state })
+        .catch((err) => console.error('Ops prefetch error:', err))
+    }, 55 * 60 * 1000)
+
+    opsApplyRef.current = setTimeout(() => {
+      const nextWindowStart = new Date(opsWindowStartRef.current.getTime() + 60 * 60 * 1000)
+      opsWindowStartRef.current = nextWindowStart
+      if (opsNextStateRef.current) {
+        setOpsState(opsNextStateRef.current)
+      } else {
+        getOpsState(toLocalISO(nextWindowStart)).then(setOpsState).catch(console.error)
+      }
+      opsNextStateRef.current = null
+      scheduleOpsTimers()
+    }, 60 * 60 * 1000)
+  }
+
+  function startOps() {
+    stopOps()
+    const now = new Date()
+    opsWindowStartRef.current = now
+    getOpsState(toLocalISO(now)).then(setOpsState).catch((err) => console.error('Ops fetch error:', err))
+    scheduleOpsTimers()
+  }
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleNavigate = useCallback((next) => {
     setConfigOpen(false)
     if (next === 'live') {
       setScreen('live')
       startLive()
+    } else if (next === 'ops') {
+      if (screen === 'live') stopLive()
+      setScreen('ops')
+      startOps()
     } else {
       if (screen === 'live') stopLive()
+      if (screen === 'ops') stopOps()
       setScreen(next)
     }
   }, [screen])
@@ -824,8 +879,19 @@ export default function App() {
           </div>
         )}
 
+        {/* ── OPS VIEW — full height, own layout ── */}
+        {screen === 'ops' && (
+          <div style={{ height: '100%', overflow: 'hidden' }}>
+            <OpsScreen
+              opsState={opsState}
+              theme={theme}
+              onBack={() => { stopOps(); handleNavigate('config') }}
+            />
+          </div>
+        )}
+
         {/* ── OVERLAY SCREENS (replace the map entirely, no z-index fighting) ── */}
-        {(screen !== 'main' || configOpen) && screen !== 'live' && (
+        {(screen !== 'main' || configOpen) && screen !== 'live' && screen !== 'ops' && (
           <div style={{ height: '100%', overflow: 'auto', background: 'var(--bg)' }}>
             {screen === 'envios' && (
               <EnviosScreen
@@ -855,6 +921,7 @@ export default function App() {
               <ConfigScreen
                 onCancel={handleCancelConfig}
                 onSimulationStarted={handleSimulationStarted}
+                onOperacionesStarted={() => { handleNavigate('ops') }}
               />
             )}
             {screen === 'colapso' && (
