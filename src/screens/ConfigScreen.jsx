@@ -84,6 +84,18 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
     refreshOpsEnvios()
   }, [modoConfig])
 
+  useEffect(() => {
+    if (!opsOrigen) return
+    const ap = opsAirports.find(a => a.id === opsOrigen)
+    const off = ap?.huso ?? null
+    if (off === null) return
+    const now = new Date()
+    const localMs = now.getTime() + (off * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000)
+    const local = new Date(localMs)
+    setOpsHora(`${String(local.getUTCHours()).padStart(2,'0')}:${String(local.getUTCMinutes()).padStart(2,'0')}`)
+    if (opsDestino === opsOrigen) setOpsDestino('')
+  }, [opsOrigen, opsAirports])
+
   const semaforoError = Number(semaforo.ambar) <= Number(semaforo.verde)
     ? 'Umbral ámbar debe ser mayor que verde'
     : null
@@ -754,17 +766,17 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                   <div>
                     <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Aeropuerto origen</div>
                     <select value={opsOrigen} onChange={e => setOpsOrigen(e.target.value)} disabled={opsFormLoading}
-                      style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }}>
-                      <option value="">Seleccionar origen</option>
-                      {opsAirports.map(a => <option key={a.id} value={a.id}>{a.id} — {a.name}</option>)}
+                      style={{ width: '100%', background: '#161b22', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box', colorScheme: 'dark' }}>
+                      <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Seleccionar origen</option>
+                      {opsAirports.map(a => <option key={a.id} value={a.id} style={{ background: '#161b22', color: 'var(--text)' }}>{a.id} — {a.name}</option>)}
                     </select>
                   </div>
                   <div>
                     <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Aeropuerto destino</div>
                     <select value={opsDestino} onChange={e => setOpsDestino(e.target.value)} disabled={opsFormLoading}
-                      style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }}>
-                      <option value="">Seleccionar destino</option>
-                      {opsAirports.filter(a => a.id !== opsOrigen).map(a => <option key={a.id} value={a.id}>{a.id} — {a.name}</option>)}
+                      style={{ width: '100%', background: '#161b22', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box', colorScheme: 'dark' }}>
+                      <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Seleccionar destino</option>
+                      {opsAirports.filter(a => a.id !== opsOrigen).map(a => <option key={a.id} value={a.id} style={{ background: '#161b22', color: 'var(--text)' }}>{a.id} — {a.name}</option>)}
                     </select>
                   </div>
                   <div>
