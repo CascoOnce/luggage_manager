@@ -785,24 +785,13 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                       style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }} />
                   </div>
                   <div>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Hora de ingreso (local origen)</div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
+                      {opsOrigen && opsAirports.find(a => a.id === opsOrigen)
+                        ? (() => { const off = opsAirports.find(a => a.id === opsOrigen).huso; return `Hora de ingreso (local origen · UTC${off >= 0 ? '+' : ''}${off})` })()
+                        : 'Hora de ingreso (local origen)'}
+                    </div>
                     <input type="time" value={opsHora} onChange={e => setOpsHora(e.target.value)} disabled={opsFormLoading}
                       style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }} />
-                    {opsOrigen && (() => {
-                      const ap = opsAirports.find(a => a.id === opsOrigen)
-                      if (!ap) return null
-                      const off = ap.huso ?? 0
-                      const now = new Date()
-                      const localMs = now.getTime() + (off * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000)
-                      const local = new Date(localMs)
-                      const h = String(local.getUTCHours()).padStart(2, '0')
-                      const m = String(local.getUTCMinutes()).padStart(2, '0')
-                      return (
-                        <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 3 }}>
-                          Hora actual en {opsOrigen} (UTC{off >= 0 ? '+' : ''}{off}): {h}:{m}
-                        </div>
-                      )
-                    })()}
                   </div>
                   {opsFormError && <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsFormError}</div>}
                   {opsFormSuccess && <div style={{ color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsFormSuccess}</div>}
