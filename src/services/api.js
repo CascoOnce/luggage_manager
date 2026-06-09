@@ -106,6 +106,53 @@ export async function exportarExperimentos() {
   })
 }
 
+// ── Ops mode API ──────────────────────────────────────────────────
+
+export async function getOpsState(fromISO) {
+  return withHandling('getOpsState', () =>
+    request(`/ops/state${fromISO ? `?from=${encodeURIComponent(fromISO)}` : ''}`)
+  )
+}
+
+export async function addOpsEnvio(dto) {
+  return withHandling('addOpsEnvio', () =>
+    request('/ops/envios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dto),
+    })
+  )
+}
+
+export async function planificarOps() {
+  return withHandling('planificarOps', () =>
+    request('/ops/planificar', { method: 'POST' })
+  )
+}
+
+export async function getOpsEnvios() {
+  return withHandling('getOpsEnvios', () => request('/ops/envios'))
+}
+
+export async function getOpsReporte() {
+  return withHandling('getOpsReporte', () => request('/ops/reporte'))
+}
+
+export async function uploadOpsEnvios(file) {
+  return withHandling('uploadOpsEnvios', async () => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await fetch(`${BASE_URL}/upload/ops/envios`, {
+      method: 'POST',
+      body: formData,
+      mode: 'cors',
+      credentials: 'omit',
+    })
+    if (!response.ok) throw await toApiError(response)
+    return response.json()
+  })
+}
+
 export const api = {
   startSimulation,
 
@@ -187,4 +234,10 @@ export const api = {
     }
     return response.json()
   }),
+
+  uploadOpsEnvios: async (file) => uploadOpsEnvios(file),
+  addOpsEnvio: async (dto) => addOpsEnvio(dto),
+  planificarOps: async () => planificarOps(),
+  getOpsEnvios: async () => getOpsEnvios(),
+  getOpsReporte: async () => getOpsReporte(),
 }
