@@ -2,7 +2,6 @@ package com.tasf.backend.controller;
 
 import com.tasf.backend.domain.Envio;
 import com.tasf.backend.service.EnvioUploadService;
-import com.tasf.backend.service.OpsService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -17,11 +16,9 @@ import java.util.Map;
 public class UploadController {
 
     private final EnvioUploadService envioUploadService;
-    private final OpsService opsService;
 
-    public UploadController(EnvioUploadService envioUploadService, OpsService opsService) {
+    public UploadController(EnvioUploadService envioUploadService) {
         this.envioUploadService = envioUploadService;
-        this.opsService = opsService;
     }
 
     @PostMapping("/envios")
