@@ -1245,6 +1245,7 @@ public class SimulationEngine {
             .continente(airport.getContinente())
             .lat(airport.getLat())
             .lng(airport.getLng())
+            .huso(airport.getHuso())
             .capacidadAlmacen(capacidad)
             .ocupacionActual(ocupacion)
             .ocupacionInicioDia(airport.getOcupacionInicioDia())
