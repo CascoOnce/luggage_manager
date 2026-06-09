@@ -38,15 +38,6 @@ public class OpsService {
     private static final Logger log = LoggerFactory.getLogger(OpsService.class);
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
 
-    private static final ParametrosSimulacion OPS_PARAMS = ParametrosSimulacion.builder()
-            .algoritmo("SIMULATED_ANNEALING")
-            .minutosEscalaMinima(10)
-            .minutosRecogidaDestino(10)
-            .umbralSemaforoVerde(60)
-            .umbralSemaforoAmbar(85)
-            .fechaInicio(LocalDate.now())
-            .build();
-
     private final DataLoaderService dataLoaderService;
     private final PlanningService planningService;
     private final OpsEnvioRepository opsEnvioRepository;
@@ -244,11 +235,20 @@ public class OpsService {
                 .map(this::toDomain)
                 .toList();
 
+        ParametrosSimulacion params = ParametrosSimulacion.builder()
+                .algoritmo("SIMULATED_ANNEALING")
+                .minutosEscalaMinima(10)
+                .minutosRecogidaDestino(10)
+                .umbralSemaforoVerde(60)
+                .umbralSemaforoAmbar(85)
+                .fechaInicio(LocalDate.now())
+                .build();
+
         PlanningResult result = planningService.planificar(
                 domainEnvios,
                 dataLoaderService.getVuelos(),
                 dataLoaderService.getAeropuertos(),
-                OPS_PARAMS);
+                params);
 
         // Store each plan in the in-memory map
         for (PlanDeViaje plan : result.getPlanes()) {
