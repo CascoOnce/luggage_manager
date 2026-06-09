@@ -1,6 +1,5 @@
 package com.tasf.backend.service;
 
-import com.tasf.backend.domain.Aeropuerto;
 import com.tasf.backend.domain.Envio;
 import com.tasf.backend.entity.EnvioEntity;
 import com.tasf.backend.parser.BaggageParser;

@@ -1,7 +1,6 @@
 package com.tasf.backend.simulation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tasf.backend.domain.Aeropuerto;

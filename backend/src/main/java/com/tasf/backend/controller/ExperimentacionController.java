@@ -5,7 +5,6 @@ import com.tasf.backend.domain.ParametrosSimulacion;
 import com.tasf.backend.dto.SimulationStateDTO;
 import com.tasf.backend.service.ExperimentacionService;
 import com.tasf.backend.simulation.SimulationEngine;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
