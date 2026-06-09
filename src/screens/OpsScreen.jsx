@@ -41,7 +41,15 @@ export default function OpsScreen({ opsState, theme, onBack }) {
   const [leftTab, setLeftTab] = useState('filtros') // 'filtros' | 'envios'
   const [selectedFlight, setSelectedFlight] = useState(null)
   const [selectedVueloData, setSelectedVueloData] = useState(null)
-  const [wallClock, setWallClock] = useState(() => new Date().toLocaleTimeString('es-PE'))
+  function fmtClock12h() {
+    const n = new Date()
+    const rawH = n.getHours()
+    const hh = String(rawH % 12 || 12).padStart(2, '0')
+    const mm = String(n.getMinutes()).padStart(2, '0')
+    const ss = String(n.getSeconds()).padStart(2, '0')
+    return `${hh}:${mm}:${ss} ${rawH >= 12 ? 'p.m.' : 'a.m.'}`
+  }
+  const [wallClock, setWallClock] = useState(fmtClock12h)
   const [liveNowMinutes, setLiveNowMinutes] = useState(nowMinutes)
   const [originIds, setOriginIds] = useState(null)
   const [destIds, setDestIds] = useState(null)
@@ -51,7 +59,7 @@ export default function OpsScreen({ opsState, theme, onBack }) {
   const [ingressAirports, setIngressAirports] = useState([])
 
   useEffect(() => {
-    const id = setInterval(() => setWallClock(new Date().toLocaleTimeString('es-PE')), 1000)
+    const id = setInterval(() => setWallClock(fmtClock12h()), 1000)
     return () => clearInterval(id)
   }, [])
 

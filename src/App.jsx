@@ -478,10 +478,12 @@ export default function App() {
     const current = new Date(source.getTime() + simClockMinutes * 60000)
     const mm = String(current.getMonth() + 1).padStart(2, '0')
     const dd = String(current.getDate()).padStart(2, '0')
-    const hh = String(current.getHours()).padStart(2, '0')
+    const rawH = current.getHours()
+    const hh = String(rawH % 12 || 12).padStart(2, '0')
     const mi = String(current.getMinutes()).padStart(2, '0')
     const ss = String(realElapsedSeconds % 60).padStart(2, '0')
-    return `${mm}-${dd} ${hh}:${mi}:${ss}`
+    const ampm = rawH >= 12 ? 'p.m.' : 'a.m.'
+    return `${mm}-${dd} ${hh}:${mi}:${ss} ${ampm}`
   }, [backendState?.fechaSimulada, simClockMinutes, realElapsedSeconds])
 
   useEffect(() => {

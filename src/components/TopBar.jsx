@@ -99,10 +99,20 @@ function fmtClock(sec) {
   return `${hh}:${mm}:${ss}`
 }
 
+function fmtWallClock() {
+  const n = new Date()
+  const rawH = n.getHours()
+  const hh = String(rawH % 12 || 12).padStart(2, '0')
+  const mm = String(n.getMinutes()).padStart(2, '0')
+  const ss = String(n.getSeconds()).padStart(2, '0')
+  const ampm = rawH >= 12 ? 'p.m.' : 'a.m.'
+  return `${hh}:${mm}:${ss} ${ampm}`
+}
+
 function useWallClock() {
-  const [clock, setClock] = useState(() => new Date().toLocaleTimeString('es-PE'))
+  const [clock, setClock] = useState(fmtWallClock)
   useEffect(() => {
-    const id = setInterval(() => setClock(new Date().toLocaleTimeString('es-PE')), 1000)
+    const id = setInterval(() => setClock(fmtWallClock()), 1000)
     return () => clearInterval(id)
   }, [])
   return clock
