@@ -22,7 +22,7 @@ function sectionHeaderStyle() {
   }
 }
 
-export default function ConfigScreen({ onCancel, onSimulationStarted }) {
+export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacionesStarted }) {
   const [periodo, setPeriodo] = useState('3')
   const algoritmo = 'SIMULATED_ANNEALING'
   const [fechaInicio, setFechaInicio] = useState('2026-06-01')
@@ -45,6 +45,25 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, currentFile: '' })
   const fileInputRef = useRef(null)
 
+  const [modoConfig, setModoConfig] = useState('simulacion') // 'simulacion' | 'operaciones'
+  const [opsAirports, setOpsAirports] = useState([])
+  const [opsUploadFile, setOpsUploadFile] = useState([])
+  const [opsUploadFileError, setOpsUploadFileError] = useState(null)
+  const [opsUploadLoading, setOpsUploadLoading] = useState(false)
+  const [opsUploadResult, setOpsUploadResult] = useState(null)
+  const [opsUploadError, setOpsUploadError] = useState(null)
+  const [opsUploadProgress, setOpsUploadProgress] = useState({ current: 0, total: 0 })
+  const opsFileInputRef = useRef(null)
+  const [opsOrigen, setOpsOrigen] = useState('')
+  const [opsDestino, setOpsDestino] = useState('')
+  const [opsCantidad, setOpsCantidad] = useState(1)
+  const [opsHora, setOpsHora] = useState(() => { const n = new Date(); return `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}` })
+  const [opsFormLoading, setOpsFormLoading] = useState(false)
+  const [opsFormError, setOpsFormError] = useState(null)
+  const [opsFormSuccess, setOpsFormSuccess] = useState(null)
+  const [opsEnvios, setOpsEnvios] = useState([])
+  const [opsEnviosLoading, setOpsEnviosLoading] = useState(false)
+
   useEffect(() => {
     if (!loading) { setLoadingElapsed(0); return }
     setLoadingElapsed(0)
@@ -52,6 +71,18 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
     const id = setInterval(() => setLoadingElapsed(Math.floor((Date.now() - start) / 100) / 10), 100)
     return () => clearInterval(id)
   }, [loading])
+
+  useEffect(() => {
+    if (modoConfig !== 'operaciones') return
+    api.getAirports().then(data => {
+      setOpsAirports(data.map(a => ({ id: a.codigoIATA, name: a.nombre, huso: a.huso ?? 0 })))
+    }).catch(() => {})
+  }, [modoConfig])
+
+  useEffect(() => {
+    if (modoConfig !== 'operaciones') return
+    refreshOpsEnvios()
+  }, [modoConfig])
 
   const semaforoError = Number(semaforo.ambar) <= Number(semaforo.verde)
     ? 'Umbral ámbar debe ser mayor que verde'
@@ -207,6 +238,77 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
     }
   }
 
+  async function refreshOpsEnvios() {
+    setOpsEnviosLoading(true)
+    try {
+      const data = await api.getOpsEnvios()
+      setOpsEnvios(data ?? [])
+    } catch (_) {}
+    finally { setOpsEnviosLoading(false) }
+  }
+
+  function handleOpsFileChange(event) {
+    const files = Array.from(event.target.files || [])
+    setOpsUploadResult(null); setOpsUploadError(null)
+    if (!files.length) { setOpsUploadFile([]); setOpsUploadFileError(null); return }
+    const notTxt = files.find(f => !f.name.toLowerCase().endsWith('.txt'))
+    if (notTxt) { setOpsUploadFile([]); setOpsUploadFileError('Solo archivos .txt'); return }
+    const valid = files.filter(f => FILE_PATTERN.test(f.name))
+    const invalid = files.filter(f => !FILE_PATTERN.test(f.name))
+    if (!valid.length) { setOpsUploadFile([]); setOpsUploadFileError('Formato inválido: _envios_XXXX_.txt'); return }
+    setOpsUploadFile(valid.map(f => ({ file: f, status: 'pending', error: null })))
+    setOpsUploadFileError(invalid.length > 0 ? `Ignorados ${invalid.length}: ${invalid.map(f => f.name).join(', ')}` : null)
+  }
+
+  async function handleOpsUpload() {
+    if (!opsUploadFile.length) return
+    setOpsUploadLoading(true); setOpsUploadError(null); setOpsUploadResult(null)
+    const initial = [...opsUploadFile]
+    let totalCount = 0; const errors = []; let processed = 0
+    for (let i = 0; i < initial.length; i++) {
+      setOpsUploadFile(prev => { const c = [...prev]; c[i] = { ...c[i], status: 'in_progress' }; return c })
+      setOpsUploadProgress({ current: processed, total: initial.length })
+      try {
+        const result = await api.uploadOpsEnvios(initial[i].file)
+        totalCount += result.count ?? 0; processed++
+        setOpsUploadFile(prev => { const c = [...prev]; c[i] = { ...c[i], status: 'done' }; return c })
+      } catch (err) {
+        processed++
+        const msg = err instanceof Error ? err.message : String(err)
+        errors.push(`${initial[i].file.name}: ${msg}`)
+        setOpsUploadFile(prev => { const c = [...prev]; c[i] = { ...c[i], status: 'error', error: msg }; return c })
+      }
+    }
+    if (opsFileInputRef.current) opsFileInputRef.current.value = ''
+    if (errors.length) setOpsUploadError(errors.join(' | '))
+    if (totalCount > 0 || !errors.length) setOpsUploadResult({ count: totalCount, files: initial.length })
+    setOpsUploadFile([])
+    setOpsUploadLoading(false)
+    setOpsUploadProgress({ current: 0, total: 0 })
+    if (totalCount > 0) refreshOpsEnvios()
+  }
+
+  async function handleOpsAddManual(e) {
+    e.preventDefault()
+    if (!opsOrigen || !opsDestino || opsCantidad < 1) { setOpsFormError('Origen, destino y cantidad requeridos'); return }
+    if (opsOrigen === opsDestino) { setOpsFormError('Origen y destino deben ser distintos'); return }
+    const ap = opsAirports.find(a => a.id === opsOrigen)
+    const utcOffset = ap?.huso ?? 0
+    const today = new Date().toISOString().slice(0, 10)
+    const sign = utcOffset >= 0 ? '+' : '-'
+    const absOff = Math.abs(utcOffset)
+    const fechaHoraIngreso = `${today}T${opsHora}:00${sign}${String(absOff).padStart(2, '0')}:00`
+    setOpsFormLoading(true); setOpsFormError(null); setOpsFormSuccess(null)
+    try {
+      await api.addOpsEnvio({ iataOrigen: opsOrigen, iataDestino: opsDestino, cantidadMaletas: Number(opsCantidad), fechaHoraIngreso })
+      setOpsFormSuccess(`Envío agregado: ${opsOrigen} → ${opsDestino}, ${opsCantidad} maleta(s)`)
+      setOpsDestino(''); setOpsCantidad(1)
+      refreshOpsEnvios()
+    } catch (err) {
+      setOpsFormError(err instanceof Error ? err.message : String(err))
+    } finally { setOpsFormLoading(false) }
+  }
+
   return (
     <>
       {loading && (
@@ -226,346 +328,526 @@ export default function ConfigScreen({ onCancel, onSimulationStarted }) {
           </div>
         </div>
       )}
-      <div style={{ height: '100%', display: 'grid', gridTemplateColumns: '420px 1fr', background: 'var(--bg)' }}>
-        <aside style={{ borderRight: '1px solid var(--border)', overflowY: 'auto', padding: '24px 20px' }}>
-          <span style={sectionHeaderStyle()}>Tipo de periodo</span>
-          {PERIOD_OPTIONS.map((option) => {
-            const selected = periodo === option.key
+
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* Mode selector tabs */}
+        <div style={{ display: 'flex', gap: 8, padding: '10px 20px', background: 'var(--bg)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          {[
+            { key: 'simulacion', label: 'Simulación', accent: 'var(--blue)', rgb: '88,166,255' },
+            { key: 'operaciones', label: 'Operaciones día a día', accent: '#22c55e', rgb: '34,197,94' },
+          ].map(opt => {
+            const active = modoConfig === opt.key
             return (
-              <button key={option.key} style={rowStyle(selected)} onClick={() => !loading && setPeriodo(option.key)} disabled={loading}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>{option.label}</span>
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>{option.sublabel}</span>
-                </div>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: selected ? 'var(--blue)' : 'transparent', border: `1px solid ${selected ? 'var(--blue)' : 'var(--border)'}` }} />
+              <button key={opt.key} onClick={() => setModoConfig(opt.key)}
+                style={{ padding: '5px 14px', fontFamily: 'var(--mono)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, background: active ? `rgba(${opt.rgb},0.1)` : 'transparent', border: `1px solid ${active ? opt.accent : 'var(--border)'}`, borderBottom: active ? `2px solid ${opt.accent}` : '1px solid var(--border)', color: active ? opt.accent : 'var(--muted)', cursor: 'pointer' }}>
+                {opt.label}
               </button>
             )
           })}
+        </div>
 
-          <div style={{ marginTop: 20 }}>
-            <span style={sectionHeaderStyle()}>Fecha y hora de inicio</span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="date"
-                value={fechaInicio}
-                onChange={(event) => setFechaInicio(event.target.value)}
-                disabled={loading}
-                style={{ flex: 2, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '8px 10px' }}
-              />
-              <input
-                type="time"
-                value={horaInicio}
-                onChange={(event) => setHoraInicio(event.target.value)}
-                disabled={loading}
-                style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '8px 10px' }}
-              />
-            </div>
-          </div>
+        {modoConfig === 'simulacion' ? (
+          <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '420px 1fr', background: 'var(--bg)', overflow: 'hidden', minHeight: 0 }}>
+            <aside style={{ borderRight: '1px solid var(--border)', overflowY: 'auto', padding: '24px 20px' }}>
+              <span style={sectionHeaderStyle()}>Tipo de periodo</span>
+              {PERIOD_OPTIONS.map((option) => {
+                const selected = periodo === option.key
+                return (
+                  <button key={option.key} style={rowStyle(selected)} onClick={() => !loading && setPeriodo(option.key)} disabled={loading}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>{option.label}</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>{option.sublabel}</span>
+                    </div>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: selected ? 'var(--blue)' : 'transparent', border: `1px solid ${selected ? 'var(--blue)' : 'var(--border)'}` }} />
+                  </button>
+                )
+              })}
 
-          <div style={{ marginTop: 20 }}>
-            <span style={sectionHeaderStyle()}>Archivos de envíos</span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".txt"
-              multiple
-              onChange={handleFileChange}
-              disabled={loading || uploadLoading}
-              style={{ display: 'none' }}
-              id="upload-envios-input"
-            />
-            <label
-              htmlFor="upload-envios-input"
-              style={{
-                display: 'block',
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                color: 'var(--muted)',
-                fontFamily: 'var(--mono)',
-                fontSize: 12,
-                textTransform: 'uppercase',
-                letterSpacing: 1,
-                cursor: loading || uploadLoading ? 'not-allowed' : 'pointer',
-                textAlign: 'center',
-                opacity: loading || uploadLoading ? 0.5 : 1,
-                boxSizing: 'border-box',
-              }}
-            >
-              Seleccionar archivos (.txt)
-            </label>
-
-            {uploadFileError && (
-              <div style={{ marginTop: 6, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>
-                {uploadFileError}
+              <div style={{ marginTop: 20 }}>
+                <span style={sectionHeaderStyle()}>Fecha y hora de inicio</span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    type="date"
+                    value={fechaInicio}
+                    onChange={(event) => setFechaInicio(event.target.value)}
+                    disabled={loading}
+                    style={{ flex: 2, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '8px 10px' }}
+                  />
+                  <input
+                    type="time"
+                    value={horaInicio}
+                    onChange={(event) => setHoraInicio(event.target.value)}
+                    disabled={loading}
+                    style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '8px 10px' }}
+                  />
+                </div>
               </div>
-            )}
 
-            {uploadFile && uploadFile.length > 0 && !uploadFileError && (
-              <div style={{ marginTop: 8 }}>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: 160, overflowY: 'auto' }}>
-                  {uploadFile.map((item, idx) => {
-                    const name = item.file.name
-                    const ext = name.split('.').pop() || ''
-                    const status = item.status || 'pending'
-                    const statusColor = status === 'pending' ? 'var(--muted)' : status === 'in_progress' ? 'var(--blue)' : status === 'done' ? 'var(--green)' : 'var(--red)'
-                    return (
-                      <li key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 6, marginBottom: 6 }}>
-                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                          <span style={{ width: 10, height: 10, borderRadius: '50%', background: statusColor, display: 'inline-block' }} />
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)' }}>{name}</div>
-                            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
-                              <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', marginRight: 6 }}>{ext}</span>
-                              {status === 'pending' && 'Pendiente'}{status === 'in_progress' && 'En curso'}{status === 'done' && 'Completado'}{status === 'error' && `Error: ${item.error}`}
-                            </div>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <button
-                            onClick={() => removeSelectedFile(idx)}
-                            disabled={uploadLoading || loading}
-                            title="Eliminar"
-                            style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: uploadLoading || loading ? 'not-allowed' : 'pointer' }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
-
-                {uploadLoading && uploadProgress.total > 0 && (
-                  <div style={{ marginTop: 8 }}>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
-                      Subiendo {uploadProgress.current}/{uploadProgress.total} {uploadProgress.currentFile ? `· ${uploadProgress.currentFile}` : ''}
-                    </div>
-                    <div style={{ width: '100%', height: 8, background: 'rgba(255,255,255,0.04)', borderRadius: 4, overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.round((uploadProgress.current / Math.max(1, uploadProgress.total)) * 100)}%`, height: '100%', background: 'var(--blue)', transition: 'width 300ms' }} />
-                    </div>
-                  </div>
-                )}
-
-                <button
-                  onClick={handleUpload}
-                  disabled={uploadLoading || loading || uploadFile.length === 0}
+              <div style={{ marginTop: 20 }}>
+                <span style={sectionHeaderStyle()}>Archivos de envíos</span>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt"
+                  multiple
+                  onChange={handleFileChange}
+                  disabled={loading || uploadLoading}
+                  style={{ display: 'none' }}
+                  id="upload-envios-input"
+                />
+                <label
+                  htmlFor="upload-envios-input"
                   style={{
+                    display: 'block',
                     width: '100%',
-                    padding: '7px 12px',
-                    background: 'rgba(88,166,255,0.08)',
-                    border: '1px solid rgba(88,166,255,0.3)',
-                    color: 'var(--blue)',
+                    padding: '8px 12px',
+                    border: '1px solid var(--border)',
+                    background: 'transparent',
+                    color: 'var(--muted)',
                     fontFamily: 'var(--mono)',
                     fontSize: 12,
                     textTransform: 'uppercase',
                     letterSpacing: 1,
-                    cursor: uploadLoading || loading ? 'not-allowed' : 'pointer',
-                    opacity: uploadLoading || loading ? 0.5 : 1,
-                    marginTop: 8,
+                    cursor: loading || uploadLoading ? 'not-allowed' : 'pointer',
+                    textAlign: 'center',
+                    opacity: loading || uploadLoading ? 0.5 : 1,
+                    boxSizing: 'border-box',
                   }}
                 >
-                  {uploadLoading ? 'Subiendo...' : 'Subir'}
-                </button>
-              </div>
-            )}
-
-            {uploadResult && (
-              <div style={{ marginTop: 6, color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 11 }}>
-                {uploadResult.files > 1
-                  ? `${uploadResult.files} archivos procesados — ${uploadResult.count} envíos cargados`
-                  : `${uploadResult.count} envíos cargados`}
-              </div>
-            )}
-
-            {uploadError && (
-              <div style={{ marginTop: 6, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>
-                {uploadError}
-              </div>
-            )}
-
-            <div style={{ marginTop: 8, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 10, opacity: 0.6 }}>
-              Formato: _envios_XXXX_.txt
-            </div>
-          </div>
-        </aside>
-
-        <section style={{ overflowY: 'auto', padding: '24px 20px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <div style={{ marginBottom: 20 }}>
-            <span style={sectionHeaderStyle()}>Parámetros de conexión</span>
-            {[
-              { key: 'escala', label: 'Escala mínima (min)', value: escalaMinima, setter: setEscalaMinima },
-              { key: 'recogida', label: 'Tiempo recogida destino (min)', value: tiempoRecogida, setter: setTiempoRecogida },
-            ].map(({ key, label, value, setter }) => (
-              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>{label}</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={60}
-                  value={value}
-                  disabled={loading}
-                  onChange={(event) => {
-                    const v = Number(event.target.value)
-                    if (Number.isFinite(v) && v >= 1 && v <= 60) setter(v)
-                  }}
-                  style={{ width: 64, textAlign: 'right', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '6px 8px', appearance: 'textfield', MozAppearance: 'textfield', WebkitAppearance: 'none' }}
-                />
-              </div>
-            ))}
-          </div>
-
-          {periodo === 'colapso' && (
-            <div style={{ marginBottom: 20 }}>
-              <span style={sectionHeaderStyle()}>Condición de colapso</span>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>Umbral SLA vencido (%)</span>
-                <input
-                  type="number"
-                  min={10}
-                  max={90}
-                  step={5}
-                  value={umbralColapso}
-                  disabled={loading}
-                  onChange={(event) => {
-                    const v = Number(event.target.value)
-                    if (Number.isFinite(v) && v >= 10 && v <= 90) setUmbralColapso(v)
-                  }}
-                  style={{ width: 64, textAlign: 'right', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '6px 8px', appearance: 'textfield', MozAppearance: 'textfield', WebkitAppearance: 'none' }}
-                />
-              </div>
-              <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 10, opacity: 0.6 }}>
-                La sim detecta colapso cuando ≥{umbralColapso}% de envíos superan su SLA
-              </div>
-            </div>
-          )}
-
-          <div style={{ marginBottom: 20 }}>
-            <span style={sectionHeaderStyle()}>Rangos de semáforo</span>
-            {[
-              { key: 'verde', color: 'var(--green)', label: 'Verde', description: 'Ocupación normal' },
-              { key: 'ambar', color: 'var(--amber)', label: 'Ámbar', description: 'Ocupación elevada' },
-            ].map((item) => (
-              <div key={item.key} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.color }} />
-                <div>
-                  <div style={{ color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12 }}>{item.label}</div>
-                  <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>{item.description}</div>
-                </div>
-                <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>{'<'}</span>
-                <input
-                  type="number"
-                  value={semaforo[item.key]}
-                  disabled={loading}
-                  onChange={(event) => {
-                    const value = Number(event.target.value)
-                    setSemaforo((prev) => ({ ...prev, [item.key]: Number.isFinite(value) ? value : prev[item.key] }))
-                  }}
-                  style={{ width: 56, textAlign: 'right', background: 'rgba(255,255,255,0.04)', border: `1px solid ${semaforoError && item.key === 'ambar' ? 'var(--red)' : 'var(--border)'}`, color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '4px 6px', appearance: 'textfield', MozAppearance: 'textfield', WebkitAppearance: 'none' }}
-                />
-              </div>
-            ))}
-            {semaforoError && (
-              <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11, marginTop: 4 }}>{semaforoError}</div>
-            )}
-          </div>
-
-          <div style={{ marginBottom: 20 }}>
-            <span style={sectionHeaderStyle()}>Cancelaciones Aleatorias</span>
-            <button
-              type="button"
-              disabled={loading}
-              onClick={() => setCancelacionesAleatorias((v) => !v)}
-              style={rowStyle(cancelacionesAleatorias)}
-            >
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>
-                {cancelacionesAleatorias ? 'Habilitadas' : 'Deshabilitadas'}
-              </span>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
-                {cancelacionesAleatorias ? 'ON' : 'OFF'}
-              </span>
-            </button>
-            {cancelacionesAleatorias && (
-              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <label style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', flexShrink: 0 }}>
-                  % por día
+                  Seleccionar archivos (.txt)
                 </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={porcentajeCancelacion}
+
+                {uploadFileError && (
+                  <div style={{ marginTop: 6, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>
+                    {uploadFileError}
+                  </div>
+                )}
+
+                {uploadFile && uploadFile.length > 0 && !uploadFileError && (
+                  <div style={{ marginTop: 8 }}>
+                    <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: 160, overflowY: 'auto' }}>
+                      {uploadFile.map((item, idx) => {
+                        const name = item.file.name
+                        const ext = name.split('.').pop() || ''
+                        const status = item.status || 'pending'
+                        const statusColor = status === 'pending' ? 'var(--muted)' : status === 'in_progress' ? 'var(--blue)' : status === 'done' ? 'var(--green)' : 'var(--red)'
+                        return (
+                          <li key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 6, marginBottom: 6 }}>
+                            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                              <span style={{ width: 10, height: 10, borderRadius: '50%', background: statusColor, display: 'inline-block' }} />
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)' }}>{name}</div>
+                                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+                                  <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', marginRight: 6 }}>{ext}</span>
+                                  {status === 'pending' && 'Pendiente'}{status === 'in_progress' && 'En curso'}{status === 'done' && 'Completado'}{status === 'error' && `Error: ${item.error}`}
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <button
+                                onClick={() => removeSelectedFile(idx)}
+                                disabled={uploadLoading || loading}
+                                title="Eliminar"
+                                style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: uploadLoading || loading ? 'not-allowed' : 'pointer' }}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          </li>
+                        )
+                      })}
+                    </ul>
+
+                    {uploadLoading && uploadProgress.total > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
+                          Subiendo {uploadProgress.current}/{uploadProgress.total} {uploadProgress.currentFile ? `· ${uploadProgress.currentFile}` : ''}
+                        </div>
+                        <div style={{ width: '100%', height: 8, background: 'rgba(255,255,255,0.04)', borderRadius: 4, overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.round((uploadProgress.current / Math.max(1, uploadProgress.total)) * 100)}%`, height: '100%', background: 'var(--blue)', transition: 'width 300ms' }} />
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleUpload}
+                      disabled={uploadLoading || loading || uploadFile.length === 0}
+                      style={{
+                        width: '100%',
+                        padding: '7px 12px',
+                        background: 'rgba(88,166,255,0.08)',
+                        border: '1px solid rgba(88,166,255,0.3)',
+                        color: 'var(--blue)',
+                        fontFamily: 'var(--mono)',
+                        fontSize: 12,
+                        textTransform: 'uppercase',
+                        letterSpacing: 1,
+                        cursor: uploadLoading || loading ? 'not-allowed' : 'pointer',
+                        opacity: uploadLoading || loading ? 0.5 : 1,
+                        marginTop: 8,
+                      }}
+                    >
+                      {uploadLoading ? 'Subiendo...' : 'Subir'}
+                    </button>
+                  </div>
+                )}
+
+                {uploadResult && (
+                  <div style={{ marginTop: 6, color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 11 }}>
+                    {uploadResult.files > 1
+                      ? `${uploadResult.files} archivos procesados — ${uploadResult.count} envíos cargados`
+                      : `${uploadResult.count} envíos cargados`}
+                  </div>
+                )}
+
+                {uploadError && (
+                  <div style={{ marginTop: 6, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>
+                    {uploadError}
+                  </div>
+                )}
+
+                <div style={{ marginTop: 8, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 10, opacity: 0.6 }}>
+                  Formato: _envios_XXXX_.txt
+                </div>
+              </div>
+            </aside>
+
+            <section style={{ overflowY: 'auto', padding: '24px 20px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <div style={{ marginBottom: 20 }}>
+                <span style={sectionHeaderStyle()}>Parámetros de conexión</span>
+                {[
+                  { key: 'escala', label: 'Escala mínima (min)', value: escalaMinima, setter: setEscalaMinima },
+                  { key: 'recogida', label: 'Tiempo recogida destino (min)', value: tiempoRecogida, setter: setTiempoRecogida },
+                ].map(({ key, label, value, setter }) => (
+                  <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>{label}</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={value}
+                      disabled={loading}
+                      onChange={(event) => {
+                        const v = Number(event.target.value)
+                        if (Number.isFinite(v) && v >= 1 && v <= 60) setter(v)
+                      }}
+                      style={{ width: 64, textAlign: 'right', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '6px 8px', appearance: 'textfield', MozAppearance: 'textfield', WebkitAppearance: 'none' }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {periodo === 'colapso' && (
+                <div style={{ marginBottom: 20 }}>
+                  <span style={sectionHeaderStyle()}>Condición de colapso</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>Umbral SLA vencido (%)</span>
+                    <input
+                      type="number"
+                      min={10}
+                      max={90}
+                      step={5}
+                      value={umbralColapso}
+                      disabled={loading}
+                      onChange={(event) => {
+                        const v = Number(event.target.value)
+                        if (Number.isFinite(v) && v >= 10 && v <= 90) setUmbralColapso(v)
+                      }}
+                      style={{ width: 64, textAlign: 'right', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '6px 8px', appearance: 'textfield', MozAppearance: 'textfield', WebkitAppearance: 'none' }}
+                    />
+                  </div>
+                  <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 10, opacity: 0.6 }}>
+                    La sim detecta colapso cuando ≥{umbralColapso}% de envíos superan su SLA
+                  </div>
+                </div>
+              )}
+
+              <div style={{ marginBottom: 20 }}>
+                <span style={sectionHeaderStyle()}>Rangos de semáforo</span>
+                {[
+                  { key: 'verde', color: 'var(--green)', label: 'Verde', description: 'Ocupación normal' },
+                  { key: 'ambar', color: 'var(--amber)', label: 'Ámbar', description: 'Ocupación elevada' },
+                ].map((item) => (
+                  <div key={item.key} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.color }} />
+                    <div>
+                      <div style={{ color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12 }}>{item.label}</div>
+                      <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>{item.description}</div>
+                    </div>
+                    <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>{'<'}</span>
+                    <input
+                      type="number"
+                      value={semaforo[item.key]}
+                      disabled={loading}
+                      onChange={(event) => {
+                        const value = Number(event.target.value)
+                        setSemaforo((prev) => ({ ...prev, [item.key]: Number.isFinite(value) ? value : prev[item.key] }))
+                      }}
+                      style={{ width: 56, textAlign: 'right', background: 'rgba(255,255,255,0.04)', border: `1px solid ${semaforoError && item.key === 'ambar' ? 'var(--red)' : 'var(--border)'}`, color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '4px 6px', appearance: 'textfield', MozAppearance: 'textfield', WebkitAppearance: 'none' }}
+                    />
+                  </div>
+                ))}
+                {semaforoError && (
+                  <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11, marginTop: 4 }}>{semaforoError}</div>
+                )}
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <span style={sectionHeaderStyle()}>Cancelaciones Aleatorias</span>
+                <button
+                  type="button"
                   disabled={loading}
-                  onChange={(e) => setPorcentajeCancelacion(e.target.value)}
+                  onClick={() => setCancelacionesAleatorias((v) => !v)}
+                  style={rowStyle(cancelacionesAleatorias)}
+                >
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>
+                    {cancelacionesAleatorias ? 'Habilitadas' : 'Deshabilitadas'}
+                  </span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+                    {cancelacionesAleatorias ? 'ON' : 'OFF'}
+                  </span>
+                </button>
+                {cancelacionesAleatorias && (
+                  <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', flexShrink: 0 }}>
+                      % por día
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={porcentajeCancelacion}
+                      disabled={loading}
+                      onChange={(e) => setPorcentajeCancelacion(e.target.value)}
+                      style={{
+                        width: 70,
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text)',
+                        fontFamily: 'var(--mono)',
+                        fontSize: 13,
+                        padding: '6px 8px',
+                        borderRadius: 2,
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <span style={sectionHeaderStyle()}>Resumen de configuración</span>
+                {[
+                  ['Periodo', periodo === 'colapso' ? `Colapso desde ${fechaInicio}` : `${periodo} días desde ${fechaInicio}`],
+                  ['Escala mínima', `${escalaMinima} min`],
+                  ['Tiempo recogida', `${tiempoRecogida} min`],
+                  ['Semáforo verde', `< ${semaforo.verde}%`],
+                  ['Semáforo ámbar', `< ${semaforo.ambar}%`],
+                ].map(([label, value]) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ color: 'var(--muted)', fontSize: 12 }}>{label}</span>
+                    <span style={{ color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 13 }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginTop: 'auto', position: 'sticky', bottom: 0, background: 'var(--bg)', borderTop: '1px solid var(--border)', padding: '14px 20px', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  {error ? (
+                    <div style={{ borderLeft: '2px solid var(--red)', background: 'rgba(248,81,73,0.06)', padding: '8px 12px', color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 12 }}>
+                      {error}
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  onClick={onCancel}
+                  disabled={loading}
+                  style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, padding: '8px 16px', cursor: loading ? 'not-allowed' : 'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSimular}
+                  disabled={Boolean(semaforoError) || loading}
                   style={{
-                    width: 70,
-                    background: 'rgba(255,255,255,0.04)',
-                    border: '1px solid var(--border)',
-                    color: 'var(--text)',
+                    background: 'rgba(88,166,255,0.12)',
+                    border: '1px solid rgba(88,166,255,0.4)',
+                    color: 'var(--blue)',
                     fontFamily: 'var(--mono)',
                     fontSize: 13,
-                    padding: '6px 8px',
-                    borderRadius: 2,
-                    outline: 'none',
+                    textTransform: 'uppercase',
+                    letterSpacing: 1,
+                    fontWeight: 700,
+                    padding: '8px 20px',
+                    cursor: Boolean(semaforoError) || loading ? 'not-allowed' : 'pointer',
+                    opacity: Boolean(semaforoError) || loading ? 0.35 : 1,
                   }}
-                />
+                >
+                  {loading ? 'PROCESANDO...' : '▶ SIMULAR'}
+                </button>
               </div>
-            )}
+            </section>
           </div>
+        ) : (
+          /* OPS LAYOUT */
+          <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '420px 1fr', background: 'var(--bg)', overflow: 'hidden', minHeight: 0 }}>
 
-          <div style={{ marginBottom: 20 }}>
-            <span style={sectionHeaderStyle()}>Resumen de configuración</span>
-            {[
-              ['Periodo', periodo === 'colapso' ? `Colapso desde ${fechaInicio}` : `${periodo} días desde ${fechaInicio}`],
-              ['Escala mínima', `${escalaMinima} min`],
-              ['Tiempo recogida', `${tiempoRecogida} min`],
-              ['Semáforo verde', `< ${semaforo.verde}%`],
-              ['Semáforo ámbar', `< ${semaforo.ambar}%`],
-            ].map(([label, value]) => (
-              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ color: 'var(--muted)', fontSize: 12 }}>{label}</span>
-                <span style={{ color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 13 }}>{value}</span>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ marginTop: 'auto', position: 'sticky', bottom: 0, background: 'var(--bg)', borderTop: '1px solid var(--border)', padding: '14px 20px', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              {error ? (
-                <div style={{ borderLeft: '2px solid var(--red)', background: 'rgba(248,81,73,0.06)', padding: '8px 12px', color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 12 }}>
-                  {error}
+            {/* LEFT: ops file upload */}
+            <aside style={{ borderRight: '1px solid var(--border)', overflowY: 'auto', padding: '24px 20px' }}>
+              <span style={sectionHeaderStyle()}>Archivos de envíos</span>
+              <input ref={opsFileInputRef} type="file" accept=".txt" multiple onChange={handleOpsFileChange}
+                disabled={opsUploadLoading} style={{ display: 'none' }} id="ops-upload-config-input" />
+              <label htmlFor="ops-upload-config-input" style={{ display: 'block', width: '100%', padding: '8px 12px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, cursor: opsUploadLoading ? 'not-allowed' : 'pointer', textAlign: 'center', boxSizing: 'border-box' }}>
+                Seleccionar archivos (.txt)
+              </label>
+              {opsUploadFileError && (
+                <div style={{ marginTop: 6, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsUploadFileError}</div>
+              )}
+              {opsUploadFile.length > 0 && !opsUploadFileError && (
+                <div style={{ marginTop: 8 }}>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: 180, overflowY: 'auto' }}>
+                    {opsUploadFile.map((item, idx) => {
+                      const statusColor = item.status === 'done' ? 'var(--green)' : item.status === 'error' ? 'var(--red)' : item.status === 'in_progress' ? 'var(--blue)' : 'var(--muted)'
+                      return (
+                        <li key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', border: '1px solid var(--border)', marginBottom: 4 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.file.name}</span>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginLeft: 'auto', flexShrink: 0 }}>
+                            {item.status === 'pending' ? 'Pendiente' : item.status === 'in_progress' ? 'En curso' : item.status === 'done' ? 'Completado' : `Error: ${item.error}`}
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  {opsUploadLoading && opsUploadProgress.total > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
+                        Subiendo {opsUploadProgress.current}/{opsUploadProgress.total}
+                      </div>
+                      <div style={{ width: '100%', height: 6, background: 'rgba(255,255,255,0.04)', borderRadius: 3 }}>
+                        <div style={{ width: `${Math.round((opsUploadProgress.current / Math.max(1, opsUploadProgress.total)) * 100)}%`, height: '100%', background: 'var(--blue)', transition: 'width 300ms' }} />
+                      </div>
+                    </div>
+                  )}
+                  <button onClick={handleOpsUpload} disabled={opsUploadLoading}
+                    style={{ width: '100%', marginTop: 8, padding: '7px 12px', background: 'rgba(88,166,255,0.08)', border: '1px solid rgba(88,166,255,0.3)', color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, cursor: opsUploadLoading ? 'not-allowed' : 'pointer' }}>
+                    {opsUploadLoading ? 'Subiendo...' : 'Subir'}
+                  </button>
                 </div>
-              ) : null}
-            </div>
-            <button
-              onClick={onCancel}
-              disabled={loading}
-              style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, padding: '8px 16px', cursor: loading ? 'not-allowed' : 'pointer' }}
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleSimular}
-              disabled={Boolean(semaforoError) || loading}
-              style={{
-                background: 'rgba(88,166,255,0.12)',
-                border: '1px solid rgba(88,166,255,0.4)',
-                color: 'var(--blue)',
-                fontFamily: 'var(--mono)',
-                fontSize: 13,
-                textTransform: 'uppercase',
-                letterSpacing: 1,
-                fontWeight: 700,
-                padding: '8px 20px',
-                cursor: Boolean(semaforoError) || loading ? 'not-allowed' : 'pointer',
-                opacity: Boolean(semaforoError) || loading ? 0.35 : 1,
-              }}
-            >
-              {loading ? 'PROCESANDO...' : '▶ SIMULAR'}
-            </button>
+              )}
+              {opsUploadResult && (
+                <div style={{ marginTop: 6, color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsUploadResult.count} envíos cargados</div>
+              )}
+              {opsUploadError && (
+                <div style={{ marginTop: 6, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsUploadError}</div>
+              )}
+              <div style={{ marginTop: 8, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 10, opacity: 0.6 }}>Formato: _envios_XXXX_.txt</div>
+            </aside>
+
+            {/* RIGHT: flex-column — top=form, bottom=preview */}
+            <section style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+
+              {/* Top ~45%: manual form */}
+              <div style={{ flex: '0 0 45%', overflowY: 'auto', padding: '24px 20px', borderBottom: '1px solid var(--border)' }}>
+                <span style={sectionHeaderStyle()}>Ingreso manual de envío</span>
+                <form onSubmit={handleOpsAddManual} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Aeropuerto origen</div>
+                    <select value={opsOrigen} onChange={e => setOpsOrigen(e.target.value)} disabled={opsFormLoading}
+                      style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }}>
+                      <option value="">Seleccionar origen</option>
+                      {opsAirports.map(a => <option key={a.id} value={a.id}>{a.id} — {a.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Aeropuerto destino</div>
+                    <select value={opsDestino} onChange={e => setOpsDestino(e.target.value)} disabled={opsFormLoading}
+                      style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }}>
+                      <option value="">Seleccionar destino</option>
+                      {opsAirports.filter(a => a.id !== opsOrigen).map(a => <option key={a.id} value={a.id}>{a.id} — {a.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Cantidad de maletas</div>
+                    <input type="number" min={1} max={999} value={opsCantidad} onChange={e => setOpsCantidad(e.target.value)} disabled={opsFormLoading}
+                      style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Hora de ingreso (local origen)</div>
+                    <input type="time" value={opsHora} onChange={e => setOpsHora(e.target.value)} disabled={opsFormLoading}
+                      style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }} />
+                    {opsOrigen && (() => {
+                      const ap = opsAirports.find(a => a.id === opsOrigen)
+                      if (!ap) return null
+                      const off = ap.huso ?? 0
+                      const now = new Date()
+                      const localMs = now.getTime() + (off * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000)
+                      const local = new Date(localMs)
+                      const h = String(local.getUTCHours()).padStart(2, '0')
+                      const m = String(local.getUTCMinutes()).padStart(2, '0')
+                      return (
+                        <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 3 }}>
+                          Hora actual en {opsOrigen} (UTC{off >= 0 ? '+' : ''}{off}): {h}:{m}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                  {opsFormError && <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsFormError}</div>}
+                  {opsFormSuccess && <div style={{ color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsFormSuccess}</div>}
+                  <button type="submit" disabled={opsFormLoading}
+                    style={{ padding: '7px 12px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.4)', color: '#22c55e', fontFamily: 'var(--mono)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, cursor: opsFormLoading ? 'not-allowed' : 'pointer', opacity: opsFormLoading ? 0.6 : 1 }}>
+                    {opsFormLoading ? 'Agregando...' : '+ Agregar envío'}
+                  </button>
+                </form>
+              </div>
+
+              {/* Bottom ~55%: preview table + footer */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ padding: '12px 20px 8px', flexShrink: 0 }}>
+                  <span style={sectionHeaderStyle()}>Envíos cargados ({opsEnvios.length})</span>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 8px' }}>
+                  {opsEnviosLoading ? (
+                    <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>Cargando...</div>
+                  ) : opsEnvios.length === 0 ? (
+                    <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>Ningún envío. Sube un archivo o ingresa manualmente.</div>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--mono)', fontSize: 11 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                          {['ID Pedido', 'Origen', 'Destino', 'Maletas', 'Estado'].map(h => (
+                            <th key={h} style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 400, fontSize: 10 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {opsEnvios.map((e, i) => (
+                          <tr key={e.id ?? i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                            <td style={{ padding: '5px 8px', color: 'var(--muted)', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.idPedido}</td>
+                            <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.iataOrigen}</td>
+                            <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.iataDestino}</td>
+                            <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.cantidadMaletas}</td>
+                            <td style={{ padding: '5px 8px', color: e.estado === 'PENDIENTE' ? 'var(--blue)' : e.estado === 'ENTREGADO' ? 'var(--green)' : 'var(--muted)' }}>{e.estado}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 12, flexShrink: 0, background: 'var(--bg)' }}>
+                  <button onClick={onCancel}
+                    style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, padding: '8px 16px', cursor: 'pointer' }}>
+                    Cancelar
+                  </button>
+                  <button onClick={() => onOperacionesStarted && onOperacionesStarted()}
+                    style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)', color: '#22c55e', fontFamily: 'var(--mono)', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, padding: '8px 20px', cursor: 'pointer' }}>
+                    ▶ INICIAR OPERACIONES
+                  </button>
+                </div>
+              </div>
+            </section>
           </div>
-        </section>
+        )}
       </div>
     </>
   )
