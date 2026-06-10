@@ -29,12 +29,10 @@ function flightFractionAtMinute(now, dep, arr) {
 function isActiveAtMinute(now, dep, arr) {
   if (dep == null || arr == null) return false
   const m = ((now % 1440) + 1440) % 1440
-  const overnight = dep > arr
   const WINDOW = 30
-  const inFlight = !overnight && m >= dep && m < arr
   const depSoon = ((dep - m + 1440) % 1440) <= WINDOW
   const arrSoon = ((arr - m + 1440) % 1440) <= WINDOW
-  return inFlight || depSoon || arrSoon
+  return depSoon || arrSoon
 }
 
 function nowMinutes() {

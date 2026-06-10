@@ -172,7 +172,6 @@ public class OpsService {
             int arrMin = Math.floorMod(arrLocal - husoByIata.getOrDefault(v.getDestino(), 0) * 60, 1440);
 
             boolean overnight = depMin > arrMin;
-            boolean inFlight = !overnight && depMin <= nowMin && arrMin >= nowMin;
 
             boolean departingSoon;
             boolean arrivingSoon;
@@ -184,16 +183,21 @@ public class OpsService {
                 arrivingSoon  = (arrMin >= nowMin) || (arrMin <= endMin - 1440);
             }
 
-            boolean include = inFlight || departingSoon || arrivingSoon
-                              || flightsInUso.contains(v.getCodigoVuelo());
+            boolean enUsoFlight = flightsInUso.contains(v.getCodigoVuelo());
+            // Only show: departing/arriving in 30 min, or part of a planned OPS route.
+            // "Currently airborne" is excluded: at peak hours 500+ non-overnight flights
+            // are in-flight simultaneously, none actionable unless they carry a shipment.
+            boolean include = departingSoon || arrivingSoon || enUsoFlight;
             if (!include) {
                 continue;
             }
 
+            // Fraction: only meaningful for enUso flights currently airborne.
+            boolean inFlight = !overnight && depMin <= nowMin && arrMin >= nowMin;
             int duration = (arrMin - depMin + 1440) % 1440;
             double fraction = 0.0;
             if (duration > 0 && inFlight) {
-                int elapsed = nowMin - depMin; // safe: inFlight guarantees depMin <= nowMin
+                int elapsed = nowMin - depMin;
                 fraction = Math.max(0.0, Math.min(1.0, (double) elapsed / duration));
             }
 
