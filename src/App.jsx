@@ -47,6 +47,7 @@ export default function App() {
   const nextDayStateRef = useRef(null)
   const prefetchFiredRef = useRef(false)
   const colapsoPuntoAlertedRef = useRef(false)
+  const simStartMinuteRef = useRef(0)
 
   const [pollingError, setPollingError] = useState(null)
 
@@ -273,7 +274,7 @@ export default function App() {
     const applyNewDay = (newState) => {
       stepInProgressRef.current = false
       setBackendState(newState)
-      setSimClockMinutes(0)
+      setSimClockMinutes(simStartMinuteRef.current)
       prefetchFiredRef.current = false
       nextDayStateRef.current = null
       if (newState.finalizada) {
@@ -721,7 +722,10 @@ export default function App() {
     setConfigOpen(false)
     setBackendState(state)
     setLastParams(params)
-    setSimClockMinutes(0)
+    const [h = 0, m = 0] = (params?.horaInicio || '00:00').split(':').map(Number)
+    const startMin = h * 60 + m
+    simStartMinuteRef.current = startMin
+    setSimClockMinutes(startMin)
     setScreen('main')
     startPolling()
   }, [startPolling])
