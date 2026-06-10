@@ -576,6 +576,12 @@ export default function App() {
     return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
   }
 
+  // Ops backend frames "now" and flight times in UTC; send a true UTC instant.
+  function toUtcISO(date) {
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${date.getUTCFullYear()}-${pad(date.getUTCMonth()+1)}-${pad(date.getUTCDate())}T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`
+  }
+
   function stopLive() {
     clearTimeout(livePollingRef.current)
     clearTimeout(liveApplyRef.current)
@@ -636,7 +642,7 @@ export default function App() {
 
     opsPollingRef.current = setTimeout(() => {
       const nextFrom = new Date(opsWindowStartRef.current.getTime() + 60 * 60 * 1000)
-      getOpsState(toLocalISO(nextFrom))
+      getOpsState(toUtcISO(nextFrom))
         .then((state) => { opsNextStateRef.current = state })
         .catch((err) => console.error('Ops prefetch error:', err))
     }, 55 * 60 * 1000)
@@ -647,7 +653,7 @@ export default function App() {
       if (opsNextStateRef.current) {
         setOpsState(opsNextStateRef.current)
       } else {
-        getOpsState(toLocalISO(nextWindowStart)).then(setOpsState).catch(console.error)
+        getOpsState(toUtcISO(nextWindowStart)).then(setOpsState).catch(console.error)
       }
       opsNextStateRef.current = null
       scheduleOpsTimers()
@@ -658,7 +664,7 @@ export default function App() {
     stopOps()
     const now = new Date()
     opsWindowStartRef.current = now
-    getOpsState(toLocalISO(now)).then(setOpsState).catch((err) => console.error('Ops fetch error:', err))
+    getOpsState(toUtcISO(now)).then(setOpsState).catch((err) => console.error('Ops fetch error:', err))
     scheduleOpsTimers()
   }
 

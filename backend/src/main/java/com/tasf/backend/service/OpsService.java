@@ -62,20 +62,48 @@ public class OpsService {
 
     @Transactional(value = "opsTransactionManager", readOnly = true)
     public LiveStateDTO getLiveState(LocalDateTime from) {
-        // 1. Build airport occupation map: iata -> pending bags
-        List<Object[]> rows = opsEnvioRepository.sumMaletasPendientesByAeropuerto(from);
-        log.info("Ops pending bags query returned {} rows", rows.size());
-        Map<String, Long> pendingByIata = new HashMap<>();
-        for (Object[] row : rows) {
-            String iata = (String) row[0];
-            Long count = ((Number) row[1]).longValue();
-            pendingByIata.put(iata, count);
-        }
-
-        // 1b. Build huso map: iata -> UTC offset
+        // 0. Build huso map: iata -> UTC offset, and flight lookup by code (for drain)
         Map<String, Integer> husoByIata = new HashMap<>();
         for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
             husoByIata.put(a.getCodigoIATA(), a.getHuso());
+        }
+        Map<String, Vuelo> vueloByCodigo = new HashMap<>();
+        for (Vuelo v : dataLoaderService.getVuelos()) {
+            vueloByCodigo.put(v.getCodigoVuelo(), v);
+        }
+
+        // Current instant expressed as UTC minutes-of-day (frontend sends UTC).
+        int nowMin = from.toLocalTime().getHour() * 60 + from.toLocalTime().getMinute();
+        int endMin = nowMin + 60;
+
+        // 1. Warehouse occupation (drain model): a bag occupies the warehouse from
+        //    ingreso until its planned first leg departs. Unplanned bags always count.
+        Map<String, Long> pendingByIata = new HashMap<>();
+        for (EnvioEntity e : opsEnvioRepository.findAllPendientesOrdenados()) {
+            if (e.getFechaHoraIngreso() != null && e.getFechaHoraIngreso().isAfter(from)) {
+                continue; // not yet ingressed at this instant
+            }
+            boolean departed = false;
+            PlanDeViaje plan = planesPorEnvio.get(e.getIdPedido());
+            if (plan != null && plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
+                Escala first = plan.getEscalas().get(0);
+                for (Escala esc : plan.getEscalas()) {
+                    if (esc.getOrden() < first.getOrden()) {
+                        first = esc;
+                    }
+                }
+                Vuelo v = first.getCodigoVuelo() != null ? vueloByCodigo.get(first.getCodigoVuelo()) : null;
+                if (v != null) {
+                    int depMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
+                    int depUtcMin = Math.floorMod(depMin - husoByIata.getOrDefault(v.getOrigen(), 0) * 60, 1440);
+                    if (depUtcMin <= nowMin) {
+                        departed = true; // first leg already left -> bag no longer in warehouse
+                    }
+                }
+            }
+            if (!departed) {
+                pendingByIata.merge(e.getIataOrigen(), (long) e.getCantidadMaletas(), Long::sum);
+            }
         }
 
         // 2. Build LiveAeropuertoDTO list
@@ -88,7 +116,7 @@ public class OpsService {
             if (a.getCapacidadAlmacen() > 0) {
                 ocupacionPct = (double) maletasPendientes / a.getCapacidadAlmacen() * 100.0;
             }
-            ocupacionPct = Math.max(0.0, ocupacionPct);
+            ocupacionPct = Math.max(0.0, Math.min(100.0, ocupacionPct));
 
             String semaforo;
             if (ocupacionPct < 70.0) {
@@ -125,18 +153,17 @@ public class OpsService {
             }
         }
 
-        // 3. Filter flights active in window [nowMin, nowMin + 60]
-        LocalTime nowTime = from.toLocalTime();
-        int nowMin = nowTime.getHour() * 60 + nowTime.getMinute();
-        int endMin = nowMin + 60;
-
+        // 3. Filter flights active in UTC window [nowMin, nowMin + 60].
+        //    Flight times are origin/destination local; convert both ends to UTC.
         List<LiveVueloDTO> vueloDTOs = new ArrayList<>();
         for (Vuelo v : dataLoaderService.getVuelos()) {
             if (dataLoaderService.isFlightCancelledForSession(v.getCodigoVuelo())) {
                 continue;
             }
-            int depMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
-            int arrMin = v.getHoraLlegada().getHour() * 60 + v.getHoraLlegada().getMinute();
+            int depLocal = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
+            int arrLocal = v.getHoraLlegada().getHour() * 60 + v.getHoraLlegada().getMinute();
+            int depMin = Math.floorMod(depLocal - husoByIata.getOrDefault(v.getOrigen(), 0) * 60, 1440);
+            int arrMin = Math.floorMod(arrLocal - husoByIata.getOrDefault(v.getDestino(), 0) * 60, 1440);
 
             boolean overnight = depMin > arrMin;
             boolean include = false;
@@ -190,6 +217,7 @@ public class OpsService {
                     .capacidadTotal(v.getCapacidadTotal())
                     .fraction(fraction)
                     .husOrigen(husoByIata.get(v.getOrigen()))
+                    .husDestino(husoByIata.get(v.getDestino()))
                     .enUso(flightsInUso.contains(v.getCodigoVuelo()))
                     .build());
         }
@@ -332,19 +360,6 @@ public class OpsService {
                 .porcentajeCumplimientoSla(porcentaje)
                 .generadoEn(LocalDateTime.now(ZoneOffset.UTC).toString())
                 .build();
-    }
-
-    // -------------------------------------------------------------------------
-    // 7. resetEnvios
-    // -------------------------------------------------------------------------
-
-    @Transactional("opsTransactionManager")
-    public int resetEnvios() {
-        long count = opsEnvioRepository.count();
-        opsEnvioRepository.deleteAll();
-        planesPorEnvio.clear();
-        log.info("Ops reset: deleted {} envios from daily_simulation", count);
-        return (int) count;
     }
 
     // -------------------------------------------------------------------------

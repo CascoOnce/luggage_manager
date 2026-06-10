@@ -33,8 +33,13 @@ function isActiveAtMinute(now, dep, arr) {
 }
 
 function nowMinutes() {
+  // UTC minutes-of-day: backend frames "now" and flight times in UTC.
   const d = new Date()
-  return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60
+  return d.getUTCHours() * 60 + d.getUTCMinutes() + d.getUTCSeconds() / 60
+}
+
+function mod1440(m) {
+  return ((m % 1440) + 1440) % 1440
 }
 
 export default function OpsScreen({ opsState, theme, onBack }) {
@@ -97,8 +102,11 @@ export default function OpsScreen({ opsState, theme, onBack }) {
     if (!opsState?.vuelos) return []
     return opsState.vuelos
       .map((v) => {
-        const depMin = parseTimeToMinutes(v.horaSalida)
-        const arrMin = parseTimeToMinutes(v.horaLlegada)
+        const depLocal = parseTimeToMinutes(v.horaSalida)
+        const arrLocal = parseTimeToMinutes(v.horaLlegada)
+        // Flight times are origin/destination local; convert both ends to UTC.
+        const depMin = depLocal != null ? mod1440(depLocal - (v.husOrigen ?? 0) * 60) : null
+        const arrMin = arrLocal != null ? mod1440(arrLocal - (v.husDestino ?? 0) * 60) : null
         return {
           id: v.codigoVuelo,
           origin: v.origen,
@@ -111,6 +119,7 @@ export default function OpsScreen({ opsState, theme, onBack }) {
           horaSalida: v.horaSalida,
           horaLlegada: v.horaLlegada,
           husOrigen: v.husOrigen ?? null,
+          husDestino: v.husDestino ?? null,
           depMin,
           arrMin,
           fraction: flightFractionAtMinute(liveNowMinutes, depMin, arrMin),

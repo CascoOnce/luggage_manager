@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { addOpsEnvio, planificarOps, resetOpsEnvios, uploadOpsEnvios } from '../services/api.js'
+import { addOpsEnvio, planificarOps, uploadOpsEnvios } from '../services/api.js'
 
 const FILE_PATTERN = /_envios_[A-Za-z]{4}_\.txt$/i
 
@@ -59,11 +59,6 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
   const [planLoading, setPlanLoading] = useState(false)
   const [planResult, setPlanResult] = useState(null)
   const [planError, setPlanError] = useState(null)
-
-  // ── reset state ────────────────────────────────────────────────────
-  const [resetLoading, setResetLoading] = useState(false)
-  const [resetResult, setResetResult] = useState(null)
-  const [resetError, setResetError] = useState(null)
 
   // ── file upload handlers ───────────────────────────────────────────
   function handleFileChange(event) {
@@ -188,22 +183,6 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
       setFormError(err instanceof Error ? err.message : String(err))
     } finally {
       setFormLoading(false)
-    }
-  }
-
-  // ── reset handler ─────────────────────────────────────────────────
-  async function handleReset() {
-    setResetLoading(true)
-    setResetResult(null)
-    setResetError(null)
-    try {
-      const result = await resetOpsEnvios()
-      setResetResult(result)
-      if (onEnviosChanged) onEnviosChanged()
-    } catch (err) {
-      setResetError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setResetLoading(false)
     }
   }
 
@@ -567,39 +546,6 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
         {planError && !planLoading && (
           <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)' }}>
             {planError}
-          </div>
-        )}
-
-        <button
-          onClick={handleReset}
-          disabled={resetLoading}
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            padding: '8px 12px',
-            background: 'rgba(255,80,80,0.06)',
-            border: '1px solid rgba(255,80,80,0.3)',
-            color: 'var(--red, #f87171)',
-            fontFamily: 'var(--mono)',
-            fontSize: 12,
-            textTransform: 'uppercase',
-            letterSpacing: 1,
-            cursor: resetLoading ? 'not-allowed' : 'pointer',
-            opacity: resetLoading ? 0.6 : 1,
-          }}
-        >
-          {resetLoading ? 'Limpiando...' : '✕ Limpiar datos'}
-        </button>
-
-        {resetResult && !resetLoading && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#22c55e' }}>
-            {resetResult.deleted ?? 0} envíos eliminados
-          </div>
-        )}
-
-        {resetError && !resetLoading && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)' }}>
-            {resetError}
           </div>
         )}
       </div>
