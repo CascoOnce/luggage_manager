@@ -13,7 +13,7 @@ import OpsScreen from './screens/OpsScreen.jsx'
 import DrawerAeropuerto from './drawers/DrawerAeropuerto.jsx'
 import DrawerVuelo from './drawers/DrawerVuelo.jsx'
 import AirportFilterPanel from './components/AirportFilterPanel.jsx'
-import { getLiveState, getOpsState } from './services/api.js'
+import { getLiveState, getOpsState, planificarOps } from './services/api.js'
 
 export default function App() {
   const ALGORITHM = 'SIMULATED_ANNEALING'
@@ -933,7 +933,7 @@ export default function App() {
               <ConfigScreen
                 onCancel={handleCancelConfig}
                 onSimulationStarted={handleSimulationStarted}
-                onOperacionesStarted={() => { handleNavigate('ops') }}
+                onOperacionesStarted={() => { planificarOps().catch(console.error); handleNavigate('ops') }}
               />
             )}
             {screen === 'colapso' && (

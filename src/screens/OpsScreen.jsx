@@ -63,6 +63,7 @@ export default function OpsScreen({ opsState, theme, onBack }) {
   const [selectedAirport, setSelectedAirport] = useState(null)
   const [threshold, setThreshold] = useState(80)
   const [filterOpen, setFilterOpen] = useState(true)
+  const [rightOpen, setRightOpen] = useState(true)
   const [ingressAirports, setIngressAirports] = useState([])
 
   useEffect(() => {
@@ -200,7 +201,7 @@ export default function OpsScreen({ opsState, theme, onBack }) {
       <div style={{
         flex: 1,
         display: 'grid',
-        gridTemplateColumns: `${filterOpen ? '260px' : '0px'} 1fr 300px`,
+        gridTemplateColumns: `${filterOpen ? '260px' : '0px'} 1fr ${rightOpen ? '300px' : '0px'}`,
         overflow: 'hidden',
         minHeight: 0,
         transition: 'grid-template-columns 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -261,6 +262,17 @@ export default function OpsScreen({ opsState, theme, onBack }) {
           >
             {filterOpen ? '‹' : '›'}
           </button>
+          <button
+            onClick={() => setRightOpen(!rightOpen)}
+            style={{
+              position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
+              zIndex: 1000, width: 24, height: 48, background: 'rgba(13,17,23,0.85)',
+              border: '1px solid var(--border)', borderRight: 'none', borderRadius: '8px 0 0 8px',
+              color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11,
+            }}
+          >
+            {rightOpen ? '›' : '‹'}
+          </button>
 
           <MapView
             airports={visibleAirports}
@@ -286,7 +298,7 @@ export default function OpsScreen({ opsState, theme, onBack }) {
         </div>
 
         {/* Right panel */}
-        <div style={{ borderLeft: '1px solid var(--border, #333)', background: 'var(--panel, #1a1a1a)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ borderLeft: rightOpen ? '1px solid var(--border, #333)' : 'none', background: 'var(--panel, #1a1a1a)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <RightPanel
             flights={visibleFlights}
             airports={visibleAirports}

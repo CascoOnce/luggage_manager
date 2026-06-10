@@ -135,6 +135,10 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose }) {
     if (!airport) return
     setTab('info')
     setInventory(null)
+  }, [airport])
+
+  useEffect(() => {
+    if (!airport) return
     function onKey(e) { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

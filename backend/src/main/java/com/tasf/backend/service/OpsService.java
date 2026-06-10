@@ -255,8 +255,12 @@ public class OpsService {
                     .build();
         }
 
+        Map<String, Integer> husoByIata = new HashMap<>();
+        for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
+            husoByIata.put(a.getCodigoIATA(), a.getHuso());
+        }
         List<Envio> domainEnvios = pendientes.stream()
-                .map(this::toDomain)
+                .map(e -> toDomain(e, husoByIata))
                 .toList();
 
         ParametrosSimulacion params = ParametrosSimulacion.builder()
@@ -347,13 +351,18 @@ public class OpsService {
     // Helper: toDomain
     // -------------------------------------------------------------------------
 
-    private Envio toDomain(EnvioEntity e) {
+    private Envio toDomain(EnvioEntity e, Map<String, Integer> husoByIata) {
+        // fechaHoraIngreso is stored as UTC. The planning algorithm compares it
+        // directly against local flight times, so convert to origin airport local time.
+        int huso = husoByIata.getOrDefault(e.getIataOrigen(), 0);
+        LocalDateTime fechaLocal = e.getFechaHoraIngreso().plusHours(huso);
+
         return Envio.builder()
                 .idEnvio(e.getIdPedido())
                 .aeropuertoOrigen(e.getIataOrigen())
                 .aeropuertoDestino(e.getIataDestino())
                 .cantidadMaletas(e.getCantidadMaletas())
-                .fechaHoraIngreso(e.getFechaHoraIngreso())
+                .fechaHoraIngreso(fechaLocal)
                 .sla(e.getSla())
                 .estado(EstadoEnvio.valueOf(e.getEstado()))
                 .build();
