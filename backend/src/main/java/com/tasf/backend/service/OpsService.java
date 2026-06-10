@@ -46,6 +46,8 @@ public class OpsService {
     private final OpsEnvioRepository opsEnvioRepository;
 
     private final ConcurrentHashMap<String, PlanDeViaje> planesPorEnvio = new ConcurrentHashMap<>();
+    // idEnvio -> bag count, captured at planning time (plans don't carry bag counts).
+    private final ConcurrentHashMap<String, Integer> maletasPorEnvio = new ConcurrentHashMap<>();
 
     public OpsService(
             DataLoaderService dataLoaderService,
@@ -76,33 +78,34 @@ public class OpsService {
         int nowMin = from.toLocalTime().getHour() * 60 + from.toLocalTime().getMinute();
         int endMin = nowMin + 60;
 
-        // 1. Warehouse occupation (drain model): a bag occupies the warehouse from
-        //    ingreso until its planned first leg departs. Unplanned bags always count.
+        // 1. Warehouse occupation (drain model). Base count comes from a DB aggregate
+        //    (GROUP BY in SQL — fast even on huge tables; never loads rows into memory),
+        //    then we drain bags whose planned first leg has already departed. Plans live
+        //    in memory and are few, so the drain loop is cheap.
         Map<String, Long> pendingByIata = new HashMap<>();
-        for (EnvioEntity e : opsEnvioRepository.findAllPendientesOrdenados()) {
-            if (e.getFechaHoraIngreso() != null && e.getFechaHoraIngreso().isAfter(from)) {
-                continue; // not yet ingressed at this instant
+        for (Object[] row : opsEnvioRepository.sumMaletasPendientesByAeropuerto(from)) {
+            pendingByIata.put((String) row[0], ((Number) row[1]).longValue());
+        }
+        for (PlanDeViaje plan : planesPorEnvio.values()) {
+            if (plan.getEscalas() == null || plan.getEscalas().isEmpty()) {
+                continue;
             }
-            boolean departed = false;
-            PlanDeViaje plan = planesPorEnvio.get(e.getIdPedido());
-            if (plan != null && plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
-                Escala first = plan.getEscalas().get(0);
-                for (Escala esc : plan.getEscalas()) {
-                    if (esc.getOrden() < first.getOrden()) {
-                        first = esc;
-                    }
-                }
-                Vuelo v = first.getCodigoVuelo() != null ? vueloByCodigo.get(first.getCodigoVuelo()) : null;
-                if (v != null) {
-                    int depMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
-                    int depUtcMin = Math.floorMod(depMin - husoByIata.getOrDefault(v.getOrigen(), 0) * 60, 1440);
-                    if (depUtcMin <= nowMin) {
-                        departed = true; // first leg already left -> bag no longer in warehouse
-                    }
+            Escala first = plan.getEscalas().get(0);
+            for (Escala esc : plan.getEscalas()) {
+                if (esc.getOrden() < first.getOrden()) {
+                    first = esc;
                 }
             }
-            if (!departed) {
-                pendingByIata.merge(e.getIataOrigen(), (long) e.getCantidadMaletas(), Long::sum);
+            Vuelo v = first.getCodigoVuelo() != null ? vueloByCodigo.get(first.getCodigoVuelo()) : null;
+            if (v == null) {
+                continue;
+            }
+            int depMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
+            int depUtcMin = Math.floorMod(depMin - husoByIata.getOrDefault(v.getOrigen(), 0) * 60, 1440);
+            if (depUtcMin <= nowMin) {
+                // First leg already left -> bag no longer in the origin warehouse.
+                int maletas = maletasPorEnvio.getOrDefault(plan.getIdEnvio(), 0);
+                pendingByIata.computeIfPresent(v.getOrigen(), (k, val) -> Math.max(0L, val - maletas));
             }
         }
 
@@ -296,7 +299,10 @@ public class OpsService {
                 dataLoaderService.getAeropuertos(),
                 params);
 
-        // Store each plan in the in-memory map
+        // Store each plan in the in-memory map, plus its bag count for warehouse drain.
+        for (EnvioEntity e : pendientes) {
+            maletasPorEnvio.put(e.getIdPedido(), e.getCantidadMaletas());
+        }
         for (PlanDeViaje plan : result.getPlanes()) {
             planesPorEnvio.put(plan.getIdEnvio(), plan);
         }
