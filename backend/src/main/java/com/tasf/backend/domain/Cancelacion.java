@@ -17,4 +17,7 @@ public class Cancelacion {
     private LocalDate fecha;
     private LocalTime hora;
     private String motivo;
+    private int maletasAfectadas;
+    private int enviosSinRuta;
+    private String resultado; // "REROUTADO" | "PARCIAL" | "SIN_AFECTADOS"
 }

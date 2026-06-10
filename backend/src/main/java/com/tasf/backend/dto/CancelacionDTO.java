@@ -14,4 +14,8 @@ public class CancelacionDTO {
     private String codigoVuelo;
     private String fecha;
     private String hora;
+    private String motivo;
+    private int maletasAfectadas;
+    private int enviosSinRuta;
+    private String resultado;
 }

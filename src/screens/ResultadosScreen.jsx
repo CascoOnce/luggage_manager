@@ -416,18 +416,24 @@ export default function ResultadosScreen({ simState }) {
           <div style={{ marginTop: 20 }}>
             <div style={headingStyle()}>Cancelaciones ({cancelaciones.length})</div>
             <div style={{ marginTop: 8, border: '1px solid var(--border)', overflowX: 'auto' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 0.8fr 0.8fr', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: 1.5, textTransform: 'uppercase' }}>
-                <span>ID</span><span>Vuelo</span><span>Fecha</span><span>Hora</span>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr 0.6fr 1.2fr 0.9fr', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                <span>Vuelo</span><span>Fecha</span><span>Hora</span><span>Maletas</span><span>Motivo</span><span>Resultado</span>
               </div>
-              <div style={{ maxHeight: 160, overflowY: 'auto' }}>
-                {cancelaciones.map((c) => (
-                  <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 0.8fr 0.8fr', gap: 8, padding: '5px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)', fontFamily: 'var(--mono)', fontSize: 12 }}>
-                    <span style={{ color: 'var(--red)', fontSize: 10 }}>{c.id}</span>
-                    <span style={{ color: 'var(--blue)' }}>{c.codigoVuelo}</span>
-                    <span style={{ color: 'var(--muted)' }}>{c.fecha}</span>
-                    <span style={{ color: 'var(--muted)' }}>{c.hora ? String(c.hora).substring(0, 5) : '—'}</span>
-                  </div>
-                ))}
+              <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                {cancelaciones.map((c) => {
+                  const resultColor = c.resultado === 'REROUTADO' ? 'var(--green)' : c.resultado === 'PARCIAL' ? '#f5a623' : 'var(--muted)'
+                  const resultLabel = c.resultado === 'REROUTADO' ? 'Reroutado' : c.resultado === 'PARCIAL' ? `Parcial (${c.enviosSinRuta} sin ruta)` : 'Sin afectados'
+                  return (
+                    <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr 0.6fr 1.2fr 0.9fr', gap: 8, padding: '5px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)', fontFamily: 'var(--mono)', fontSize: 11 }}>
+                      <span style={{ color: 'var(--blue)' }}>{c.codigoVuelo}</span>
+                      <span style={{ color: 'var(--muted)' }}>{c.fecha}</span>
+                      <span style={{ color: 'var(--muted)' }}>{c.hora ? String(c.hora).substring(0, 5) : '—'}</span>
+                      <span style={{ color: 'var(--text)' }}>{c.maletasAfectadas ?? '—'}</span>
+                      <span style={{ color: 'var(--muted)', fontSize: 10 }}>{c.motivo ?? '—'}</span>
+                      <span style={{ color: resultColor, fontWeight: 600 }}>{resultLabel}</span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </div>

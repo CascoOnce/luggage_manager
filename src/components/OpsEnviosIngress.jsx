@@ -232,11 +232,11 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {/* Top row: file upload + manual form */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, borderBottom: '1px solid var(--border)' }}>
+      {/* File upload section */}
+      <div style={{ borderBottom: '1px solid var(--border)' }}>
 
-        {/* Left: file upload */}
-        <div style={{ padding: '16px 16px', borderRight: '1px solid var(--border)' }}>
+        {/* File upload */}
+        <div style={{ padding: '16px 16px' }}>
           <span style={sectionTitleStyle}>Subir archivo TXT</span>
 
           <input
@@ -387,8 +387,8 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
           </div>
         </div>
 
-        {/* Right: manual form */}
-        <div style={{ padding: '16px 16px' }}>
+        {/* Manual form */}
+        <div style={{ padding: '16px 16px', borderTop: '1px solid var(--border)' }}>
           <span style={sectionTitleStyle}>Ingreso manual</span>
 
           <form onSubmit={handleAddEnvio} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

@@ -356,13 +356,13 @@ public class SimulationEngine {
     }
 
     public synchronized void replanificar(List<Maleta> affectedMaletas) {
-        replanificar(affectedMaletas, false);
+        replanificarConStats(affectedMaletas, false);
     }
 
-    private synchronized void replanificar(List<Maleta> affectedMaletas, boolean porIncidencia) {
+    private synchronized int replanificarConStats(List<Maleta> affectedMaletas, boolean porIncidencia) {
         long start = System.currentTimeMillis();
         if (affectedMaletas == null || affectedMaletas.isEmpty()) {
-            return;
+            return 0;
         }
 
         Set<String> envioIds = affectedMaletas.stream().map(Maleta::getIdEnvio).collect(Collectors.toSet());
@@ -372,7 +372,7 @@ public class SimulationEngine {
             .toList();
 
         if (afectados.isEmpty()) {
-            return;
+            return 0;
         }
 
         // For incidence replanning, route from the bags' current location rather than
@@ -410,7 +410,7 @@ public class SimulationEngine {
                     .build());
             }
             if (enviosParaPlanificar.isEmpty()) {
-                return;
+                return 0;
             }
         } else {
             enviosParaPlanificar = afectados;
@@ -447,6 +447,7 @@ public class SimulationEngine {
         if (elapsed > 10_000) {
             addOperationLog("[ADVERTENCIA] La replanificación excedió los 10 segundos (RF 33): " + elapsed + " ms");
         }
+        return sinRuta.size();
     }
 
     public synchronized void agregarNuevosEnvios(List<Envio> nuevosEnvios) {
@@ -566,6 +567,10 @@ public class SimulationEngine {
                     .codigoVuelo(c.getCodigoVuelo())
                     .fecha(c.getFecha() != null ? c.getFecha().toString() : null)
                     .hora(c.getHora() != null ? c.getHora().toString() : null)
+                    .motivo(c.getMotivo())
+                    .maletasAfectadas(c.getMaletasAfectadas())
+                    .enviosSinRuta(c.getEnviosSinRuta())
+                    .resultado(c.getResultado())
                     .build())
                 .toList())
             .build();
@@ -927,13 +932,27 @@ public class SimulationEngine {
         List<Vuelo> cancelledToday = detectCancellations(today);
         for (Vuelo vuelo : cancelledToday) {
             List<Maleta> affected = rescueBags(vuelo, today);
+            int sinRuta = 0;
+            String resultado;
             if (!affected.isEmpty()) {
-                addOperationLog(String.format("[INCIDENCIA] Vuelo %s cancelado. Rescatadas %d maletas. Iniciando replanificación...", 
+                addOperationLog(String.format("[INCIDENCIA] Vuelo %s cancelado. Rescatadas %d maletas. Iniciando replanificación...",
                     vuelo.getCodigoVuelo(), affected.size()));
-                replanificar(affected, true);
+                sinRuta = replanificarConStats(affected, true);
+                resultado = sinRuta == 0 ? "REROUTADO" : "PARCIAL";
             } else {
                 addOperationLog("[INCIDENCIA] Vuelo " + vuelo.getCodigoVuelo() + " cancelado. Sin maletas afectadas hoy.");
+                resultado = "SIN_AFECTADOS";
             }
+            cancelaciones.add(Cancelacion.builder()
+                .id("CAN-" + vuelo.getCodigoVuelo() + "-" + System.nanoTime())
+                .codigoVuelo(vuelo.getCodigoVuelo())
+                .fecha(today)
+                .hora(LocalTime.now())
+                .motivo("Incidencia aleatoria")
+                .maletasAfectadas(affected.size())
+                .enviosSinRuta(sinRuta)
+                .resultado(resultado)
+                .build());
         }
     }
 
@@ -950,13 +969,6 @@ public class SimulationEngine {
             if (!plannedToday.contains(vuelo.getCodigoVuelo()) || vuelo.isCancelado()) continue;
             if (random.nextDouble() < probability) {
                 vuelo.setCancelado(true);
-                cancelaciones.add(Cancelacion.builder()
-                    .id("CAN-" + vuelo.getCodigoVuelo() + "-" + System.nanoTime())
-                    .codigoVuelo(vuelo.getCodigoVuelo())
-                    .fecha(today)
-                    .hora(LocalTime.now())
-                    .motivo("Random disruption event")
-                    .build());
                 cancelled.add(vuelo);
             }
         }
@@ -975,22 +987,28 @@ public class SimulationEngine {
 
         LocalDate today = fechaSimulada.toLocalDate();
         vuelo.setCancelado(true);
+        List<Maleta> affected = rescueBags(vuelo, today);
+        int sinRuta = 0;
+        String resultado;
+        if (!affected.isEmpty()) {
+            addOperationLog(String.format("[INCIDENCIA] Vuelo %s cancelado MANUALMENTE. Rescatadas %d maletas. Iniciando replanificación...",
+                vuelo.getCodigoVuelo(), affected.size()));
+            sinRuta = replanificarConStats(affected, true);
+            resultado = sinRuta == 0 ? "REROUTADO" : "PARCIAL";
+        } else {
+            addOperationLog("[INCIDENCIA] Vuelo " + vuelo.getCodigoVuelo() + " cancelado MANUALMENTE. Sin maletas afectadas hoy.");
+            resultado = "SIN_AFECTADOS";
+        }
         cancelaciones.add(Cancelacion.builder()
             .id("CAN-MANUAL-" + vuelo.getCodigoVuelo() + "-" + System.nanoTime())
             .codigoVuelo(vuelo.getCodigoVuelo())
             .fecha(today)
             .hora(LocalTime.now())
-            .motivo("Manual cancellation by operator")
+            .motivo("Cancelación manual")
+            .maletasAfectadas(affected.size())
+            .enviosSinRuta(sinRuta)
+            .resultado(resultado)
             .build());
-
-        List<Maleta> affected = rescueBags(vuelo, today);
-        if (!affected.isEmpty()) {
-            addOperationLog(String.format("[INCIDENCIA] Vuelo %s cancelado MANUALMENTE. Rescatadas %d maletas. Iniciando replanificación...", 
-                vuelo.getCodigoVuelo(), affected.size()));
-            replanificar(affected, true);
-        } else {
-            addOperationLog("[INCIDENCIA] Vuelo " + vuelo.getCodigoVuelo() + " cancelado MANUALMENTE. Sin maletas afectadas hoy.");
-        }
     }
 
     public synchronized void cancelarEnvioManualmente(String idEnvio) {
@@ -1030,7 +1048,7 @@ public class SimulationEngine {
             .toList();
 
         if (!toOptimize.isEmpty()) {
-            replanificar(toOptimize, true);
+            replanificarConStats(toOptimize, true);
         }
     }
 
