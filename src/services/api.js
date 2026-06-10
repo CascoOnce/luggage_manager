@@ -134,6 +134,12 @@ export async function getOpsEnvios() {
   return withHandling('getOpsEnvios', () => request('/ops/envios'))
 }
 
+export async function resetOpsEnvios() {
+  return withHandling('resetOpsEnvios', () =>
+    request('/ops/envios', { method: 'DELETE' })
+  )
+}
+
 export async function getOpsReporte() {
   return withHandling('getOpsReporte', () => request('/ops/reporte'))
 }

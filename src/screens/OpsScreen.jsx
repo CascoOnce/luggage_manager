@@ -114,6 +114,7 @@ export default function OpsScreen({ opsState, theme, onBack }) {
           depMin,
           arrMin,
           fraction: flightFractionAtMinute(liveNowMinutes, depMin, arrMin),
+          enUso: v.enUso ?? false,
         }
       })
       .filter((v) => isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))

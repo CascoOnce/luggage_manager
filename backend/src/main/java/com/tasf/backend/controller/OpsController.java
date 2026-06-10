@@ -83,4 +83,10 @@ public class OpsController {
     public ResponseEntity<OpsReporteDTO> getReporte() {
         return ResponseEntity.ok(opsService.getReporte());
     }
+
+    @DeleteMapping("/envios")
+    public ResponseEntity<Map<String, Object>> resetEnvios() {
+        int deleted = opsService.resetEnvios();
+        return ResponseEntity.ok(Map.of("status", "SUCCESS", "deleted", deleted));
+    }
 }

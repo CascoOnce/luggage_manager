@@ -2,6 +2,7 @@ package com.tasf.backend.service;
 
 import com.tasf.backend.domain.Aeropuerto;
 import com.tasf.backend.domain.Envio;
+import com.tasf.backend.domain.Escala;
 import com.tasf.backend.domain.EstadoEnvio;
 import com.tasf.backend.domain.ParametrosSimulacion;
 import com.tasf.backend.domain.PlanDeViaje;
@@ -23,8 +24,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
@@ -110,6 +113,18 @@ public class OpsService {
                     .build());
         }
 
+        // 2b. Collect flight codes currently used in planned routes
+        Set<String> flightsInUso = new HashSet<>();
+        for (PlanDeViaje plan : planesPorEnvio.values()) {
+            if (plan.getEscalas() != null) {
+                for (Escala e : plan.getEscalas()) {
+                    if (e.getCodigoVuelo() != null) {
+                        flightsInUso.add(e.getCodigoVuelo());
+                    }
+                }
+            }
+        }
+
         // 3. Filter flights active in window [nowMin, nowMin + 60]
         LocalTime nowTime = from.toLocalTime();
         int nowMin = nowTime.getHour() * 60 + nowTime.getMinute();
@@ -175,6 +190,7 @@ public class OpsService {
                     .capacidadTotal(v.getCapacidadTotal())
                     .fraction(fraction)
                     .husOrigen(husoByIata.get(v.getOrigen()))
+                    .enUso(flightsInUso.contains(v.getCodigoVuelo()))
                     .build());
         }
 
@@ -316,6 +332,19 @@ public class OpsService {
                 .porcentajeCumplimientoSla(porcentaje)
                 .generadoEn(LocalDateTime.now(ZoneOffset.UTC).toString())
                 .build();
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. resetEnvios
+    // -------------------------------------------------------------------------
+
+    @Transactional("opsTransactionManager")
+    public int resetEnvios() {
+        long count = opsEnvioRepository.count();
+        opsEnvioRepository.deleteAll();
+        planesPorEnvio.clear();
+        log.info("Ops reset: deleted {} envios from daily_simulation", count);
+        return (int) count;
     }
 
     // -------------------------------------------------------------------------

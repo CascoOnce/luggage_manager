@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react'
-import { addOpsEnvio, planificarOps, uploadOpsEnvios } from '../services/api.js'
+import React, { useEffect, useRef, useState } from 'react'
+import { addOpsEnvio, planificarOps, resetOpsEnvios, uploadOpsEnvios } from '../services/api.js'
 
 const FILE_PATTERN = /_envios_[A-Za-z]{4}_\.txt$/i
 
@@ -25,6 +25,17 @@ function getOffsetStr(huso) {
   return `UTC${sign}${Math.abs(huso)}`
 }
 
+const TIME_INPUT_STYLE = `
+.ops-time-input {
+  color-scheme: dark;
+}
+.ops-time-input::-webkit-calendar-picker-indicator {
+  filter: brightness(0) invert(0.65);
+  cursor: pointer;
+  opacity: 1;
+}
+`
+
 export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
   // ── file upload state ──────────────────────────────────────────────
   const fileInputRef = useRef(null)
@@ -48,6 +59,11 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
   const [planLoading, setPlanLoading] = useState(false)
   const [planResult, setPlanResult] = useState(null)
   const [planError, setPlanError] = useState(null)
+
+  // ── reset state ────────────────────────────────────────────────────
+  const [resetLoading, setResetLoading] = useState(false)
+  const [resetResult, setResetResult] = useState(null)
+  const [resetError, setResetError] = useState(null)
 
   // ── file upload handlers ───────────────────────────────────────────
   function handleFileChange(event) {
@@ -175,6 +191,22 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
     }
   }
 
+  // ── reset handler ─────────────────────────────────────────────────
+  async function handleReset() {
+    setResetLoading(true)
+    setResetResult(null)
+    setResetError(null)
+    try {
+      const result = await resetOpsEnvios()
+      setResetResult(result)
+      if (onEnviosChanged) onEnviosChanged()
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setResetLoading(false)
+    }
+  }
+
   // ── planificar handler ─────────────────────────────────────────────
   async function handlePlanificar() {
     setPlanLoading(true)
@@ -189,6 +221,18 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
       setPlanLoading(false)
     }
   }
+
+  // ── auto-update hora when origen changes (mirror ConfigScreen behaviour) ──
+  useEffect(() => {
+    if (!origen) return
+    const ap = airports.find(a => a.id === origen)
+    const off = ap?.huso ?? null
+    if (off === null) return
+    const now = new Date()
+    const localMs = now.getTime() + (off * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000)
+    const local = new Date(localMs)
+    setHora(`${String(local.getUTCHours()).padStart(2, '0')}:${String(local.getUTCMinutes()).padStart(2, '0')}`)
+  }, [origen, airports])
 
   // ── derived ────────────────────────────────────────────────────────
   const origenAirport = airports.find(a => a.id === origen)
@@ -232,6 +276,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <style>{TIME_INPUT_STYLE}</style>
       {/* File upload section */}
       <div style={{ borderBottom: '1px solid var(--border)' }}>
 
@@ -441,6 +486,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
               <label style={labelStyle}>Hora de ingreso</label>
               <input
                 type="time"
+                className="ops-time-input"
                 value={hora}
                 onChange={e => setHora(e.target.value)}
                 disabled={formLoading}
@@ -488,38 +534,72 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
       </div>
 
       {/* Planificar row */}
-      <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 16, borderBottom: '1px solid var(--border)' }}>
+      <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid var(--border)' }}>
         <button
           onClick={handlePlanificar}
           disabled={planLoading}
           style={{
-            padding: '8px 18px',
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '8px 12px',
             background: 'rgba(88,166,255,0.08)',
             border: '1px solid rgba(88,166,255,0.3)',
             color: 'var(--blue)',
             fontFamily: 'var(--mono)',
-            fontSize: 13,
+            fontSize: 12,
             textTransform: 'uppercase',
             letterSpacing: 1,
             fontWeight: 700,
             cursor: planLoading ? 'not-allowed' : 'pointer',
             opacity: planLoading ? 0.6 : 1,
-            flexShrink: 0,
           }}
         >
           {planLoading ? 'Planificando...' : '▶ Planificar rutas (SA)'}
         </button>
 
         {planResult && !planLoading && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: '#22c55e' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#22c55e' }}>
             {planResult.planesCalculados ?? planResult.planned ?? 0} planes calculados,{' '}
             {planResult.sinRuta ?? planResult.unplanned ?? 0} sin ruta
           </div>
         )}
 
         {planError && !planLoading && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--red)' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)' }}>
             {planError}
+          </div>
+        )}
+
+        <button
+          onClick={handleReset}
+          disabled={resetLoading}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '8px 12px',
+            background: 'rgba(255,80,80,0.06)',
+            border: '1px solid rgba(255,80,80,0.3)',
+            color: 'var(--red, #f87171)',
+            fontFamily: 'var(--mono)',
+            fontSize: 12,
+            textTransform: 'uppercase',
+            letterSpacing: 1,
+            cursor: resetLoading ? 'not-allowed' : 'pointer',
+            opacity: resetLoading ? 0.6 : 1,
+          }}
+        >
+          {resetLoading ? 'Limpiando...' : '✕ Limpiar datos'}
+        </button>
+
+        {resetResult && !resetLoading && (
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#22c55e' }}>
+            {resetResult.deleted ?? 0} envíos eliminados
+          </div>
+        )}
+
+        {resetError && !resetLoading && (
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)' }}>
+            {resetError}
           </div>
         )}
       </div>

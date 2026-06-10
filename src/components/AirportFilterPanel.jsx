@@ -33,6 +33,7 @@ const s = {
   },
   scroll: {
     flex: 1, overflowY: 'auto', padding: '2px 0', minHeight: 0,
+    background: 'var(--panel)',
   },
   continentRow: (disabled) => ({
     display: 'flex', alignItems: 'center', gap: 6,
@@ -59,6 +60,7 @@ const s = {
     display: 'flex', alignItems: 'center', gap: 7,
     padding: '3px 10px 3px 26px',
     opacity: disabled ? 0.3 : 1,
+    background: 'var(--panel)',
   }),
   apLabel: (checked) => ({
     fontFamily: 'var(--mono)', fontSize: 10,
