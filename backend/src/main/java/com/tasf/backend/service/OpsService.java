@@ -57,9 +57,11 @@ public class OpsService {
     // 1. getLiveState
     // -------------------------------------------------------------------------
 
+    @Transactional(value = "opsTransactionManager", readOnly = true)
     public LiveStateDTO getLiveState(LocalDateTime from) {
         // 1. Build airport occupation map: iata -> pending bags
         List<Object[]> rows = opsEnvioRepository.sumMaletasPendientesByAeropuerto(from);
+        log.info("Ops pending bags query returned {} rows", rows.size());
         Map<String, Long> pendingByIata = new HashMap<>();
         for (Object[] row : rows) {
             String iata = (String) row[0];
@@ -83,7 +85,7 @@ public class OpsService {
             if (a.getCapacidadAlmacen() > 0) {
                 ocupacionPct = (double) maletasPendientes / a.getCapacidadAlmacen() * 100.0;
             }
-            ocupacionPct = Math.max(0.0, Math.min(100.0, ocupacionPct));
+            ocupacionPct = Math.max(0.0, ocupacionPct);
 
             String semaforo;
             if (ocupacionPct < 70.0) {
@@ -264,6 +266,7 @@ public class OpsService {
     // 4. getEnvios
     // -------------------------------------------------------------------------
 
+    @Transactional(value = "opsTransactionManager", readOnly = true)
     public List<EnvioEntity> getEnvios() {
         return opsEnvioRepository.findAllByOrderByFechaHoraIngresoDesc();
     }
@@ -280,6 +283,7 @@ public class OpsService {
     // 6. getReporte
     // -------------------------------------------------------------------------
 
+    @Transactional(value = "opsTransactionManager", readOnly = true)
     public OpsReporteDTO getReporte() {
         List<EnvioEntity> all = opsEnvioRepository.findAll();
         int total = all.size();

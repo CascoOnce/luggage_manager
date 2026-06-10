@@ -64,7 +64,7 @@ export default function OpsScreen({ opsState, theme, onBack }) {
   }, [])
 
   useEffect(() => {
-    const id = setInterval(() => setLiveNowMinutes(nowMinutes()), 5000)
+    const id = setInterval(() => setLiveNowMinutes(nowMinutes()), 1000)
     return () => clearInterval(id)
   }, [])
 
@@ -84,9 +84,9 @@ export default function OpsScreen({ opsState, theme, onBack }) {
       lat: a.lat,
       lng: a.lng,
       warehouseCapacity: a.capacidadAlmacen ?? 600,
-      currentOccupation: (a.maletasPendientes != null)
-        ? a.maletasPendientes
-        : (a.ocupacionPct != null ? Math.round((a.ocupacionPct / 100) * (a.capacidadAlmacen ?? 600)) : 0),
+      currentOccupation: a.ocupacionPct != null
+        ? Math.round((a.ocupacionPct / 100) * (a.capacidadAlmacen ?? 600))
+        : 0,
       maletasPendientes: a.maletasPendientes,
       semaforo: a.semaforo,
       ciudad: a.ciudad,
