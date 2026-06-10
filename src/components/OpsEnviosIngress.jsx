@@ -12,8 +12,7 @@ function getNowHHMM() {
 
 function getLocalTimeForHuso(huso) {
   const now = new Date()
-  const utcMs = now.getTime() + now.getTimezoneOffset() * 60 * 1000
-  const localMs = utcMs + huso * 3600 * 1000
+  const localMs = now.getTime() + huso * 3600 * 1000
   const d = new Date(localMs)
   const hh = String(d.getUTCHours()).padStart(2, '0')
   const mm = String(d.getUTCMinutes()).padStart(2, '0')
@@ -208,7 +207,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
     const off = ap?.huso ?? null
     if (off === null) return
     const now = new Date()
-    const localMs = now.getTime() + (off * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000)
+    const localMs = now.getTime() + off * 3600 * 1000
     const local = new Date(localMs)
     setHora(`${String(local.getUTCHours()).padStart(2, '0')}:${String(local.getUTCMinutes()).padStart(2, '0')}`)
   }, [origen, airports])
@@ -217,7 +216,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
   const origenAirport = airports.find(a => a.id === origen)
   const destinoOptions = airports.filter(a => a.id !== origen)
   const localTimeHint = origenAirport
-    ? `Hora local en ${origenAirport.id} (${getOffsetStr(origenAirport.huso ?? 0)}): ${getLocalTimeForHuso(origenAirport.huso ?? 0)}`
+    ? `Hora local en ${origenAirport.id} (${getOffsetStr(origenAirport.huso ?? 0)})`
     : null
 
   // ── styles ─────────────────────────────────────────────────────────

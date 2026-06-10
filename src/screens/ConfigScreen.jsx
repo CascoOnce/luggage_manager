@@ -90,7 +90,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
     const off = ap?.huso ?? null
     if (off === null) return
     const now = new Date()
-    const localMs = now.getTime() + (off * 3600 * 1000) - (now.getTimezoneOffset() * 60 * 1000)
+    const localMs = now.getTime() + off * 3600 * 1000
     const local = new Date(localMs)
     setOpsHora(`${String(local.getUTCHours()).padStart(2,'0')}:${String(local.getUTCMinutes()).padStart(2,'0')}`)
     if (opsDestino === opsOrigen) setOpsDestino('')
