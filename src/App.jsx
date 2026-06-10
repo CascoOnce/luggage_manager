@@ -641,14 +641,14 @@ export default function App() {
     clearTimeout(opsApplyRef.current)
 
     opsPollingRef.current = setTimeout(() => {
-      const nextFrom = new Date(opsWindowStartRef.current.getTime() + 60 * 60 * 1000)
+      const nextFrom = new Date(opsWindowStartRef.current.getTime() + 30 * 60 * 1000)
       getOpsState(toUtcISO(nextFrom))
         .then((state) => { opsNextStateRef.current = state })
         .catch((err) => console.error('Ops prefetch error:', err))
-    }, 55 * 60 * 1000)
+    }, 25 * 60 * 1000)
 
     opsApplyRef.current = setTimeout(() => {
-      const nextWindowStart = new Date(opsWindowStartRef.current.getTime() + 60 * 60 * 1000)
+      const nextWindowStart = new Date(opsWindowStartRef.current.getTime() + 30 * 60 * 1000)
       opsWindowStartRef.current = nextWindowStart
       if (opsNextStateRef.current) {
         setOpsState(opsNextStateRef.current)
@@ -657,7 +657,7 @@ export default function App() {
       }
       opsNextStateRef.current = null
       scheduleOpsTimers()
-    }, 60 * 60 * 1000)
+    }, 30 * 60 * 1000)
   }
 
   function startOps() {
