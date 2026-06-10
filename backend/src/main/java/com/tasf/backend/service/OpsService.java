@@ -76,7 +76,6 @@ public class OpsService {
 
         // Current instant expressed as UTC minutes-of-day (frontend sends UTC).
         int nowMin = from.toLocalTime().getHour() * 60 + from.toLocalTime().getMinute();
-        int endMin = nowMin + 30;
 
         // 1. Warehouse occupation (drain model). Base count comes from a DB aggregate
         //    (GROUP BY in SQL — fast even on huge tables; never loads rows into memory),
@@ -156,11 +155,9 @@ public class OpsService {
             }
         }
 
-        // 3. Show: non-overnight flights currently airborne, any flight departing or
-        //    arriving within 30 min, and any flight part of a planned OPS route.
-        //    Overnight "in-flight" is excluded: without date context it is impossible
-        //    to distinguish a long-haul currently airborne from one that departs tonight,
-        //    which caused ~1050 spurious entries at midnight.
+        // 3. Show only flights currently airborne. Flight times are a daily-repeating
+        //    schedule (time-of-day, no date), so an overnight flight (dep > arr) is
+        //    airborne when now is past departure OR before arrival.
         List<LiveVueloDTO> vueloDTOs = new ArrayList<>();
         for (Vuelo v : dataLoaderService.getVuelos()) {
             if (dataLoaderService.isFlightCancelledForSession(v.getCodigoVuelo())) {
@@ -173,31 +170,18 @@ public class OpsService {
 
             boolean overnight = depMin > arrMin;
 
-            boolean departingSoon;
-            boolean arrivingSoon;
-            if (endMin <= 1440) {
-                departingSoon = depMin >= nowMin && depMin <= endMin;
-                arrivingSoon  = arrMin >= nowMin && arrMin <= endMin;
-            } else {
-                departingSoon = (depMin >= nowMin) || (depMin <= endMin - 1440);
-                arrivingSoon  = (arrMin >= nowMin) || (arrMin <= endMin - 1440);
-            }
-
-            boolean enUsoFlight = flightsInUso.contains(v.getCodigoVuelo());
-            // Only show: departing/arriving in 30 min, or part of a planned OPS route.
-            // "Currently airborne" is excluded: at peak hours 500+ non-overnight flights
-            // are in-flight simultaneously, none actionable unless they carry a shipment.
-            boolean include = departingSoon || arrivingSoon || enUsoFlight;
-            if (!include) {
+            // Currently airborne. Overnight flights wrap past midnight.
+            boolean inFlight = overnight
+                    ? (depMin <= nowMin || nowMin <= arrMin)
+                    : (depMin <= nowMin && nowMin <= arrMin);
+            if (!inFlight) {
                 continue;
             }
 
-            // Fraction: only meaningful for enUso flights currently airborne.
-            boolean inFlight = !overnight && depMin <= nowMin && arrMin >= nowMin;
             int duration = (arrMin - depMin + 1440) % 1440;
             double fraction = 0.0;
             if (duration > 0 && inFlight) {
-                int elapsed = nowMin - depMin;
+                int elapsed = (nowMin - depMin + 1440) % 1440;
                 fraction = Math.max(0.0, Math.min(1.0, (double) elapsed / duration));
             }
 
