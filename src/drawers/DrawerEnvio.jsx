@@ -122,7 +122,6 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, onCancelFli
   const [envio, setEnvio]   = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]   = useState(null)
-  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false)
   const [confirmCancelFlightCode, setConfirmCancelFlightCode] = useState(null)
 
   useEffect(() => {
@@ -290,53 +289,6 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, onCancelFli
                 Tiempo restante
               </div>
             </div>
-
-            {/* Acciones */}
-            {(envio.estado !== 'CANCELADO' && envio.estado !== 'ENTREGADO' && envio.estado !== 'EN_TRANSITO') && (
-              <div style={{ padding: '0 16px 20px', textAlign: 'center' }}>
-                <button
-                  disabled={loading}
-                  onClick={() => setConfirmCancelOpen(true)}
-                  style={{
-                    width: '100%',
-                    background: 'rgba(240,75,75,0.1)',
-                    border: '1px solid rgba(240,75,75,0.3)',
-                    color: 'var(--red)',
-                    padding: '8px',
-                    borderRadius: 4,
-                    fontFamily: 'var(--mono)',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    textTransform: 'uppercase',
-                    letterSpacing: 1,
-                  }}
-                >
-                  Cancelar Envío
-                </button>
-              </div>
-            )}
-
-            <Modal
-              isOpen={confirmCancelOpen}
-              title="Cancelar Envío"
-              confirmLabel="Sí, cancelar"
-              onClose={() => setConfirmCancelOpen(false)}
-              onConfirm={async () => {
-                setLoading(true)
-                try {
-                  await api.cancelEnvio(envio.idEnvio)
-                  onClose()
-                } catch (err) {
-                  alert('Error al cancelar: ' + err.message)
-                } finally {
-                  setLoading(false)
-                }
-              }}
-            >
-              ¿Estás seguro de que deseas cancelar el envío <strong>{envio.idEnvio}</strong>?
-              Se liberará la capacidad y se replanificarán las maletas restantes.
-            </Modal>
 
             <Modal
               isOpen={!!confirmCancelFlightCode}

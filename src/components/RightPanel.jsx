@@ -87,9 +87,8 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
     const patternRaw = (flightPattern || '').trim()
 
     function patternToRegExp(pat) {
-      // escape regexp special chars except * then replace * -> .* for wildcard
       const esc = pat.replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&')
-      const reText = esc.replace(/\\\*/g, '.*')
+      const reText = esc.replace(/\*/g, '.*')
       try {
         return new RegExp(`^${reText}$`, 'i')
       } catch (e) {
@@ -161,7 +160,7 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
     const patternRaw = (airportPattern || '').trim()
     function patternToRegExp(pat) {
       const esc = pat.replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&')
-      const reText = esc.replace(/\\\*/g, '.*')
+      const reText = esc.replace(/\*/g, '.*')
       try { return new RegExp(`^${reText}$`, 'i') } catch (e) { return null }
     }
     const patternRe = patternRaw ? patternToRegExp(patternRaw.includes('*') ? patternRaw : `*${patternRaw}*`) : null
