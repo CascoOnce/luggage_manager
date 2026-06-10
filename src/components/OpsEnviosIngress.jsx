@@ -223,7 +223,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
   // ── styles ─────────────────────────────────────────────────────────
   const inputStyle = {
     width: '100%',
-    background: 'rgba(255,255,255,0.04)',
+    background: '#161b22',
     border: '1px solid var(--border)',
     color: 'var(--text)',
     fontFamily: 'var(--mono)',
@@ -231,6 +231,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
     padding: '8px 10px',
     boxSizing: 'border-box',
     outline: 'none',
+    colorScheme: 'dark',
   }
 
   const labelStyle = {
@@ -425,9 +426,9 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
                 style={{ ...inputStyle, appearance: 'none', WebkitAppearance: 'none' }}
                 required
               >
-                <option value="">Origen</option>
+                <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Origen</option>
                 {airports.map(a => (
-                  <option key={a.id} value={a.id}>{a.id} — {a.name}</option>
+                  <option key={a.id} value={a.id} style={{ background: '#161b22', color: 'var(--text)' }}>{a.id} — {a.name}</option>
                 ))}
               </select>
             </div>
@@ -441,9 +442,9 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
                 style={{ ...inputStyle, appearance: 'none', WebkitAppearance: 'none', opacity: !origen ? 0.5 : 1 }}
                 required
               >
-                <option value="">Destino</option>
+                <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Destino</option>
                 {destinoOptions.map(a => (
-                  <option key={a.id} value={a.id}>{a.id} — {a.name}</option>
+                  <option key={a.id} value={a.id} style={{ background: '#161b22', color: 'var(--text)' }}>{a.id} — {a.name}</option>
                 ))}
               </select>
             </div>

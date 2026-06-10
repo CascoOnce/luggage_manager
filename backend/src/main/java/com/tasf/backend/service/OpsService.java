@@ -76,7 +76,7 @@ public class OpsService {
 
         // Current instant expressed as UTC minutes-of-day (frontend sends UTC).
         int nowMin = from.toLocalTime().getHour() * 60 + from.toLocalTime().getMinute();
-        int endMin = nowMin + 60;
+        int endMin = nowMin + 30;
 
         // 1. Warehouse occupation (drain model). Base count comes from a DB aggregate
         //    (GROUP BY in SQL — fast even on huge tables; never loads rows into memory),
@@ -156,8 +156,11 @@ public class OpsService {
             }
         }
 
-        // 3. Filter flights active in UTC window [nowMin, nowMin + 60].
-        //    Flight times are origin/destination local; convert both ends to UTC.
+        // 3. Show: non-overnight flights currently airborne, any flight departing or
+        //    arriving within 30 min, and any flight part of a planned OPS route.
+        //    Overnight "in-flight" is excluded: without date context it is impossible
+        //    to distinguish a long-haul currently airborne from one that departs tonight,
+        //    which caused ~1050 spurious entries at midnight.
         List<LiveVueloDTO> vueloDTOs = new ArrayList<>();
         for (Vuelo v : dataLoaderService.getVuelos()) {
             if (dataLoaderService.isFlightCancelledForSession(v.getCodigoVuelo())) {
@@ -169,45 +172,29 @@ public class OpsService {
             int arrMin = Math.floorMod(arrLocal - husoByIata.getOrDefault(v.getDestino(), 0) * 60, 1440);
 
             boolean overnight = depMin > arrMin;
-            boolean include = false;
+            boolean inFlight = !overnight && depMin <= nowMin && arrMin >= nowMin;
 
-            if (!overnight) {
-                boolean inFlight = depMin <= nowMin && arrMin >= nowMin;
-                boolean departingSoon;
-                if (endMin <= 1440) {
-                    departingSoon = depMin >= nowMin && depMin <= endMin;
-                } else {
-                    departingSoon = (depMin >= nowMin) || (depMin <= endMin - 1440);
-                }
-                include = inFlight || departingSoon;
+            boolean departingSoon;
+            boolean arrivingSoon;
+            if (endMin <= 1440) {
+                departingSoon = depMin >= nowMin && depMin <= endMin;
+                arrivingSoon  = arrMin >= nowMin && arrMin <= endMin;
             } else {
-                boolean activeOvernight = nowMin >= depMin || nowMin < arrMin;
-                boolean departingSoon;
-                if (endMin <= 1440) {
-                    departingSoon = depMin >= nowMin && depMin <= endMin;
-                } else {
-                    departingSoon = (depMin >= nowMin) || (depMin <= endMin - 1440);
-                }
-                include = activeOvernight || departingSoon;
+                departingSoon = (depMin >= nowMin) || (depMin <= endMin - 1440);
+                arrivingSoon  = (arrMin >= nowMin) || (arrMin <= endMin - 1440);
             }
 
+            boolean include = inFlight || departingSoon || arrivingSoon
+                              || flightsInUso.contains(v.getCodigoVuelo());
             if (!include) {
                 continue;
             }
 
             int duration = (arrMin - depMin + 1440) % 1440;
             double fraction = 0.0;
-            if (duration > 0) {
-                boolean hasDeparted;
-                if (!overnight) {
-                    hasDeparted = nowMin >= depMin;
-                } else {
-                    hasDeparted = nowMin >= depMin || nowMin < arrMin;
-                }
-                if (hasDeparted) {
-                    int elapsed = (nowMin - depMin + 1440) % 1440;
-                    fraction = Math.max(0.0, Math.min(1.0, (double) elapsed / duration));
-                }
+            if (duration > 0 && inFlight) {
+                int elapsed = nowMin - depMin; // safe: inFlight guarantees depMin <= nowMin
+                fraction = Math.max(0.0, Math.min(1.0, (double) elapsed / duration));
             }
 
             vueloDTOs.add(LiveVueloDTO.builder()

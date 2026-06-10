@@ -28,8 +28,13 @@ function flightFractionAtMinute(now, dep, arr) {
 
 function isActiveAtMinute(now, dep, arr) {
   if (dep == null || arr == null) return false
-  const m = now >= 1440 ? 1439 : now
-  return arr > dep ? (m >= dep && m < arr) : (m >= dep || m < arr)
+  const m = ((now % 1440) + 1440) % 1440
+  const overnight = dep > arr
+  const WINDOW = 30
+  const inFlight = !overnight && m >= dep && m < arr
+  const depSoon = ((dep - m + 1440) % 1440) <= WINDOW
+  const arrSoon = ((arr - m + 1440) % 1440) <= WINDOW
+  return inFlight || depSoon || arrSoon
 }
 
 function nowMinutes() {
@@ -126,7 +131,7 @@ export default function OpsScreen({ opsState, theme, onBack }) {
           enUso: v.enUso ?? false,
         }
       })
-      .filter((v) => isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
+      .filter((v) => v.enUso || isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
   }, [opsState?.vuelos, liveNowMinutes])
 
   const originSet = useMemo(() => originIds ? new Set(originIds) : null, [originIds])
