@@ -16,6 +16,7 @@ import com.tasf.backend.domain.Vuelo;
 import com.tasf.backend.dto.AeropuertoDTO;
 import com.tasf.backend.dto.CancelacionDTO;
 import com.tasf.backend.dto.EnvioDTO;
+import com.tasf.backend.dto.EscalaResumenDTO;
 import com.tasf.backend.dto.KpisDTO;
 import com.tasf.backend.dto.SimulationStateDTO;
 import com.tasf.backend.dto.ThroughputDiaDTO;
@@ -986,6 +987,27 @@ public class SimulationEngine {
         if (vuelo == null || vuelo.isCancelado()) return;
 
         LocalDate today = fechaSimulada.toLocalDate();
+
+        // Reject if the flight has already landed today: no bags EN_VUELO for it
+        // and at least one escala for today existed in any plan (meaning it was scheduled).
+        boolean scheduledToday = planes.stream()
+            .flatMap(p -> p.getEscalas().stream())
+            .anyMatch(e -> vuelo.getCodigoVuelo().equals(e.getCodigoVuelo())
+                && e.getHoraSalidaEst() != null
+                && e.getHoraSalidaEst().toLocalDate().equals(today));
+        boolean stillAirborne = maletaVueloActual.values().stream()
+            .anyMatch(code -> vuelo.getCodigoVuelo().equals(code));
+        if (scheduledToday && !stillAirborne) {
+            boolean hasPendingBags = maletas.stream()
+                .anyMatch(m -> m.getUbicacionActual() != null
+                    && m.getUbicacionActual().equals(vuelo.getOrigen())
+                    && (m.getEstado() == EstadoMaleta.EN_ALMACEN || m.getEstado() == EstadoMaleta.RETRASADA));
+            if (!hasPendingBags) {
+                addOperationLog("[ADVERTENCIA] Vuelo " + codigoVuelo + " ya completó su trayecto hoy. Cancelación ignorada.");
+                return;
+            }
+        }
+
         vuelo.setCancelado(true);
         List<Maleta> affected = rescueBags(vuelo, today);
         int sinRuta = 0;
@@ -1134,11 +1156,23 @@ public class SimulationEngine {
             .count();
         int maletasEntregadas = (int) maletas.stream().filter(m -> m.getEstado() == EstadoMaleta.ENTREGADA).count();
         LocalDate today = fechaSimulada == null ? null : fechaSimulada.toLocalDate();
-        Set<String> vuelosEnUso = planes.stream()
+        Set<String> codigosCancelados = vuelos.stream()
+            .filter(Vuelo::isCancelado)
+            .map(Vuelo::getCodigoVuelo)
+            .collect(Collectors.toSet());
+        Map<String, PlanDeViaje> latestPlanKpis = new HashMap<>();
+        for (PlanDeViaje p : planes) {
+            PlanDeViaje cur = latestPlanKpis.get(p.getIdEnvio());
+            if (cur == null || p.getVersion() > cur.getVersion()) {
+                latestPlanKpis.put(p.getIdEnvio(), p);
+            }
+        }
+        Set<String> vuelosEnUso = latestPlanKpis.values().stream()
             .flatMap(p -> p.getEscalas().stream())
             .filter(e -> e.getHoraSalidaEst() != null && today != null &&
                 e.getHoraSalidaEst().toLocalDate().equals(today))
             .map(Escala::getCodigoVuelo)
+            .filter(code -> !codigosCancelados.contains(code))
             .collect(Collectors.toSet());
         int vuelosActivos = vuelosEnUso.size();
         int slaVencidos = (int) envios.stream().filter(e -> e.getEstado() == EstadoEnvio.RETRASADO).count();
@@ -1314,6 +1348,21 @@ public class SimulationEngine {
         }
         LocalDateTime deadline = envio.getFechaHoraIngreso().plusDays(envio.getSla());
 
+        List<EscalaResumenDTO> escalasResumen = List.of();
+        if (plan != null && plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
+            List<Escala> escalas = plan.getEscalas();
+            int last = escalas.size() - 1;
+            escalasResumen = new java.util.ArrayList<>();
+            for (int i = 0; i <= last; i++) {
+                Escala e = escalas.get(i);
+                escalasResumen.add(EscalaResumenDTO.builder()
+                    .horaSalidaEst(e.getHoraSalidaEst() != null ? e.getHoraSalidaEst().format(TS_FORMAT) : null)
+                    .horaLlegadaEst(e.getHoraLlegadaEst() != null ? e.getHoraLlegadaEst().format(TS_FORMAT) : null)
+                    .esUltima(i == last)
+                    .build());
+            }
+        }
+
         return EnvioDTO.builder()
             .idEnvio(envio.getIdEnvio())
             .codigoAerolinea(envio.getCodigoAerolinea())
@@ -1326,6 +1375,7 @@ public class SimulationEngine {
             .planResumen(buildPlanResumen(envio, plan))
             .tiempoRestante(formatRemainingTime(deadline))
             .planDetalle(includePlanDetail ? plan : null)
+            .escalasResumen(escalasResumen)
             .build();
     }
 

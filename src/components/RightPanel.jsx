@@ -75,6 +75,7 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
   const [airportPattern, setAirportPattern] = useState('')
   const [airportContinent, setAirportContinent] = useState('')
   const [airportSortField, setAirportSortField] = useState('occupation')
+  const [airportSortDir, setAirportSortDir] = useState('desc')
   const allActive = useMemo(() => flightList.filter((f) => f.status === 'active'), [flightList])
   const originOptions = useMemo(() =>
     [...new Set(allActive.map(f => f.origin).filter(Boolean))].sort().filter(ap => !filterDest || ap !== filterDest)
@@ -131,9 +132,9 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
       let av, bv
       switch (sortField) {
         case 'departureTime':
-          av = getTimeVal(a.departureTime); bv = getTimeVal(b.departureTime); break
+          av = a.depMin ?? null; bv = b.depMin ?? null; break
         case 'arrivalTime':
-          av = getTimeVal(a.arrivalTime); bv = getTimeVal(b.arrivalTime); break
+          av = a.arrMin ?? null; bv = b.arrMin ?? null; break
         case 'origin':
           av = (a.origin || '').toLowerCase(); bv = (b.origin || '').toLowerCase(); break
         case 'destination':
@@ -187,17 +188,17 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
         if (aNull && bNull) return 0
         if (aNull) return 1
         if (bNull) return -1
-        return sortDir === 'desc' ? bVal - aVal : aVal - bVal
+        return airportSortDir === 'desc' ? bVal - aVal : aVal - bVal
       }
       const diff = (bOcc / bCap) - (aOcc / aCap)
-      return sortDir === 'desc' ? diff : -diff
+      return airportSortDir === 'desc' ? diff : -diff
     })
 
     const occupied = showAllAirports
       ? sorted
       : sorted.filter((ap) => (ap.currentOccupation ?? ap.ocupacionActual ?? 0) > 0)
     return { occupiedAirports: occupied, hiddenCount: showAllAirports ? 0 : sorted.length - occupied.length }
-  }, [airportList, sortDir, airportPattern, airportContinent, airportSortField])
+  }, [airportList, airportSortDir, airportPattern, airportContinent, airportSortField])
 
   return (
     <div style={s.panel}>
@@ -355,11 +356,11 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
                   <option value="nextArrival">Próxima llegada</option>
                 </select>
                 <button
-                  onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+                  onClick={() => setAirportSortDir(d => d === 'desc' ? 'asc' : 'desc')}
                   style={{ background: 'none', border: '1px solid var(--border)', padding: '4px 8px', cursor: 'pointer', borderRadius: 2, color: 'var(--muted)', fontFamily: 'var(--mono)' }}
-                  title={sortDir === 'desc' ? 'Mayor primero' : 'Menor primero'}
+                  title={airportSortDir === 'desc' ? 'Mayor primero' : 'Menor primero'}
                 >
-                  {sortDir === 'desc' ? '↓' : '↑'}
+                  {airportSortDir === 'desc' ? '↓' : '↑'}
                 </button>
               </div>
             </div>

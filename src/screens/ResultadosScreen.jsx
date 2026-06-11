@@ -133,7 +133,11 @@ export default function ResultadosScreen({ simState }) {
   // const [exportLoading, setExportLoading] = useState(false)
 
   const airports = useMemo(() => getAeropuertos(simState).map((airport) => {
-    if (airport.codigoIATA) return airport
+    if (airport.codigoIATA) {
+      const maxPct = airport.ocupacionMaxima ?? 0
+      const semaforo = maxPct >= 85 ? 'rojo' : maxPct >= 60 ? 'ambar' : 'verde'
+      return { ...airport, semaforo }
+    }
     const pct = airport.warehouseCapacity > 0 ? (airport.currentOccupation / airport.warehouseCapacity) * 100 : 0
     const semaforo = pct >= 85 ? 'rojo' : pct >= 60 ? 'ambar' : 'verde'
     return {

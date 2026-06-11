@@ -713,6 +713,10 @@ export default function App() {
       await api.cancelFlight(codigoVuelo)
       setMapSelectedVuelo(null)
       setSelectedFlight(null)
+      const newState = await api.getState()
+      if (newState && (newState.enEjecucion || newState.finalizada)) {
+        setBackendState(newState)
+      }
     } catch (err) {
       alert('Error al cancelar vuelo: ' + (err instanceof Error ? err.message : String(err)))
     }
@@ -912,6 +916,8 @@ export default function App() {
                 onBack={handleBackToMain}
                 onShowInMap={handleShowEnvioRoute}
                 onCancelFlight={handleCancelFlight}
+                simClockMinutes={simClockMinutes}
+                flights={activeVuelosWithTimes}
               />
             )}
             {screen === 'dashboard' && (

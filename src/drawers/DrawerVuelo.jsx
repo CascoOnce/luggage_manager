@@ -118,7 +118,7 @@ function toLocalTime(storedHHMM, huso) {
   return minutesToHHMM(localMin)
 }
 
-export default function DrawerVuelo({ vuelo, onClose, onCancelFlight }) {
+export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMinutes = null }) {
   const [enviosAsignados, setEnviosAsignados] = useState([])
 
   useEffect(() => {
@@ -167,7 +167,9 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight }) {
   const eColor  = estadoColor(estado)
   const isActivo = estado === 'active' || estado === 'activo'
   const isCancelado = estado === 'cancelled' || estado === 'cancelado'
-  const canCancel = !isCancelado && !!onCancelFlight
+  const isCompleted = simClockMinutes !== null && depMin !== null && arrMin !== null
+    && (arrMin >= depMin ? simClockMinutes >= arrMin : simClockMinutes >= arrMin && simClockMinutes < depMin)
+  const canCancel = !isCancelado && !isCompleted && !!onCancelFlight
 
   return (
     <div style={s.overlay}>

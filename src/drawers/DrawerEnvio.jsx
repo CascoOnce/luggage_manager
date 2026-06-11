@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../services/api.js'
-import Modal from '../components/Modal.jsx'
 
 const s = {
   overlay: {
@@ -113,16 +112,11 @@ function fmtDwell(min) {
   return `${m}m`
 }
 
-function escalaCancelable(escala) {
-  const h = (escala?.horaLlegadaEst || '').toLowerCase()
-  return h !== 'completado' && h !== 'entregado' && h !== 'retrasado' && !!escala?.codigoVuelo
-}
 
-export default function DrawerEnvio({ envioId, onClose, onShowInMap, onCancelFlight }) {
+export default function DrawerEnvio({ envioId, onClose, onShowInMap }) {
   const [envio, setEnvio]   = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]   = useState(null)
-  const [confirmCancelFlightCode, setConfirmCancelFlightCode] = useState(null)
 
   useEffect(() => {
     if (!envioId) {
@@ -244,25 +238,6 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, onCancelFli
                             <div style={s.tlMeta}>
                               Salida {escala.horaSalidaEst || '—'} · Llegada {escala.horaLlegadaEst || '—'}
                             </div>
-                            {onCancelFlight && escalaCancelable(escala) && envio?.estado !== 'CANCELADO' && (
-                              <button
-                                onClick={() => setConfirmCancelFlightCode(escala.codigoVuelo)}
-                                style={{
-                                  marginTop: 4,
-                                  background: 'rgba(240,75,75,0.06)',
-                                  border: '1px solid rgba(240,75,75,0.2)',
-                                  color: 'var(--red)',
-                                  fontFamily: 'var(--mono)',
-                                  fontSize: 9,
-                                  padding: '3px 8px',
-                                  cursor: 'pointer',
-                                  letterSpacing: 0.8,
-                                  textTransform: 'uppercase',
-                                }}
-                              >
-                                Cancelar vuelo {escala.codigoVuelo}
-                              </button>
-                            )}
                           </div>
                         </div>
                         {!isLast && dwell > 0 && (
@@ -290,37 +265,6 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, onCancelFli
               </div>
             </div>
 
-            <Modal
-              isOpen={!!confirmCancelFlightCode}
-              title="Cancelar Vuelo"
-              confirmLabel="Sí, cancelar vuelo"
-              onClose={() => setConfirmCancelFlightCode(null)}
-              onConfirm={async () => {
-                const code = confirmCancelFlightCode
-                setConfirmCancelFlightCode(null)
-                setLoading(true)
-                try {
-                  const latest = await api.getEnvioById(envioId)
-                  const stillPending = (latest?.planDetalle?.escalas || [])
-                    .some((e) => e.codigoVuelo === code && escalaCancelable(e))
-                  if (!stillPending) {
-                    alert(`El vuelo ${code} ya no está en estado cancelable.`)
-                    setEnvio(latest)
-                    return
-                  }
-                  await onCancelFlight(code)
-                  const refreshed = await api.getEnvioById(envioId)
-                  setEnvio(refreshed)
-                } catch (err) {
-                  alert('Error al cancelar vuelo: ' + (err instanceof Error ? err.message : String(err)))
-                } finally {
-                  setLoading(false)
-                }
-              }}
-            >
-              ¿Cancelar el vuelo <strong>{confirmCancelFlightCode}</strong>? Las maletas asignadas
-              serán replanificadas automáticamente.
-            </Modal>
           </>
         )}
 

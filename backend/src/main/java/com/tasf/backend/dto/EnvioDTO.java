@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -22,4 +24,5 @@ public class EnvioDTO {
     private String planResumen;
     private String tiempoRestante;
     private PlanDeViaje planDetalle;
+    private List<EscalaResumenDTO> escalasResumen;
 }

@@ -232,6 +232,7 @@ export default function LiveScreen({ liveState, theme, onBack }) {
             vuelo={selectedVueloData}
             onClose={handleCloseVuelo}
             onCancelFlight={handleCancelLiveFlight}
+            simClockMinutes={liveNowMinutes}
           />
           <DrawerAeropuerto
             airport={selectedAirport}
