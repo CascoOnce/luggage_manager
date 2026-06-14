@@ -348,6 +348,68 @@ public class OpsService {
     }
 
     // -------------------------------------------------------------------------
+    // 7. batchSave
+    // -------------------------------------------------------------------------
+
+    @Transactional("opsTransactionManager")
+    public List<EnvioEntity> batchSave(List<OpsEnvioRequestDTO> dtos) {
+        Map<String, String> continentByIata = new HashMap<>();
+        for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
+            continentByIata.put(a.getCodigoIATA(), a.getContinente());
+        }
+
+        List<EnvioEntity> saved = new ArrayList<>();
+        for (OpsEnvioRequestDTO dto : dtos) {
+            boolean hasId = dto.getIdPedido() != null && !dto.getIdPedido().isBlank();
+
+            LocalDateTime fechaLocal;
+            try {
+                OffsetDateTime offsetDt = OffsetDateTime.parse(dto.getFechaHoraIngreso());
+                // Store as local time (consistent with file-uploaded envíos)
+                fechaLocal = offsetDt.toLocalDateTime();
+            } catch (Exception ex) {
+                // Already naive local time (from file preview)
+                fechaLocal = LocalDateTime.parse(dto.getFechaHoraIngreso());
+            }
+
+            String continenteOrigen = continentByIata.get(dto.getIataOrigen());
+            String continenteDestino = continentByIata.get(dto.getIataDestino());
+            int sla = (continenteOrigen != null && continenteOrigen.equals(continenteDestino)) ? 1 : 2;
+
+            String idPedido;
+            if (hasId) {
+                idPedido = dto.getIdPedido();
+            } else {
+                // Sequential ID per origin airport: IATA-000000001
+                long count = opsEnvioRepository.countByIataOrigen(dto.getIataOrigen().toUpperCase());
+                idPedido = dto.getIataOrigen().toUpperCase() + "-" + String.format("%09d", count + 1);
+            }
+
+            EnvioEntity entity = EnvioEntity.builder()
+                    .idPedido(idPedido)
+                    .iataOrigen(dto.getIataOrigen())
+                    .iataDestino(dto.getIataDestino())
+                    .cantidadMaletas(dto.getCantidadMaletas())
+                    .fechaHoraIngreso(fechaLocal)
+                    .sla(sla)
+                    .estado("PENDIENTE")
+                    .build();
+
+            saved.add(opsEnvioRepository.save(entity));
+        }
+        return saved;
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. deleteEnvio
+    // -------------------------------------------------------------------------
+
+    @Transactional("opsTransactionManager")
+    public void deleteEnvio(Long id) {
+        opsEnvioRepository.deleteById(id);
+    }
+
+    // -------------------------------------------------------------------------
     // Helper: toDomain
     // -------------------------------------------------------------------------
 

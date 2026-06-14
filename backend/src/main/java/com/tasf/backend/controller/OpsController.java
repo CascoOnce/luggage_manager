@@ -83,4 +83,31 @@ public class OpsController {
     public ResponseEntity<OpsReporteDTO> getReporte() {
         return ResponseEntity.ok(opsService.getReporte());
     }
+
+    @PostMapping("/envios/batch")
+    public ResponseEntity<Map<String, Object>> batchSave(
+            @RequestBody List<OpsEnvioRequestDTO> dtos) {
+        try {
+            List<EnvioEntity> saved = opsService.batchSave(dtos);
+            return ResponseEntity.ok(Map.of(
+                    "status", "SUCCESS",
+                    "count", saved.size()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "status", "ERROR",
+                    "message", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/envios/{id}")
+    public ResponseEntity<Map<String, Object>> deleteEnvio(@PathVariable Long id) {
+        try {
+            opsService.deleteEnvio(id);
+            return ResponseEntity.ok(Map.of("status", "SUCCESS", "id", id));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "status", "ERROR",
+                    "message", e.getMessage()));
+        }
+    }
 }
