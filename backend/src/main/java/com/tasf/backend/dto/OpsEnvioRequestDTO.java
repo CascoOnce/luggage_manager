@@ -25,4 +25,10 @@ public class OpsEnvioRequestDTO {
      * El backend convierte a UTC antes de persistir.
      */
     private String fechaHoraIngreso;
+
+    /**
+     * ID pedido explícito (viene del archivo, ej. "SKBO-000000001").
+     * Si es null, el backend genera uno con formato {IATA}-{id:09d}.
+     */
+    private String idPedido;
 }
