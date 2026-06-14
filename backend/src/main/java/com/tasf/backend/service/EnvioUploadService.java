@@ -18,12 +18,15 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
 public class EnvioUploadService {
+
+    public record OpsPreviewResult(java.util.List<com.tasf.backend.dto.OpsEnvioPreviewDTO> items, java.util.List<String> errors) {}
     private static final Logger log = LoggerFactory.getLogger(EnvioUploadService.class);
     private static final Pattern IATA_PATTERN =
         Pattern.compile("_envios_([A-Za-z]{4})_\\.txt$", Pattern.CASE_INSENSITIVE);
@@ -133,6 +136,40 @@ public class EnvioUploadService {
         log.info("Successfully uploaded and saved {} new ops envios from {}", newDomainEnvios.size(), filename);
 
         return newDomainEnvios;
+    }
+
+    public OpsPreviewResult previewOpsUpload(MultipartFile file) throws IOException {
+        String filename = file.getOriginalFilename();
+        Matcher matcher = IATA_PATTERN.matcher(filename != null ? filename : "");
+        if (!matcher.find()) {
+            throw new IllegalArgumentException("Nombre inválido. Formato esperado: _envios_XXXX_.txt");
+        }
+
+        String iata = matcher.group(1).toUpperCase();
+        Map<String, String> continentByAirport = aeropuertoRepository.findAll().stream()
+            .collect(Collectors.toMap(e -> e.getCodigoIata(), e -> e.getContinente()));
+        Set<String> knownAirports = aeropuertoRepository.findAll().stream()
+            .map(e -> e.getCodigoIata().toUpperCase())
+            .collect(Collectors.toSet());
+
+        BaggageParser.ParseResult parsed;
+        try (InputStream in = file.getInputStream()) {
+            parsed = baggageParser.parseEnviosWithValidation(
+                in, iata, java.time.LocalDate.MIN, null, continentByAirport, knownAirports);
+        }
+
+        List<com.tasf.backend.dto.OpsEnvioPreviewDTO> items = parsed.envios().stream()
+            .map(e -> com.tasf.backend.dto.OpsEnvioPreviewDTO.builder()
+                .idPedido(e.getIdEnvio())
+                .iataOrigen(e.getAeropuertoOrigen())
+                .iataDestino(e.getAeropuertoDestino())
+                .cantidadMaletas(e.getCantidadMaletas())
+                .fechaHoraIngreso(e.getFechaHoraIngreso().toString())
+                .sla(e.getSla())
+                .build())
+            .toList();
+
+        return new OpsPreviewResult(items, parsed.errors());
     }
 
     private void saveOpsEnviosInBatches(List<Envio> domainEnvios) {

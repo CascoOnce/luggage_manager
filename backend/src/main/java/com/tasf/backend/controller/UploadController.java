@@ -60,4 +60,27 @@ public class UploadController {
             return ResponseEntity.status(500).body(response);
         }
     }
+
+    @PostMapping("/ops/envios/preview")
+    public ResponseEntity<Map<String, Object>> previewOpsEnvios(@RequestParam("file") MultipartFile file) {
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        try {
+            var result = envioUploadService.previewOpsUpload(file);
+            response.put("status", result.errors().isEmpty() ? "SUCCESS" : "PARTIAL");
+            response.put("items", result.items());
+            response.put("count", result.items().size());
+            if (!result.errors().isEmpty()) {
+                response.put("errors", result.errors());
+            }
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            response.put("status", "ERROR");
+            response.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        } catch (IOException e) {
+            response.put("status", "ERROR");
+            response.put("message", "Error al leer el archivo: " + e.getMessage());
+            return ResponseEntity.status(500).body(response);
+        }
+    }
 }
