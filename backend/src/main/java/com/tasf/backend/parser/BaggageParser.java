@@ -14,6 +14,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -22,6 +23,8 @@ import org.springframework.stereotype.Component;
 public class BaggageParser {
     private static final Logger log = LoggerFactory.getLogger(BaggageParser.class);
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.BASIC_ISO_DATE;
+
+    public record ParseResult(java.util.List<Envio> envios, java.util.List<String> errors) {}
 
     public List<Envio> parseEnvios(
         InputStream inputStream,
@@ -106,6 +109,54 @@ public class BaggageParser {
 
     public List<Envio> parse(InputStream in, String aeropuertoOrigen) {
         return parseEnvios(in, aeropuertoOrigen, LocalDate.MIN, null, Map.of());
+    }
+
+    public ParseResult parseEnviosWithValidation(
+        InputStream inputStream,
+        String originAirport,
+        LocalDate dateFrom,
+        LocalDate dateTo,
+        Map<String, String> continentByAirport,
+        Set<String> knownAirports
+    ) {
+        List<Envio> envios = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        int lineNumber = 0;
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lineNumber++;
+                if (line.isBlank()) continue;
+
+                String trimmed = line.trim();
+                String[] parts = trimmed.split("-");
+                if (parts.length != 7) {
+                    errors.add("Línea " + lineNumber + ": formato incorrecto (se esperan 7 campos)");
+                    log.warn("Malformed line {}: {}", lineNumber, trimmed);
+                    continue;
+                }
+
+                String destino = parts[4].trim().toUpperCase();
+                if (!knownAirports.isEmpty() && !knownAirports.contains(destino)) {
+                    errors.add("Línea " + lineNumber + ": aeropuerto destino desconocido '" + destino + "'");
+                    log.warn("Unknown destination airport '{}' at line {}", destino, lineNumber);
+                    continue;
+                }
+
+                Envio envio = parseLine(trimmed, originAirport, dateFrom, dateTo, continentByAirport);
+                if (envio != null) {
+                    envios.add(envio);
+                } else {
+                    errors.add("Línea " + lineNumber + ": fecha/hora inválida o fuera de rango");
+                }
+            }
+        } catch (IOException ex) {
+            log.error("Error reading baggage data", ex);
+        }
+
+        log.info("Parsed {} envios, {} errors", envios.size(), errors.size());
+        return new ParseResult(envios, errors);
     }
 
     private int resolveSla(String originAirport, String destinationAirport, Map<String, String> continentByAirport) {
