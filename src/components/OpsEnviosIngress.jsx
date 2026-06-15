@@ -166,7 +166,8 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
     setFormError(null)
     const airport = airports.find(a => a.id === origen)
     const huso = airport ? (airport.huso ?? 0) : 0
-    const today = new Date().toISOString().slice(0, 10)
+    const localDate = new Date(Date.now() + huso * 3600 * 1000)
+    const today = localDate.toISOString().slice(0, 10)
     const absOffset = Math.abs(huso)
     const offsetSign = huso >= 0 ? '+' : '-'
     const fechaHoraIngreso = `${today}T${hora}:00${offsetSign}${String(absOffset).padStart(2, '0')}:00`
