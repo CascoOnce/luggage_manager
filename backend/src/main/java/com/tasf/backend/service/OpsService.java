@@ -440,9 +440,12 @@ public class OpsService {
                         if (plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
                             ruta = new ArrayList<>();
                             ruta.add(e.getIataOrigen());
-                            plan.getEscalas().stream()
+                            List<Escala> ordenadas = plan.getEscalas().stream()
                                     .sorted(Comparator.comparingInt(Escala::getOrden))
-                                    .forEach(esc -> ruta.add(esc.getCodigoAeropuerto()));
+                                    .toList();
+                            for (Escala esc : ordenadas) {
+                                ruta.add(esc.getCodigoAeropuerto());
+                            }
                         }
                     }
                     return EnvioSummaryDTO.builder()
