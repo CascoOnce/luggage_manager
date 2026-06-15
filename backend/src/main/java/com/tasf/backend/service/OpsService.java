@@ -52,6 +52,9 @@ public class OpsService {
     private final ConcurrentHashMap<String, PlanDeViaje> planesPorEnvio = new ConcurrentHashMap<>();
     // idEnvio -> bag count, captured at planning time (plans don't carry bag counts).
     private final ConcurrentHashMap<String, Integer> maletasPorEnvio = new ConcurrentHashMap<>();
+    // idEnvio -> warehouse entry time (UTC), captured at planning time. Needed so the
+    // drain only removes a bag once its first leg has departed AFTER the bag entered.
+    private final ConcurrentHashMap<String, LocalDateTime> ingresoPorEnvio = new ConcurrentHashMap<>();
 
     public OpsService(
             DataLoaderService dataLoaderService,
@@ -105,8 +108,17 @@ public class OpsService {
             }
             int depMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
             int depUtcMin = Math.floorMod(depMin - husoByIata.getOrDefault(v.getOrigen(), 0) * 60, 1440);
-            if (depUtcMin <= nowMin) {
-                // First leg already left -> bag no longer in the origin warehouse.
+
+            // Entry time-of-day (UTC). The bag only boards a departure that happens
+            // at-or-after it entered the warehouse; an earlier daily departure is taken
+            // tomorrow, so the bag is still occupying the warehouse today.
+            LocalDateTime entrada = ingresoPorEnvio.get(plan.getIdEnvio());
+            int entradaMin = entrada != null
+                    ? entrada.toLocalTime().getHour() * 60 + entrada.toLocalTime().getMinute()
+                    : 0;
+
+            if (entradaMin <= depUtcMin && depUtcMin <= nowMin) {
+                // First leg already left after the bag entered -> no longer in warehouse.
                 int maletas = maletasPorEnvio.getOrDefault(plan.getIdEnvio(), 0);
                 pendingByIata.computeIfPresent(v.getOrigen(), (k, val) -> Math.max(0L, val - maletas));
             }
@@ -283,9 +295,10 @@ public class OpsService {
                 dataLoaderService.getAeropuertos(),
                 params);
 
-        // Store each plan in the in-memory map, plus its bag count for warehouse drain.
+        // Store each plan in the in-memory map, plus its bag count and entry time for the drain.
         for (EnvioEntity e : pendientes) {
             maletasPorEnvio.put(e.getIdPedido(), e.getCantidadMaletas());
+            ingresoPorEnvio.put(e.getIdPedido(), e.getFechaHoraIngreso());
         }
         for (PlanDeViaje plan : result.getPlanes()) {
             planesPorEnvio.put(plan.getIdEnvio(), plan);
