@@ -432,15 +432,30 @@ public class OpsService {
         List<EnvioSummaryDTO> enAlmacen = opsEnvioRepository
                 .findAllByEstadoAndIataOrigen("PENDIENTE", upper)
                 .stream()
-                .map(e -> EnvioSummaryDTO.builder()
-                        .idEnvio(e.getIdPedido())
-                        .aeropuertoOrigen(e.getIataOrigen())
-                        .aeropuertoDestino(e.getIataDestino())
-                        .cantidadMaletas(e.getCantidadMaletas())
-                        .estado(e.getEstado())
-                        .sla(e.getSla())
-                        .planificado(planesPorEnvio.containsKey(e.getIdPedido()))
-                        .build())
+                .map(e -> {
+                    boolean hasPlan = planesPorEnvio.containsKey(e.getIdPedido());
+                    List<String> ruta = null;
+                    if (hasPlan) {
+                        PlanDeViaje plan = planesPorEnvio.get(e.getIdPedido());
+                        if (plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
+                            ruta = new ArrayList<>();
+                            ruta.add(e.getIataOrigen());
+                            plan.getEscalas().stream()
+                                    .sorted(Comparator.comparingInt(Escala::getOrden))
+                                    .forEach(esc -> ruta.add(esc.getCodigoAeropuerto()));
+                        }
+                    }
+                    return EnvioSummaryDTO.builder()
+                            .idEnvio(e.getIdPedido())
+                            .aeropuertoOrigen(e.getIataOrigen())
+                            .aeropuertoDestino(e.getIataDestino())
+                            .cantidadMaletas(e.getCantidadMaletas())
+                            .estado(e.getEstado())
+                            .sla(e.getSla())
+                            .planificado(hasPlan)
+                            .rutaCompleta(ruta)
+                            .build();
+                })
                 .sorted(Comparator.comparing(EnvioSummaryDTO::getIdEnvio))
                 .collect(Collectors.toList());
 

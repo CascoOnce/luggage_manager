@@ -118,7 +118,10 @@ function EnvioRow({ e, showPlanBadge = false }) {
         {e.hora && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--amber)' }}>{e.hora}</span>}
       </div>
       <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>
-        {e.aeropuertoOrigen} → {e.aeropuertoDestino}
+        {e.rutaCompleta && e.rutaCompleta.length > 2
+          ? e.rutaCompleta.join(' → ')
+          : <>{e.aeropuertoOrigen} → {e.aeropuertoDestino}</>
+        }
         {e.codigoVuelo && <span style={{ color: 'var(--text)' }}> · {e.codigoVuelo}</span>}
         <span style={{ marginLeft: 6 }}>{e.cantidadMaletas} maletas</span>
       </div>

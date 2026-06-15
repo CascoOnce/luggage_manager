@@ -668,6 +668,11 @@ export default function App() {
     scheduleOpsTimers()
   }
 
+  function refreshOps() {
+    const now = new Date()
+    getOpsState(toUtcISO(now)).then(setOpsState).catch((err) => console.error('Ops refresh error:', err))
+  }
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleNavigate = useCallback((next) => {
     setConfigOpen(false)
@@ -902,6 +907,7 @@ export default function App() {
               opsState={opsState}
               theme={theme}
               onBack={() => { stopOps(); handleNavigate('config') }}
+              onRefreshOps={refreshOps}
             />
           </div>
         )}

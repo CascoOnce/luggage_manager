@@ -1,5 +1,6 @@
 package com.tasf.backend.dto;
 
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,4 +22,6 @@ public class EnvioSummaryDTO {
     private Integer sla;
     /** true si el envío tiene un plan de ruta calculado. */
     private Boolean planificado;
+    /** Full route: [origin, stop1, ..., destination]. Present when planned. */
+    private List<String> rutaCompleta;
 }

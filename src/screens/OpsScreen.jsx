@@ -44,7 +44,7 @@ function mod1440(m) {
   return ((m % 1440) + 1440) % 1440
 }
 
-export default function OpsScreen({ opsState, theme, onBack }) {
+export default function OpsScreen({ opsState, theme, onBack, onRefreshOps }) {
   const [leftTab, setLeftTab] = useState('filtros') // 'filtros' | 'envios'
   const [selectedFlight, setSelectedFlight] = useState(null)
   const [selectedVueloData, setSelectedVueloData] = useState(null)
@@ -243,7 +243,7 @@ export default function OpsScreen({ opsState, theme, onBack }) {
               />
             </div>
             <div style={{ display: leftTab === 'envios' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              <OpsEnviosIngress airports={ingressAirports} onEnviosChanged={() => {}} />
+              <OpsEnviosIngress airports={ingressAirports} onEnviosChanged={onRefreshOps || (() => {})} />
             </div>
           </div>
         </div>
