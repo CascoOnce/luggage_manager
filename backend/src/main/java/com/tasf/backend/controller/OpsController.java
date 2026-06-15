@@ -1,8 +1,8 @@
 package com.tasf.backend.controller;
 
 import com.tasf.backend.dto.AirportInventoryDTO;
-import com.tasf.backend.dto.LiveAeropuertoDTO;
 import com.tasf.backend.dto.LiveStateDTO;
+import com.tasf.backend.dto.LiveStateDTO.LiveAeropuertoDTO;
 import com.tasf.backend.dto.OpsEnvioRequestDTO;
 import com.tasf.backend.dto.OpsReporteDTO;
 import com.tasf.backend.entity.EnvioEntity;
