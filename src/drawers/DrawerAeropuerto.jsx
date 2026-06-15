@@ -187,6 +187,11 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
         {tab === 'inventario' && (
           <div style={{ padding: 14, flex: 1, overflowY: 'auto' }}>
             {loadingInv && <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Cargando...</div>}
+            {!loadingInv && !inventory && (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', opacity: 0.6 }}>
+                Sin datos — simulación no activa
+              </div>
+            )}
             {!loadingInv && inventory && (
               <>
                 <span style={s.sectionTitle}>En almacén ({inventory.enAlmacen?.length ?? 0})</span>
@@ -202,6 +207,11 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
         {tab === 'planificado' && (
           <div style={{ padding: 14, flex: 1, overflowY: 'auto' }}>
             {loadingInv && <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Cargando...</div>}
+            {!loadingInv && !inventory && (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', opacity: 0.6 }}>
+                Sin datos — simulación no activa
+              </div>
+            )}
             {!loadingInv && inventory && (
               <>
                 <span style={{ ...s.sectionTitle, color: 'var(--green)' }}>Entrando hoy ({inventory.planificadosEntrando?.length ?? 0})</span>

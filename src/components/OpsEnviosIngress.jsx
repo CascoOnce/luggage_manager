@@ -3,6 +3,11 @@ import { previewOpsEnvios, batchSaveOpsEnvios, planificarOps } from '../services
 
 const FILE_PATTERN = /_envios_[A-Za-z]{4}_\.txt$/i
 
+function formatIdPedido(id) {
+  if (!id) return 'NUEVO'
+  return id.replace(/-0*(\d+)$/, '-$1')
+}
+
 function getNowHHMM() {
   const d = new Date()
   const hh = String(d.getHours()).padStart(2, '0')
@@ -468,17 +473,16 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
             {pendingEnvios.map(e => {
               const horaDisplay = e.fechaHoraIngreso ? e.fechaHoraIngreso.slice(11, 16) : '—'
               return (
-                <li key={e._localId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0, fontFamily: 'var(--mono)', fontSize: 11 }}>
-                    <span style={{ color: 'var(--muted)' }}>{e.idPedido ?? '—'}</span>
-                    <span style={{ color: 'var(--text)' }}>{e.iataOrigen}</span>
+                <li key={e._localId} style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 4, padding: '5px 6px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) auto auto auto auto', gap: 6, alignItems: 'center', fontFamily: 'var(--mono)', fontSize: 11, overflow: 'hidden' }}>
+                    <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatIdPedido(e.idPedido)}</span>
+                    <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>{e.iataOrigen}</span>
                     <span style={{ color: 'var(--muted)' }}>→</span>
-                    <span style={{ color: 'var(--text)' }}>{e.iataDestino}</span>
-                    <span style={{ color: 'var(--muted)' }}>{e.cantidadMaletas}✕</span>
-                    <span style={{ color: 'var(--muted)' }}>{horaDisplay}</span>
+                    <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>{e.iataDestino}</span>
+                    <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{e.cantidadMaletas}✕ {horaDisplay}</span>
                   </div>
                   <button onClick={() => setPendingEnvios(prev => prev.filter(x => x._localId !== e._localId))}
-                    title="Eliminar" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: 'pointer', flexShrink: 0 }}>×</button>
+                    title="Eliminar" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: 'pointer', flexShrink: 0, lineHeight: 1, padding: '0 2px' }}>×</button>
                 </li>
               )
             })}

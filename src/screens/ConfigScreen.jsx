@@ -3,6 +3,11 @@ import { api, startSimulation, previewOpsEnvios, batchSaveOpsEnvios } from '../s
 
 const FILE_PATTERN = /_envios_[A-Za-z]{4}_\.txt$/i
 
+function formatIdPedido(id) {
+  if (!id) return 'NUEVO'
+  return id.replace(/-0*(\d+)$/, '-$1')
+}
+
 const PERIOD_OPTIONS = [
   { key: '3', label: '3 DÍAS', sublabel: 'Simulación corta' },
   { key: '5', label: '5 DÍAS', sublabel: 'Simulación estándar' },
@@ -243,7 +248,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
 
   function handleOpsFileChange(event) {
     const files = Array.from(event.target.files || [])
-    setOpsUploadResult(null); setOpsUploadError(null)
+    setOpsUploadError(null)
     if (!files.length) { setOpsUploadFile([]); setOpsUploadFileError(null); return }
     const notTxt = files.find(f => !f.name.toLowerCase().endsWith('.txt'))
     if (notTxt) { setOpsUploadFile([]); setOpsUploadFileError('Solo archivos .txt'); return }
@@ -821,7 +826,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                           const horaDisplay = e.fechaHoraIngreso ? e.fechaHoraIngreso.slice(11, 16) : '—'
                           return (
                             <tr key={e._localId} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                              <td style={{ padding: '5px 8px', color: 'var(--muted)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.idPedido ?? '—'}</td>
+                              <td style={{ padding: '5px 8px', color: 'var(--muted)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatIdPedido(e.idPedido)}</td>
                               <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.iataOrigen}</td>
                               <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.iataDestino}</td>
                               <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.cantidadMaletas}</td>

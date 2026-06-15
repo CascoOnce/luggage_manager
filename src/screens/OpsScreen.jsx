@@ -293,7 +293,6 @@ export default function OpsScreen({ opsState, theme, onBack }) {
             airport={selectedAirport}
             vuelos={visibleFlights}
             onClose={() => setSelectedAirport(null)}
-            hideInventoryTabs
           />
         </div>
 
