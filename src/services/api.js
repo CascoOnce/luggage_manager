@@ -185,12 +185,6 @@ export async function batchSaveOpsEnvios(dtos) {
   )
 }
 
-export async function deleteOpsEnvio(id) {
-  return withHandling('deleteOpsEnvio', () =>
-    request(`/ops/envios/${id}`, { method: 'DELETE' })
-  )
-}
-
 export const api = {
   startSimulation,
 
@@ -280,7 +274,6 @@ export const api = {
   uploadOpsEnvios: async (file) => uploadOpsEnvios(file),
   previewOpsEnvios: async (file) => previewOpsEnvios(file),
   batchSaveOpsEnvios: async (dtos) => batchSaveOpsEnvios(dtos),
-  deleteOpsEnvio: async (id) => deleteOpsEnvio(id),
   addOpsEnvio: async (dto) => addOpsEnvio(dto),
   planificarOps: async () => planificarOps(),
   getOpsEnvios: async () => getOpsEnvios(),

@@ -122,16 +122,4 @@ public class OpsController {
         }
         return ResponseEntity.ok(opsService.computeOccupation(fromDateTime));
     }
-
-    @DeleteMapping("/envios/{id}")
-    public ResponseEntity<Map<String, Object>> deleteEnvio(@PathVariable Long id) {
-        try {
-            opsService.deleteEnvio(id);
-            return ResponseEntity.ok(Map.of("status", "SUCCESS", "id", id));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "status", "ERROR",
-                    "message", e.getMessage()));
-        }
-    }
 }
