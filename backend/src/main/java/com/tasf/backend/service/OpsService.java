@@ -8,6 +8,8 @@ import com.tasf.backend.domain.ParametrosSimulacion;
 import com.tasf.backend.domain.PlanDeViaje;
 import com.tasf.backend.domain.PlanningResult;
 import com.tasf.backend.domain.Vuelo;
+import com.tasf.backend.dto.AirportInventoryDTO;
+import com.tasf.backend.dto.EnvioSummaryDTO;
 import com.tasf.backend.dto.LiveStateDTO;
 import com.tasf.backend.dto.LiveStateDTO.LiveAeropuertoDTO;
 import com.tasf.backend.dto.LiveStateDTO.LiveVueloDTO;
@@ -23,6 +25,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -30,6 +33,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -403,7 +407,80 @@ public class OpsService {
     }
 
     // -------------------------------------------------------------------------
-    // 8. deleteEnvio
+    // 8. getAirportInventory (ops mode)
+    // -------------------------------------------------------------------------
+
+    @Transactional(value = "opsTransactionManager", readOnly = true)
+    public AirportInventoryDTO getAirportInventory(String iata) {
+        String upper = iata.toUpperCase();
+
+        // En almacén: PENDIENTE envíos whose origin is this airport
+        List<EnvioSummaryDTO> enAlmacen = opsEnvioRepository
+                .findAllByEstadoAndIataOrigen("PENDIENTE", upper)
+                .stream()
+                .map(e -> EnvioSummaryDTO.builder()
+                        .idEnvio(e.getIdPedido())
+                        .aeropuertoOrigen(e.getIataOrigen())
+                        .aeropuertoDestino(e.getIataDestino())
+                        .cantidadMaletas(e.getCantidadMaletas())
+                        .estado(e.getEstado())
+                        .build())
+                .sorted(Comparator.comparing(EnvioSummaryDTO::getIdEnvio))
+                .collect(Collectors.toList());
+
+        // Build a lookup of idPedido -> entity for plan processing
+        Map<String, EnvioEntity> entityById = opsEnvioRepository.findAll().stream()
+                .collect(Collectors.toMap(EnvioEntity::getIdPedido, e -> e, (a, b) -> a));
+
+        List<EnvioSummaryDTO> entrando = new ArrayList<>();
+        List<EnvioSummaryDTO> saliendo = new ArrayList<>();
+
+        for (Map.Entry<String, PlanDeViaje> entry : planesPorEnvio.entrySet()) {
+            PlanDeViaje plan = entry.getValue();
+            EnvioEntity ent = entityById.get(plan.getIdEnvio());
+            if (ent == null || plan.getEscalas() == null) continue;
+
+            for (Escala esc : plan.getEscalas()) {
+                if (!upper.equalsIgnoreCase(esc.getCodigoAeropuerto())) continue;
+
+                if (esc.getHoraLlegadaEst() != null) {
+                    entrando.add(EnvioSummaryDTO.builder()
+                            .idEnvio(plan.getIdEnvio())
+                            .aeropuertoOrigen(ent.getIataOrigen())
+                            .aeropuertoDestino(ent.getIataDestino())
+                            .cantidadMaletas(ent.getCantidadMaletas())
+                            .estado(ent.getEstado())
+                            .codigoVuelo(esc.getCodigoVuelo())
+                            .hora(esc.getHoraLlegadaEst().toLocalTime().toString().substring(0, 5))
+                            .build());
+                }
+                if (esc.getHoraSalidaEst() != null) {
+                    saliendo.add(EnvioSummaryDTO.builder()
+                            .idEnvio(plan.getIdEnvio())
+                            .aeropuertoOrigen(ent.getIataOrigen())
+                            .aeropuertoDestino(ent.getIataDestino())
+                            .cantidadMaletas(ent.getCantidadMaletas())
+                            .estado(ent.getEstado())
+                            .codigoVuelo(esc.getCodigoVuelo())
+                            .hora(esc.getHoraSalidaEst().toLocalTime().toString().substring(0, 5))
+                            .build());
+                }
+            }
+        }
+
+        entrando.sort(Comparator.comparing(EnvioSummaryDTO::getHora, Comparator.nullsLast(Comparator.naturalOrder())));
+        saliendo.sort(Comparator.comparing(EnvioSummaryDTO::getHora, Comparator.nullsLast(Comparator.naturalOrder())));
+
+        return AirportInventoryDTO.builder()
+                .iata(upper)
+                .enAlmacen(enAlmacen)
+                .planificadosEntrando(entrando)
+                .planificadosSaliendo(saliendo)
+                .build();
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. deleteEnvio
     // -------------------------------------------------------------------------
 
     @Transactional("opsTransactionManager")

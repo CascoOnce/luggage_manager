@@ -1,5 +1,6 @@
 package com.tasf.backend.controller;
 
+import com.tasf.backend.dto.AirportInventoryDTO;
 import com.tasf.backend.dto.LiveStateDTO;
 import com.tasf.backend.dto.OpsEnvioRequestDTO;
 import com.tasf.backend.dto.OpsReporteDTO;
@@ -97,6 +98,11 @@ public class OpsController {
                     "status", "ERROR",
                     "message", e.getMessage()));
         }
+    }
+
+    @GetMapping("/airports/{iata}/inventory")
+    public ResponseEntity<AirportInventoryDTO> getAirportInventory(@PathVariable String iata) {
+        return ResponseEntity.ok(opsService.getAirportInventory(iata));
     }
 
     @DeleteMapping("/envios/{id}")

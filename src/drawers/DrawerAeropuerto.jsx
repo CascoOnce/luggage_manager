@@ -126,7 +126,7 @@ function EnvioRow({ e }) {
   )
 }
 
-export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInventoryTabs = false }) {
+export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInventoryTabs = false, fetchInventory = api.getAirportInventory }) {
   const [tab, setTab] = useState('info')
   const [inventory, setInventory] = useState(null)
   const [loadingInv, setLoadingInv] = useState(false)
@@ -147,7 +147,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
   useEffect(() => {
     if (!airport || tab === 'info') return
     setLoadingInv(true)
-    api.getAirportInventory(airport.id)
+    fetchInventory(airport.id)
       .then(setInventory)
       .catch(() => setInventory(null))
       .finally(() => setLoadingInv(false))

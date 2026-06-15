@@ -10,6 +10,7 @@ backend/.mvn/wrapper/maven-wrapper.jar
 !backend/**/src/main/**/target/
 !backend/**/src/test/**/target/
 backend/src/main/resources/data/
+backend/tunnel.sh
 
 # ─── IDE / Editores ────────────────────────────────────────────────
 .idea/
@@ -54,7 +55,9 @@ application-local*
 *.rar
 .claude/
 CLAUDE.md
+docs/superpowers/
 
 # ─── Scripts de infraestructura (no van al repo público) ────────────
 scripts/*.pem
 scripts/*.key
+*.py
