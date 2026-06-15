@@ -59,9 +59,6 @@ export default function App() {
 
   const [opsState, setOpsState] = useState(null)
   const opsPollingRef = useRef(null)
-  const opsApplyRef = useRef(null)
-  const opsWindowStartRef = useRef(null)
-  const opsNextStateRef = useRef(null)
 
   const [autoStep, setAutoStep] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
@@ -627,45 +624,20 @@ export default function App() {
   }
 
   function stopOps() {
-    clearTimeout(opsPollingRef.current)
-    clearTimeout(opsApplyRef.current)
+    clearInterval(opsPollingRef.current)
     opsPollingRef.current = null
-    opsApplyRef.current = null
-    opsNextStateRef.current = null
-    opsWindowStartRef.current = null
     setOpsState(null)
   }
 
-  function scheduleOpsTimers() {
-    clearTimeout(opsPollingRef.current)
-    clearTimeout(opsApplyRef.current)
-
-    opsPollingRef.current = setTimeout(() => {
-      const nextFrom = new Date(opsWindowStartRef.current.getTime() + 30 * 60 * 1000)
-      getOpsState(toUtcISO(nextFrom))
-        .then((state) => { opsNextStateRef.current = state })
-        .catch((err) => console.error('Ops prefetch error:', err))
-    }, 25 * 60 * 1000)
-
-    opsApplyRef.current = setTimeout(() => {
-      const nextWindowStart = new Date(opsWindowStartRef.current.getTime() + 30 * 60 * 1000)
-      opsWindowStartRef.current = nextWindowStart
-      if (opsNextStateRef.current) {
-        setOpsState(opsNextStateRef.current)
-      } else {
-        getOpsState(toUtcISO(nextWindowStart)).then(setOpsState).catch(console.error)
-      }
-      opsNextStateRef.current = null
-      scheduleOpsTimers()
-    }, 30 * 60 * 1000)
-  }
+  // Ops is a REAL-time view: poll /ops/state with from=now so warehouse
+  // occupancy tracks the live clock and newly ingested bags appear as soon
+  // as their entry time passes (no 30-min window lag).
+  const OPS_POLL_MS = 10 * 1000
 
   function startOps() {
     stopOps()
-    const now = new Date()
-    opsWindowStartRef.current = now
-    getOpsState(toUtcISO(now)).then(setOpsState).catch((err) => console.error('Ops fetch error:', err))
-    scheduleOpsTimers()
+    refreshOps()
+    opsPollingRef.current = setInterval(refreshOps, OPS_POLL_MS)
   }
 
   function refreshOps() {
