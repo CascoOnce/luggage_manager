@@ -4,8 +4,11 @@ import { previewOpsEnvios, batchSaveOpsEnvios, planificarOps } from '../services
 const FILE_PATTERN = /_envios_[A-Za-z]{4}_\.txt$/i
 
 function formatIdPedido(id) {
-  if (!id) return 'NUEVO'
-  return id.replace(/-0*(\d+)$/, '-$1')
+  if (!id) return null
+  const m = id.match(/^(.+)-(\d+)$/)
+  if (!m) return id
+  // 9-digit file-format IDs (SKBO-000000001) → strip zeros; short manual IDs → keep as-is
+  return m[2].length >= 9 ? `${m[1]}-${parseInt(m[2], 10)}` : id
 }
 
 function getNowHHMM() {
@@ -53,6 +56,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
   const [destino, setDestino] = useState('')
   const [cantidad, setCantidad] = useState(1)
   const [hora, setHora] = useState(getNowHHMM)
+  const [codigoCliente, setCodigoCliente] = useState('')
   const [formError, setFormError] = useState(null)
 
   // ── planificar state ───────────────────────────────────────────────
@@ -165,16 +169,37 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
     const absOffset = Math.abs(huso)
     const offsetSign = huso >= 0 ? '+' : '-'
     const fechaHoraIngreso = `${today}T${hora}:00${offsetSign}${String(absOffset).padStart(2, '0')}:00`
-    const newItem = {
-      _localId: `${Date.now()}-${Math.random()}`,
-      idPedido: null,
-      iataOrigen: origen,
-      iataDestino: destino,
-      cantidadMaletas: Number(cantidad),
-      fechaHoraIngreso,
-      sla: null,
-    }
-    setPendingEnvios(prev => [...prev, newItem])
+    const horaSlice = hora.slice(0, 5)
+    const idCliente = codigoCliente.trim() || null
+
+    setPendingEnvios(prev => {
+      // Merge: same manual origin+destino+hora → sum cantidades
+      const matchIdx = prev.findIndex(e =>
+        e._isManual &&
+        e.iataOrigen === origen &&
+        e.iataDestino === destino &&
+        e.fechaHoraIngreso.slice(11, 16) === horaSlice
+      )
+      if (matchIdx !== -1) {
+        const copy = [...prev]
+        copy[matchIdx] = { ...copy[matchIdx], cantidadMaletas: copy[matchIdx].cantidadMaletas + Number(cantidad) }
+        return copy
+      }
+      // New entry: correlativo = count of manual entries for this origin + 1
+      const counter = prev.filter(e => e._isManual && e.iataOrigen === origen).length + 1
+      const idPedido = `${origen}-${String(counter).padStart(2, '0')}`
+      return [...prev, {
+        _localId: `${Date.now()}-${Math.random()}`,
+        _isManual: true,
+        idPedido,
+        idCliente,
+        iataOrigen: origen,
+        iataDestino: destino,
+        cantidadMaletas: Number(cantidad),
+        fechaHoraIngreso,
+        sla: null,
+      }]
+    })
     setDestino('')
     setCantidad(1)
   }
@@ -186,8 +211,9 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
     setPlanError(null)
     try {
       if (pendingEnvios.length > 0) {
-        const dtos = pendingEnvios.map(({ idPedido, iataOrigen, iataDestino, cantidadMaletas, fechaHoraIngreso }) => ({
+        const dtos = pendingEnvios.map(({ idPedido, idCliente, iataOrigen, iataDestino, cantidadMaletas, fechaHoraIngreso }) => ({
           idPedido: idPedido ?? null,
+          idCliente: idCliente ?? null,
           iataOrigen,
           iataDestino,
           cantidadMaletas,
@@ -456,6 +482,17 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
               )}
             </div>
 
+            <div>
+              <label style={labelStyle}>Código de cliente <span style={{ opacity: 0.5 }}>(opcional)</span></label>
+              <input
+                type="text"
+                value={codigoCliente}
+                onChange={e => setCodigoCliente(e.target.value)}
+                placeholder="ej. CLI-001"
+                style={{ ...inputStyle }}
+              />
+            </div>
+
             <button
               type="submit"
               disabled={!origen || !destino}
@@ -491,14 +528,20 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: 200, overflowY: 'auto' }}>
             {pendingEnvios.map(e => {
               const horaDisplay = e.fechaHoraIngreso ? e.fechaHoraIngreso.slice(11, 16) : '—'
+              const idDisplay = formatIdPedido(e.idPedido)
               return (
                 <li key={e._localId} style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 4, padding: '5px 6px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) auto auto auto auto', gap: 6, alignItems: 'center', fontFamily: 'var(--mono)', fontSize: 11, overflow: 'hidden' }}>
-                    <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatIdPedido(e.idPedido)}</span>
-                    <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>{e.iataOrigen}</span>
-                    <span style={{ color: 'var(--muted)' }}>→</span>
-                    <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>{e.iataDestino}</span>
-                    <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{String(e.cantidadMaletas).padStart(2, '0')} {horaDisplay}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 11, overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      {idDisplay && <span style={{ color: 'var(--muted)', flexShrink: 0 }}>{idDisplay}</span>}
+                      <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>{e.iataOrigen}</span>
+                      <span style={{ color: 'var(--muted)' }}>→</span>
+                      <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>{e.iataDestino}</span>
+                      <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{String(e.cantidadMaletas).padStart(2, '0')} {horaDisplay}</span>
+                    </div>
+                    {e.idCliente && (
+                      <span style={{ color: 'var(--blue)', fontSize: 10, opacity: 0.8 }}>{e.idCliente}</span>
+                    )}
                   </div>
                   <button onClick={() => setPendingEnvios(prev => prev.filter(x => x._localId !== e._localId))}
                     title="Eliminar" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: 'pointer', flexShrink: 0, lineHeight: 1, padding: '0 2px' }}>×</button>

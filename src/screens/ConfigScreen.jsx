@@ -4,8 +4,10 @@ import { api, startSimulation, previewOpsEnvios, batchSaveOpsEnvios } from '../s
 const FILE_PATTERN = /_envios_[A-Za-z]{4}_\.txt$/i
 
 function formatIdPedido(id) {
-  if (!id) return 'NUEVO'
-  return id.replace(/-0*(\d+)$/, '-$1')
+  if (!id) return null
+  const m = id.match(/^(.+)-(\d+)$/)
+  if (!m) return id
+  return m[2].length >= 9 ? `${m[1]}-${parseInt(m[2], 10)}` : id
 }
 
 const PERIOD_OPTIONS = [
@@ -64,6 +66,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
   const [opsFormError, setOpsFormError] = useState(null)
   const [pendingEnvios, setPendingEnvios] = useState([])
   const [opsIniciarLoading, setOpsIniciarLoading] = useState(false)
+  const [opsCodigoCliente, setOpsCodigoCliente] = useState('')
 
   useEffect(() => {
     if (!opsUploadFileError) return
@@ -313,16 +316,35 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
     const sign = utcOffset >= 0 ? '+' : '-'
     const absOff = Math.abs(utcOffset)
     const fechaHoraIngreso = `${today}T${opsHora}:00${sign}${String(absOff).padStart(2, '0')}:00`
-    const newItem = {
-      _localId: `${Date.now()}-${Math.random()}`,
-      idPedido: null,
-      iataOrigen: opsOrigen,
-      iataDestino: opsDestino,
-      cantidadMaletas: Number(opsCantidad),
-      fechaHoraIngreso,
-      sla: null,
-    }
-    setPendingEnvios(prev => [...prev, newItem])
+    const idCliente = opsCodigoCliente.trim() || null
+
+    setPendingEnvios(prev => {
+      // Merge: same manual origin+destino+hora → sum cantidades
+      const matchIdx = prev.findIndex(entry =>
+        entry._isManual &&
+        entry.iataOrigen === opsOrigen &&
+        entry.iataDestino === opsDestino &&
+        entry.fechaHoraIngreso.slice(11, 16) === opsHora.slice(0, 5)
+      )
+      if (matchIdx !== -1) {
+        const copy = [...prev]
+        copy[matchIdx] = { ...copy[matchIdx], cantidadMaletas: copy[matchIdx].cantidadMaletas + Number(opsCantidad) }
+        return copy
+      }
+      const counter = prev.filter(entry => entry._isManual && entry.iataOrigen === opsOrigen).length + 1
+      const idPedido = `${opsOrigen}-${String(counter).padStart(2, '0')}`
+      return [...prev, {
+        _localId: `${Date.now()}-${Math.random()}`,
+        _isManual: true,
+        idPedido,
+        idCliente,
+        iataOrigen: opsOrigen,
+        iataDestino: opsDestino,
+        cantidadMaletas: Number(opsCantidad),
+        fechaHoraIngreso,
+        sla: null,
+      }]
+    })
     setOpsFormError(null)
     setOpsDestino('')
     setOpsCantidad(1)
@@ -331,8 +353,9 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
   async function handleOpsIniciar() {
     setOpsIniciarLoading(true)
     try {
-      const dtos = pendingEnvios.map(({ idPedido, iataOrigen, iataDestino, cantidadMaletas, fechaHoraIngreso }) => ({
+      const dtos = pendingEnvios.map(({ idPedido, idCliente, iataOrigen, iataDestino, cantidadMaletas, fechaHoraIngreso }) => ({
         idPedido: idPedido ?? null,
+        idCliente: idCliente ?? null,
         iataOrigen,
         iataDestino,
         cantidadMaletas,
@@ -812,6 +835,14 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                     <input type="time" value={opsHora} onChange={e => setOpsHora(e.target.value)}
                       style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }} />
                   </div>
+                  <div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
+                      Código de cliente <span style={{ opacity: 0.5, textTransform: 'none' }}>(opcional)</span>
+                    </div>
+                    <input type="text" value={opsCodigoCliente} onChange={e => setOpsCodigoCliente(e.target.value)}
+                      placeholder="ej. CLI-001"
+                      style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }} />
+                  </div>
                   {opsFormError && <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsFormError}</div>}
                   <button type="submit"
                     style={{ padding: '7px 12px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.4)', color: '#22c55e', fontFamily: 'var(--mono)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, cursor: 'pointer' }}>
@@ -834,7 +865,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--mono)', fontSize: 11 }}>
                       <thead>
                         <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                          {['ID Pedido', 'Origen', 'Destino', 'Maletas', 'Hora', ''].map(h => (
+                          {['ID Pedido', 'Origen', 'Destino', 'Maletas', 'Hora', 'Cliente', ''].map(h => (
                             <th key={h} style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 400, fontSize: 10 }}>{h}</th>
                           ))}
                         </tr>
@@ -849,6 +880,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                               <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.iataDestino}</td>
                               <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{String(e.cantidadMaletas).padStart(2, '0')}</td>
                               <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{horaDisplay}</td>
+                              <td style={{ padding: '5px 8px', color: 'var(--blue)', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.idCliente ?? '—'}</td>
                               <td style={{ padding: '5px 8px' }}>
                                 <button onClick={() => setPendingEnvios(prev => prev.filter(x => x._localId !== e._localId))}
                                   title="Eliminar"

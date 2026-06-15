@@ -230,6 +230,7 @@ public class OpsService {
 
         EnvioEntity entity = EnvioEntity.builder()
                 .idPedido(idPedido)
+                .idCliente(dto.getIdCliente())
                 .iataOrigen(dto.getIataOrigen())
                 .iataDestino(dto.getIataDestino())
                 .cantidadMaletas(dto.getCantidadMaletas())
@@ -387,6 +388,7 @@ public class OpsService {
 
             EnvioEntity entity = EnvioEntity.builder()
                     .idPedido(idPedido)
+                    .idCliente(dto.getIdCliente())
                     .iataOrigen(dto.getIataOrigen())
                     .iataDestino(dto.getIataDestino())
                     .cantidadMaletas(dto.getCantidadMaletas())

@@ -31,4 +31,7 @@ public class OpsEnvioRequestDTO {
      * Si es null, el backend genera uno con formato {IATA}-{id:09d}.
      */
     private String idPedido;
+
+    /** Código de cliente opcional (ej. "CLI-001"). Persiste en id_cliente. */
+    private String idCliente;
 }
