@@ -66,6 +66,24 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
   const [opsIniciarLoading, setOpsIniciarLoading] = useState(false)
 
   useEffect(() => {
+    if (!opsUploadFileError) return
+    const t = setTimeout(() => setOpsUploadFileError(null), 30000)
+    return () => clearTimeout(t)
+  }, [opsUploadFileError])
+
+  useEffect(() => {
+    if (!opsUploadError) return
+    const t = setTimeout(() => setOpsUploadError(null), 30000)
+    return () => clearTimeout(t)
+  }, [opsUploadError])
+
+  useEffect(() => {
+    if (!opsFormError) return
+    const t = setTimeout(() => setOpsFormError(null), 30000)
+    return () => clearTimeout(t)
+  }, [opsFormError])
+
+  useEffect(() => {
     if (!loading) { setLoadingElapsed(0); return }
     setLoadingElapsed(0)
     const start = Date.now()
@@ -725,7 +743,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
               {opsUploadFileError && (
                 <div style={{ marginTop: 6, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsUploadFileError}</div>
               )}
-              {opsUploadFile.length > 0 && !opsUploadFileError && (
+              {opsUploadFile.length > 0 && (
                 <div style={{ marginTop: 8 }}>
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: 180, overflowY: 'auto' }}>
                     {opsUploadFile.map((item, idx) => {
@@ -829,7 +847,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                               <td style={{ padding: '5px 8px', color: 'var(--muted)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatIdPedido(e.idPedido)}</td>
                               <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.iataOrigen}</td>
                               <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.iataDestino}</td>
-                              <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.cantidadMaletas}</td>
+                              <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{String(e.cantidadMaletas).padStart(2, '0')}</td>
                               <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{horaDisplay}</td>
                               <td style={{ padding: '5px 8px' }}>
                                 <button onClick={() => setPendingEnvios(prev => prev.filter(x => x._localId !== e._localId))}

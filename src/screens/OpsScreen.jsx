@@ -261,17 +261,19 @@ export default function OpsScreen({ opsState, theme, onBack }) {
           >
             {filterOpen ? '‹' : '›'}
           </button>
-          <button
-            onClick={() => setRightOpen(!rightOpen)}
-            style={{
-              position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
-              zIndex: 1000, width: 24, height: 48, background: 'rgba(13,17,23,0.85)',
-              border: '1px solid var(--border)', borderRight: 'none', borderRadius: '8px 0 0 8px',
-              color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11,
-            }}
-          >
-            {rightOpen ? '›' : '‹'}
-          </button>
+          {!selectedAirport && (
+            <button
+              onClick={() => setRightOpen(!rightOpen)}
+              style={{
+                position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
+                zIndex: 1000, width: 24, height: 48, background: 'rgba(13,17,23,0.85)',
+                border: '1px solid var(--border)', borderRight: 'none', borderRadius: '8px 0 0 8px',
+                color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11,
+              }}
+            >
+              {rightOpen ? '›' : '‹'}
+            </button>
+          )}
 
           <MapView
             airports={visibleAirports}

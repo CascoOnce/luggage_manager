@@ -62,6 +62,25 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
 
   const [pendingEnvios, setPendingEnvios] = useState([])
 
+  // ── auto-dismiss errors after 30s ─────────────────────────────────
+  useEffect(() => {
+    if (!uploadFileError) return
+    const t = setTimeout(() => setUploadFileError(null), 30000)
+    return () => clearTimeout(t)
+  }, [uploadFileError])
+
+  useEffect(() => {
+    if (!uploadError) return
+    const t = setTimeout(() => setUploadError(null), 30000)
+    return () => clearTimeout(t)
+  }, [uploadError])
+
+  useEffect(() => {
+    if (!formError) return
+    const t = setTimeout(() => setFormError(null), 30000)
+    return () => clearTimeout(t)
+  }, [formError])
+
   // ── file upload handlers ───────────────────────────────────────────
   function handleFileChange(event) {
     const files = Array.from(event.target.files || [])
@@ -479,7 +498,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
                     <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>{e.iataOrigen}</span>
                     <span style={{ color: 'var(--muted)' }}>→</span>
                     <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>{e.iataDestino}</span>
-                    <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{e.cantidadMaletas}✕ {horaDisplay}</span>
+                    <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{String(e.cantidadMaletas).padStart(2, '0')} {horaDisplay}</span>
                   </div>
                   <button onClick={() => setPendingEnvios(prev => prev.filter(x => x._localId !== e._localId))}
                     title="Eliminar" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: 'pointer', flexShrink: 0, lineHeight: 1, padding: '0 2px' }}>×</button>
