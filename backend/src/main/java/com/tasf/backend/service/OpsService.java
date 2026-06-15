@@ -56,6 +56,10 @@ public class OpsService {
     private final ConcurrentHashMap<String, LocalDateTime> ingresoPorEnvio = new ConcurrentHashMap<>();
     // idEnvio -> orden of the current/next escala to process (1-based).
     private final ConcurrentHashMap<String, Integer> ordenActualByEnvio = new ConcurrentHashMap<>();
+    // idEnvio -> UTC offset (hours) of origin airport at planning time.
+    // All leg timestamps produced by the planner are in this local time, so the
+    // scheduler must compare against it — not raw UTC — to avoid premature triggers.
+    private final ConcurrentHashMap<String, Integer> husoPorEnvio = new ConcurrentHashMap<>();
 
     public OpsService(
             DataLoaderService dataLoaderService,
@@ -289,6 +293,9 @@ public class OpsService {
             maletasPorEnvio.put(e.getIdPedido(), e.getCantidadMaletas());
             ingresoPorEnvio.put(e.getIdPedido(), e.getFechaHoraIngreso());
             ordenActualByEnvio.remove(e.getIdPedido()); // reset leg progress on re-plan
+            // Capture origin timezone so the scheduler compares against the same local
+            // time reference that the planner used to build horaSalidaEst/horaLlegadaEst.
+            husoPorEnvio.put(e.getIdPedido(), husoByIata.getOrDefault(e.getIataOrigen(), 0));
         }
         for (PlanDeViaje plan : result.getPlanes()) {
             planesPorEnvio.put(plan.getIdEnvio(), plan);
@@ -529,18 +536,22 @@ public class OpsService {
     @Transactional("opsTransactionManager")
     public void procesarSalidas() {
         if (planesPorEnvio.isEmpty()) return;
-        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
 
         for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("PENDIENTE")) {
             PlanDeViaje plan = planesPorEnvio.get(envio.getIdPedido());
             if (plan == null || plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
 
             int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
+            // Planner builds timestamps in origin-airport local time; compare in kind.
+            int huso = husoPorEnvio.getOrDefault(envio.getIdPedido(), 0);
+            LocalDateTime nowLocal = nowUtc.plusHours(huso);
+
             plan.getEscalas().stream()
                     .filter(e -> e.getOrden() == orden)
                     .findFirst()
                     .ifPresent(escala -> {
-                        if (!escala.getHoraSalidaEst().isAfter(now)) {
+                        if (!escala.getHoraSalidaEst().isAfter(nowLocal)) {
                             envio.setEstado("EN_VUELO");
                             opsEnvioRepository.save(envio);
                             log.info("Salida: {} en vuelo {} (escala {})",
@@ -559,13 +570,15 @@ public class OpsService {
     @Transactional("opsTransactionManager")
     public void procesarLlegadas() {
         if (planesPorEnvio.isEmpty()) return;
-        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
 
         for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("EN_VUELO")) {
             PlanDeViaje plan = planesPorEnvio.get(envio.getIdPedido());
             if (plan == null || plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
 
             int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
+            int huso = husoPorEnvio.getOrDefault(envio.getIdPedido(), 0);
+            LocalDateTime nowLocal = nowUtc.plusHours(huso);
             List<Escala> escalas = plan.getEscalas().stream()
                     .sorted(Comparator.comparingInt(Escala::getOrden))
                     .toList();
@@ -574,7 +587,7 @@ public class OpsService {
                     .filter(e -> e.getOrden() == orden)
                     .findFirst()
                     .ifPresent(escala -> {
-                        if (!escala.getHoraLlegadaEst().isAfter(now)) {
+                        if (!escala.getHoraLlegadaEst().isAfter(nowLocal)) {
                             boolean hayMasEscalas = escalas.stream()
                                     .anyMatch(e -> e.getOrden() == orden + 1);
                             if (hayMasEscalas) {
