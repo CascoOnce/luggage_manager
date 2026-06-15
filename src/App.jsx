@@ -13,7 +13,7 @@ import OpsScreen from './screens/OpsScreen.jsx'
 import DrawerAeropuerto from './drawers/DrawerAeropuerto.jsx'
 import DrawerVuelo from './drawers/DrawerVuelo.jsx'
 import AirportFilterPanel from './components/AirportFilterPanel.jsx'
-import { getLiveState, getOpsState, planificarOps } from './services/api.js'
+import { getLiveState, getOpsState, getOpsOccupancy, planificarOps } from './services/api.js'
 
 export default function App() {
   const ALGORITHM = 'SIMULATED_ANNEALING'
@@ -59,6 +59,7 @@ export default function App() {
 
   const [opsState, setOpsState] = useState(null)
   const opsPollingRef = useRef(null)
+  const opsOccRef = useRef(null)
 
   const [autoStep, setAutoStep] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
@@ -625,24 +626,37 @@ export default function App() {
 
   function stopOps() {
     clearInterval(opsPollingRef.current)
+    clearInterval(opsOccRef.current)
     opsPollingRef.current = null
+    opsOccRef.current = null
     setOpsState(null)
   }
 
-  // Ops is a REAL-time view: poll /ops/state with from=now so warehouse
-  // occupancy tracks the live clock and newly ingested bags appear as soon
-  // as their entry time passes (no 30-min window lag).
+  // Ops is a REAL-time view. Full state (incl. flights) is heavier, so poll it
+  // slower; warehouse occupancy is cheap, so poll it fast for a live airport
+  // view that tracks the clock and newly ingested bags.
   const OPS_POLL_MS = 10 * 1000
+  const OPS_OCC_POLL_MS = 2 * 1000
 
   function startOps() {
     stopOps()
     refreshOps()
+    refreshOccupancy()
     opsPollingRef.current = setInterval(refreshOps, OPS_POLL_MS)
+    opsOccRef.current = setInterval(refreshOccupancy, OPS_OCC_POLL_MS)
   }
 
   function refreshOps() {
     const now = new Date()
     getOpsState(toUtcISO(now)).then(setOpsState).catch((err) => console.error('Ops refresh error:', err))
+  }
+
+  // Fast path: refresh only airport occupancy, merging into the existing state.
+  function refreshOccupancy() {
+    const now = new Date()
+    getOpsOccupancy(toUtcISO(now))
+      .then((aeropuertos) => setOpsState((prev) => (prev ? { ...prev, aeropuertos } : { aeropuertos, vuelos: [] })))
+      .catch((err) => console.error('Ops occupancy error:', err))
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps

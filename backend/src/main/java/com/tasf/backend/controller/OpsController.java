@@ -1,6 +1,7 @@
 package com.tasf.backend.controller;
 
 import com.tasf.backend.dto.AirportInventoryDTO;
+import com.tasf.backend.dto.LiveAeropuertoDTO;
 import com.tasf.backend.dto.LiveStateDTO;
 import com.tasf.backend.dto.OpsEnvioRequestDTO;
 import com.tasf.backend.dto.OpsReporteDTO;
@@ -103,6 +104,23 @@ public class OpsController {
     @GetMapping("/airports/{iata}/inventory")
     public ResponseEntity<AirportInventoryDTO> getAirportInventory(@PathVariable String iata) {
         return ResponseEntity.ok(opsService.getAirportInventory(iata));
+    }
+
+    // Lightweight: warehouse occupancy only (no flights). Safe to poll often.
+    @GetMapping("/airports/occupancy")
+    public ResponseEntity<List<LiveAeropuertoDTO>> getOccupancy(
+            @RequestParam(required = false) String from) {
+        LocalDateTime fromDateTime;
+        if (from == null || from.isBlank()) {
+            fromDateTime = LocalDateTime.now();
+        } else {
+            try {
+                fromDateTime = LocalDateTime.parse(from);
+            } catch (DateTimeParseException e) {
+                return ResponseEntity.badRequest().build();
+            }
+        }
+        return ResponseEntity.ok(opsService.computeOccupation(fromDateTime));
     }
 
     @DeleteMapping("/envios/{id}")

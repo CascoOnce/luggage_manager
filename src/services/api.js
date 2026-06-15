@@ -114,6 +114,13 @@ export async function getOpsState(fromISO) {
   )
 }
 
+// Lightweight: warehouse occupancy only (no flights). Poll often for real-time.
+export async function getOpsOccupancy(fromISO) {
+  return withHandling('getOpsOccupancy', () =>
+    request(`/ops/airports/occupancy${fromISO ? `?from=${encodeURIComponent(fromISO)}` : ''}`)
+  )
+}
+
 export async function addOpsEnvio(dto) {
   return withHandling('addOpsEnvio', () =>
     request('/ops/envios', {
