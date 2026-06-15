@@ -523,6 +523,25 @@ export default function App() {
 
   const isOpsActive = Boolean(opsState)
 
+  const opsActiveFlights = useMemo(() => {
+    if (!opsState?.vuelos) return []
+    return opsState.vuelos
+      .filter((v) => v.enUso)
+      .map((v) => ({
+        id: v.codigoVuelo,
+        origin: v.origen,
+        destination: v.destino,
+        currentLoad: v.cargaActual,
+        capacity: v.capacidadTotal,
+        type: v.tipo === 'continental' ? 'continental' : 'intercontinental',
+        status: 'active',
+        horaSalida: v.horaSalida,
+        horaLlegada: v.horaLlegada,
+        depMin: parseTimeToMinutes(v.horaSalida),
+        arrMin: parseTimeToMinutes(v.horaLlegada),
+      }))
+  }, [opsState?.vuelos])
+
   const opsAsSimState = useMemo(() => {
     if (!opsState) return null
     const envios = opsEnvios.map((e) => ({
@@ -559,8 +578,12 @@ export default function App() {
       activeFlights: (opsState.vuelos || []).filter((v) => v.enUso).length,
       slaViolated: opsReporte.enviosViolados,
     } : null
+    const aeropuertos = (opsState.aeropuertos || []).map((a) => ({
+      ...a,
+      ocupacionActual: a.maletasPendientes,
+    }))
     return {
-      aeropuertos: opsState.aeropuertos || [],
+      aeropuertos,
       vuelos,
       envios,
       kpis: kpisNorm,
@@ -973,7 +996,7 @@ export default function App() {
                 onShowInMap={isOpsActive ? null : handleShowEnvioRoute}
                 onCancelFlight={isOpsActive ? null : handleCancelFlight}
                 simClockMinutes={isOpsActive ? 0 : simClockMinutes}
-                flights={isOpsActive ? [] : activeVuelosWithTimes}
+                flights={isOpsActive ? opsActiveFlights : activeVuelosWithTimes}
                 opsMode={isOpsActive}
               />
             )}
