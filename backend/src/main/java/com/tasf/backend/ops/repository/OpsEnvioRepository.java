@@ -17,6 +17,11 @@ public interface OpsEnvioRepository extends JpaRepository<EnvioEntity, Long> {
            "GROUP BY e.iataOrigen")
     List<Object[]> sumMaletasPendientesByAeropuerto(@Param("from") LocalDateTime from);
 
+    @Query("SELECT e.iataOrigen, SUM(e.cantidadMaletas) FROM EnvioEntity e " +
+           "WHERE e.estado = 'PENDIENTE' " +
+           "GROUP BY e.iataOrigen")
+    List<Object[]> sumAllMaletasPendientesByAeropuerto();
+
     @Query("SELECT e FROM EnvioEntity e WHERE e.estado = 'PENDIENTE' ORDER BY e.fechaHoraIngreso ASC")
     List<EnvioEntity> findAllPendientesOrdenados();
 

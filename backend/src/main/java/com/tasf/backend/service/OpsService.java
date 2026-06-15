@@ -151,53 +151,13 @@ public class OpsService {
 
     @Transactional(value = "opsTransactionManager", readOnly = true)
     public List<LiveAeropuertoDTO> computeOccupation(LocalDateTime from) {
-        // huso map (UTC offset) + flight lookup by code (for the drain step)
-        Map<String, Integer> husoByIata = new HashMap<>();
-        for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
-            husoByIata.put(a.getCodigoIATA(), a.getHuso());
-        }
-        Map<String, Vuelo> vueloByCodigo = new HashMap<>();
-        for (Vuelo v : dataLoaderService.getVuelos()) {
-            vueloByCodigo.put(v.getCodigoVuelo(), v);
-        }
-
-        // Current instant expressed as UTC minutes-of-day (frontend sends UTC).
-        int nowMin = from.toLocalTime().getHour() * 60 + from.toLocalTime().getMinute();
-
-        // Base count from a DB aggregate (GROUP BY in SQL), then drain bags whose
-        // planned first leg has already departed.
+        // In ops mode, bags stay PENDIENTE until the simulation runs. Draining by
+        // planned departure would remove bags from the count the moment the flight
+        // time passes, even though the bag never actually boarded. Count all
+        // PENDIENTE bags regardless of ingress time or planned departures.
         Map<String, Long> pendingByIata = new HashMap<>();
-        for (Object[] row : opsEnvioRepository.sumMaletasPendientesByAeropuerto(from)) {
+        for (Object[] row : opsEnvioRepository.sumAllMaletasPendientesByAeropuerto()) {
             pendingByIata.put((String) row[0], ((Number) row[1]).longValue());
-        }
-        for (PlanDeViaje plan : planesPorEnvio.values()) {
-            if (plan.getEscalas() == null || plan.getEscalas().isEmpty()) {
-                continue;
-            }
-            Escala first = plan.getEscalas().get(0);
-            for (Escala esc : plan.getEscalas()) {
-                if (esc.getOrden() < first.getOrden()) {
-                    first = esc;
-                }
-            }
-            Vuelo v = first.getCodigoVuelo() != null ? vueloByCodigo.get(first.getCodigoVuelo()) : null;
-            if (v == null) {
-                continue;
-            }
-            int depMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
-            int depUtcMin = Math.floorMod(depMin - husoByIata.getOrDefault(v.getOrigen(), 0) * 60, 1440);
-
-            // Entry time-of-day (UTC). The bag only boards a departure at-or-after it
-            // entered the warehouse; an earlier daily departure is taken tomorrow.
-            LocalDateTime entrada = ingresoPorEnvio.get(plan.getIdEnvio());
-            int entradaMin = entrada != null
-                    ? entrada.toLocalTime().getHour() * 60 + entrada.toLocalTime().getMinute()
-                    : 0;
-
-            if (entradaMin <= depUtcMin && depUtcMin <= nowMin) {
-                int maletas = maletasPorEnvio.getOrDefault(plan.getIdEnvio(), 0);
-                pendingByIata.computeIfPresent(v.getOrigen(), (k, val) -> Math.max(0L, val - maletas));
-            }
         }
 
         List<LiveAeropuertoDTO> aeropuertoDTOs = new ArrayList<>();
