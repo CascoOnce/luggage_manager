@@ -44,6 +44,7 @@ public class LiveStateDTO {
         private String horaLlegada;
         private String tipo;
         private int capacidadTotal;
+        private int cargaActual;
         private double fraction;
         private Integer husOrigen;
         private Integer husDestino;

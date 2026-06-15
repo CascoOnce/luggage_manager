@@ -94,6 +94,19 @@ public class OpsService {
             }
         }
 
+        // 2c. Compute actual bag load per flight from EN_VUELO envíos
+        Map<String, Integer> cargaPorVuelo = new HashMap<>();
+        for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("EN_VUELO")) {
+            PlanDeViaje plan = planesPorEnvio.get(envio.getIdPedido());
+            if (plan == null || plan.getEscalas() == null) continue;
+            int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
+            plan.getEscalas().stream()
+                    .filter(e -> e.getOrden() == orden && e.getCodigoVuelo() != null)
+                    .findFirst()
+                    .ifPresent(e -> cargaPorVuelo.merge(e.getCodigoVuelo(),
+                            envio.getCantidadMaletas(), Integer::sum));
+        }
+
         // 3. Show only flights currently airborne. Flight times are a daily-repeating
         //    schedule (time-of-day, no date), so an overnight flight (dep > arr) is
         //    airborne when now is past departure OR before arrival.
@@ -132,6 +145,7 @@ public class OpsService {
                     .horaLlegada(v.getHoraLlegada().format(TIME_FMT))
                     .tipo(v.getTipo())
                     .capacidadTotal(v.getCapacidadTotal())
+                    .cargaActual(cargaPorVuelo.getOrDefault(v.getCodigoVuelo(), 0))
                     .fraction(fraction)
                     .husOrigen(husoByIata.get(v.getOrigen()))
                     .husDestino(husoByIata.get(v.getDestino()))
