@@ -30,12 +30,24 @@ public class OpsDataSourceConfig {
         return new DataSourceProperties();
     }
 
+    // LocalDateTime fields are stored as plain UTC wall-clock. Without these
+    // params Connector/J shifts them by the JVM<->connection timezone gap, so
+    // the raw DB value drifts (e.g. 15:35 UTC stored as 20:35 on a UTC-5 host).
+    // preserveInstants=false makes the driver write/read the value literally.
+    private static final String UTC_PARAMS =
+            "connectionTimeZone=UTC&forceConnectionTimeZoneToValue=true&preserveInstants=false";
+
     @Bean
     @ConfigurationProperties("ops.datasource.hikari")
     public DataSource opsDataSource(
             @Qualifier("opsDataSourceProperties") DataSourceProperties props) {
+        String url = props.getUrl();
+        if (url != null && !url.contains("preserveInstants")) {
+            url += (url.contains("?") ? "&" : "?") + UTC_PARAMS;
+        }
         return props.initializeDataSourceBuilder()
                 .type(HikariDataSource.class)
+                .url(url)
                 .build();
     }
 
