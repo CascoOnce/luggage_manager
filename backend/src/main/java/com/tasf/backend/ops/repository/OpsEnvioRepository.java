@@ -30,4 +30,6 @@ public interface OpsEnvioRepository extends JpaRepository<EnvioEntity, Long> {
     long countByIataOrigen(String iataOrigen);
 
     List<EnvioEntity> findAllByEstadoAndIataOrigen(String estado, String iataOrigen);
+
+    List<EnvioEntity> findAllByEstado(String estado);
 }

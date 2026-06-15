@@ -52,9 +52,10 @@ public class OpsService {
     private final ConcurrentHashMap<String, PlanDeViaje> planesPorEnvio = new ConcurrentHashMap<>();
     // idEnvio -> bag count, captured at planning time (plans don't carry bag counts).
     private final ConcurrentHashMap<String, Integer> maletasPorEnvio = new ConcurrentHashMap<>();
-    // idEnvio -> warehouse entry time (UTC), captured at planning time. Needed so the
-    // drain only removes a bag once its first leg has departed AFTER the bag entered.
+    // idEnvio -> warehouse entry time (UTC), captured at planning time.
     private final ConcurrentHashMap<String, LocalDateTime> ingresoPorEnvio = new ConcurrentHashMap<>();
+    // idEnvio -> orden of the current/next escala to process (1-based).
+    private final ConcurrentHashMap<String, Integer> ordenActualByEnvio = new ConcurrentHashMap<>();
 
     public OpsService(
             DataLoaderService dataLoaderService,
@@ -273,6 +274,7 @@ public class OpsService {
         for (EnvioEntity e : pendientes) {
             maletasPorEnvio.put(e.getIdPedido(), e.getCantidadMaletas());
             ingresoPorEnvio.put(e.getIdPedido(), e.getFechaHoraIngreso());
+            ordenActualByEnvio.remove(e.getIdPedido()); // reset leg progress on re-plan
         }
         for (PlanDeViaje plan : result.getPlanes()) {
             planesPorEnvio.put(plan.getIdEnvio(), plan);
@@ -503,6 +505,79 @@ public class OpsService {
                 .codigoVuelo(codigoVuelo)
                 .hora(hora.toLocalTime().toString().substring(0, 5))
                 .build();
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. procesarSalidas — called by OpsScheduler every ~30s.
+    //    Transitions PENDIENTE envíos to EN_VUELO when horaSalidaEst <= now.
+    // -------------------------------------------------------------------------
+
+    @Transactional("opsTransactionManager")
+    public void procesarSalidas() {
+        if (planesPorEnvio.isEmpty()) return;
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+
+        for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("PENDIENTE")) {
+            PlanDeViaje plan = planesPorEnvio.get(envio.getIdPedido());
+            if (plan == null || plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
+
+            int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
+            plan.getEscalas().stream()
+                    .filter(e -> e.getOrden() == orden)
+                    .findFirst()
+                    .ifPresent(escala -> {
+                        if (!escala.getHoraSalidaEst().isAfter(now)) {
+                            envio.setEstado("EN_VUELO");
+                            opsEnvioRepository.save(envio);
+                            log.info("Salida: {} en vuelo {} (escala {})",
+                                    envio.getIdPedido(), escala.getCodigoVuelo(), orden);
+                        }
+                    });
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 10. procesarLlegadas — called by OpsScheduler every ~30s (after salidas).
+    //     Transitions EN_VUELO envíos: intermediate stop → PENDIENTE at new iataOrigen,
+    //     or final destination → ENTREGADO.
+    // -------------------------------------------------------------------------
+
+    @Transactional("opsTransactionManager")
+    public void procesarLlegadas() {
+        if (planesPorEnvio.isEmpty()) return;
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+
+        for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("EN_VUELO")) {
+            PlanDeViaje plan = planesPorEnvio.get(envio.getIdPedido());
+            if (plan == null || plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
+
+            int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
+            List<Escala> escalas = plan.getEscalas().stream()
+                    .sorted(Comparator.comparingInt(Escala::getOrden))
+                    .toList();
+
+            escalas.stream()
+                    .filter(e -> e.getOrden() == orden)
+                    .findFirst()
+                    .ifPresent(escala -> {
+                        if (!escala.getHoraLlegadaEst().isAfter(now)) {
+                            boolean hayMasEscalas = escalas.stream()
+                                    .anyMatch(e -> e.getOrden() == orden + 1);
+                            if (hayMasEscalas) {
+                                // Intermediate stop: bag waits at this airport for next leg
+                                envio.setEstado("PENDIENTE");
+                                envio.setIataOrigen(escala.getCodigoAeropuerto());
+                                ordenActualByEnvio.put(envio.getIdPedido(), orden + 1);
+                                log.info("Llegada intermedia: {} en {} (próxima escala {})",
+                                        envio.getIdPedido(), escala.getCodigoAeropuerto(), orden + 1);
+                            } else {
+                                envio.setEstado("ENTREGADO");
+                                log.info("Entregado: {}", envio.getIdPedido());
+                            }
+                            opsEnvioRepository.save(envio);
+                        }
+                    });
+        }
     }
 
     // -------------------------------------------------------------------------
