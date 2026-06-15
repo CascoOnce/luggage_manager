@@ -110,7 +110,7 @@ const TAB_STYLE = (active) => ({
   color: active ? 'var(--text-bright)' : 'var(--muted)',
 })
 
-function EnvioRow({ e }) {
+function EnvioRow({ e, showPlanBadge = false }) {
   return (
     <div style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -121,6 +121,20 @@ function EnvioRow({ e }) {
         {e.aeropuertoOrigen} → {e.aeropuertoDestino}
         {e.codigoVuelo && <span style={{ color: 'var(--text)' }}> · {e.codigoVuelo}</span>}
         <span style={{ marginLeft: 6 }}>{e.cantidadMaletas} maletas</span>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
+        {e.sla != null && (
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 3, padding: '0 4px' }}>
+            SLA {e.sla}d
+          </span>
+        )}
+        {showPlanBadge && (
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, padding: '0 4px', borderRadius: 3,
+            color: e.planificado ? 'var(--green)' : 'var(--red)',
+            border: `1px solid ${e.planificado ? 'var(--green)' : 'var(--red)'}` }}>
+            {e.planificado ? 'Con ruta' : 'Sin ruta'}
+          </span>
+        )}
       </div>
     </div>
   )
@@ -197,7 +211,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
                 <span style={s.sectionTitle}>En almacén ({inventory.enAlmacen?.length ?? 0})</span>
                 {(inventory.enAlmacen?.length ?? 0) === 0
                   ? <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 16 }}>Sin envíos en almacén</div>
-                  : inventory.enAlmacen.map((e) => <EnvioRow key={e.idEnvio} e={e} />)
+                  : inventory.enAlmacen.map((e) => <EnvioRow key={e.idEnvio} e={e} showPlanBadge />)
                 }
               </>
             )}
@@ -226,6 +240,12 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
                     : inventory.planificadosSaliendo.map((e, i) => <EnvioRow key={`out-${i}`} e={e} />)
                   }
                 </div>
+                {(inventory.sinRuta?.length ?? 0) > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <span style={{ ...s.sectionTitle, color: 'var(--red)' }}>Sin ruta ({inventory.sinRuta.length})</span>
+                    {inventory.sinRuta.map((e, i) => <EnvioRow key={`nr-${i}`} e={e} />)}
+                  </div>
+                )}
               </>
             )}
           </div>

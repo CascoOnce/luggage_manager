@@ -16,4 +16,6 @@ public class AirportInventoryDTO {
     private List<EnvioSummaryDTO> enAlmacen;
     private List<EnvioSummaryDTO> planificadosEntrando;
     private List<EnvioSummaryDTO> planificadosSaliendo;
+    /** Envíos con origen aquí que no obtuvieron ruta tras planificar. */
+    private List<EnvioSummaryDTO> sinRuta;
 }

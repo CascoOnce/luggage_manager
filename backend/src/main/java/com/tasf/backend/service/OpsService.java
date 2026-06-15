@@ -367,14 +367,14 @@ public class OpsService {
         for (OpsEnvioRequestDTO dto : dtos) {
             boolean hasId = dto.getIdPedido() != null && !dto.getIdPedido().isBlank();
 
-            LocalDateTime fechaLocal;
+            LocalDateTime fechaUtc;
             try {
                 OffsetDateTime offsetDt = OffsetDateTime.parse(dto.getFechaHoraIngreso());
-                // Store as local time (consistent with file-uploaded envíos)
-                fechaLocal = offsetDt.toLocalDateTime();
+                // Store as UTC (consistent with addEnvio; downstream query/toDomain assume UTC)
+                fechaUtc = offsetDt.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime();
             } catch (Exception ex) {
-                // Already naive local time (from file preview)
-                fechaLocal = LocalDateTime.parse(dto.getFechaHoraIngreso());
+                // Already naive local time (from file preview) — treat as UTC
+                fechaUtc = LocalDateTime.parse(dto.getFechaHoraIngreso());
             }
 
             String continenteOrigen = continentByIata.get(dto.getIataOrigen());
@@ -396,7 +396,7 @@ public class OpsService {
                     .iataOrigen(dto.getIataOrigen())
                     .iataDestino(dto.getIataDestino())
                     .cantidadMaletas(dto.getCantidadMaletas())
-                    .fechaHoraIngreso(fechaLocal)
+                    .fechaHoraIngreso(fechaUtc)
                     .sla(sla)
                     .estado("PENDIENTE")
                     .build();
@@ -414,7 +414,8 @@ public class OpsService {
     public AirportInventoryDTO getAirportInventory(String iata) {
         String upper = iata.toUpperCase();
 
-        // En almacén: PENDIENTE envíos whose origin is this airport
+        // En almacén: PENDIENTE envíos whose origin is this airport.
+        // Mark each with whether it has a route plan (planificado).
         List<EnvioSummaryDTO> enAlmacen = opsEnvioRepository
                 .findAllByEstadoAndIataOrigen("PENDIENTE", upper)
                 .stream()
@@ -424,6 +425,8 @@ public class OpsService {
                         .aeropuertoDestino(e.getIataDestino())
                         .cantidadMaletas(e.getCantidadMaletas())
                         .estado(e.getEstado())
+                        .sla(e.getSla())
+                        .planificado(planesPorEnvio.containsKey(e.getIdPedido()))
                         .build())
                 .sorted(Comparator.comparing(EnvioSummaryDTO::getIdEnvio))
                 .collect(Collectors.toList());
@@ -435,47 +438,65 @@ public class OpsService {
         List<EnvioSummaryDTO> entrando = new ArrayList<>();
         List<EnvioSummaryDTO> saliendo = new ArrayList<>();
 
-        for (Map.Entry<String, PlanDeViaje> entry : planesPorEnvio.entrySet()) {
-            PlanDeViaje plan = entry.getValue();
+        for (PlanDeViaje plan : planesPorEnvio.values()) {
             EnvioEntity ent = entityById.get(plan.getIdEnvio());
-            if (ent == null || plan.getEscalas() == null) continue;
+            if (ent == null || plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
 
-            for (Escala esc : plan.getEscalas()) {
-                if (!upper.equalsIgnoreCase(esc.getCodigoAeropuerto())) continue;
+            // Escalas are ordered; each escala.codigoAeropuerto is the DESTINATION of a leg.
+            // The leg origin is envío.iataOrigen for the first leg, and the previous
+            // escala's codigoAeropuerto for later legs. So we reconstruct leg origins here.
+            List<Escala> escalas = new ArrayList<>(plan.getEscalas());
+            escalas.sort(Comparator.comparingInt(Escala::getOrden));
 
-                if (esc.getHoraLlegadaEst() != null) {
-                    entrando.add(EnvioSummaryDTO.builder()
-                            .idEnvio(plan.getIdEnvio())
-                            .aeropuertoOrigen(ent.getIataOrigen())
-                            .aeropuertoDestino(ent.getIataDestino())
-                            .cantidadMaletas(ent.getCantidadMaletas())
-                            .estado(ent.getEstado())
-                            .codigoVuelo(esc.getCodigoVuelo())
-                            .hora(esc.getHoraLlegadaEst().toLocalTime().toString().substring(0, 5))
-                            .build());
+            String prevAeropuerto = ent.getIataOrigen();
+            for (Escala esc : escalas) {
+                String legOrigen = prevAeropuerto;
+                String legDestino = esc.getCodigoAeropuerto();
+
+                // Saliendo: this airport is the origin of this leg
+                if (upper.equalsIgnoreCase(legOrigen) && esc.getHoraSalidaEst() != null) {
+                    saliendo.add(summaryFromPlan(plan, ent, esc.getCodigoVuelo(),
+                            esc.getHoraSalidaEst()));
                 }
-                if (esc.getHoraSalidaEst() != null) {
-                    saliendo.add(EnvioSummaryDTO.builder()
-                            .idEnvio(plan.getIdEnvio())
-                            .aeropuertoOrigen(ent.getIataOrigen())
-                            .aeropuertoDestino(ent.getIataDestino())
-                            .cantidadMaletas(ent.getCantidadMaletas())
-                            .estado(ent.getEstado())
-                            .codigoVuelo(esc.getCodigoVuelo())
-                            .hora(esc.getHoraSalidaEst().toLocalTime().toString().substring(0, 5))
-                            .build());
+                // Entrando: this airport is the destination of this leg
+                if (upper.equalsIgnoreCase(legDestino) && esc.getHoraLlegadaEst() != null) {
+                    entrando.add(summaryFromPlan(plan, ent, esc.getCodigoVuelo(),
+                            esc.getHoraLlegadaEst()));
                 }
+
+                prevAeropuerto = legDestino;
             }
         }
 
         entrando.sort(Comparator.comparing(EnvioSummaryDTO::getHora, Comparator.nullsLast(Comparator.naturalOrder())));
         saliendo.sort(Comparator.comparing(EnvioSummaryDTO::getHora, Comparator.nullsLast(Comparator.naturalOrder())));
 
+        // Sin ruta: PENDIENTE envíos with origin here that have no plan after planificar
+        List<EnvioSummaryDTO> sinRuta = enAlmacen.stream()
+                .filter(e -> Boolean.FALSE.equals(e.getPlanificado()))
+                .collect(Collectors.toList());
+
         return AirportInventoryDTO.builder()
                 .iata(upper)
                 .enAlmacen(enAlmacen)
                 .planificadosEntrando(entrando)
                 .planificadosSaliendo(saliendo)
+                .sinRuta(sinRuta)
+                .build();
+    }
+
+    private EnvioSummaryDTO summaryFromPlan(PlanDeViaje plan, EnvioEntity ent,
+            String codigoVuelo, LocalDateTime hora) {
+        return EnvioSummaryDTO.builder()
+                .idEnvio(plan.getIdEnvio())
+                .aeropuertoOrigen(ent.getIataOrigen())
+                .aeropuertoDestino(ent.getIataDestino())
+                .cantidadMaletas(ent.getCantidadMaletas())
+                .estado(ent.getEstado())
+                .sla(ent.getSla())
+                .planificado(true)
+                .codigoVuelo(codigoVuelo)
+                .hora(hora.toLocalTime().toString().substring(0, 5))
                 .build();
     }
 
