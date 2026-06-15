@@ -8,6 +8,8 @@ import lombok.Data;
 public class OpsEnvioPreviewDTO {
     /** ID del pedido tal como viene del archivo (ej. "SKBO-000000001"). Null para ingresos manuales. */
     private String idPedido;
+    /** Código de cliente (parts[6] del archivo, ej. "0002850"). */
+    private String idCliente;
     private String iataOrigen;
     private String iataDestino;
     private int cantidadMaletas;

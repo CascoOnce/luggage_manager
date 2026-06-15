@@ -310,13 +310,14 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
     e.preventDefault()
     if (!opsOrigen || !opsDestino || opsCantidad < 1) { setOpsFormError('Origen, destino y cantidad requeridos'); return }
     if (opsOrigen === opsDestino) { setOpsFormError('Origen y destino deben ser distintos'); return }
+    if (!opsCodigoCliente.trim()) { setOpsFormError('Código de cliente requerido'); return }
     const ap = opsAirports.find(a => a.id === opsOrigen)
     const utcOffset = ap?.huso ?? 0
     const today = new Date().toISOString().slice(0, 10)
     const sign = utcOffset >= 0 ? '+' : '-'
     const absOff = Math.abs(utcOffset)
     const fechaHoraIngreso = `${today}T${opsHora}:00${sign}${String(absOff).padStart(2, '0')}:00`
-    const idCliente = opsCodigoCliente.trim() || null
+    const idCliente = opsCodigoCliente.trim()
 
     setPendingEnvios(prev => {
       // Merge: same manual origin+destino+hora → sum cantidades
@@ -838,10 +839,11 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                   </div>
                   <div>
                     <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
-                      Código de cliente <span style={{ opacity: 0.5, textTransform: 'none' }}>(opcional)</span>
+                      Código de cliente
                     </div>
                     <input type="text" value={opsCodigoCliente} onChange={e => setOpsCodigoCliente(e.target.value)}
-                      placeholder="ej. CLI-001"
+                      placeholder="ej. 0002850"
+                      required
                       style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }} />
                   </div>
                   {opsFormError && <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsFormError}</div>}

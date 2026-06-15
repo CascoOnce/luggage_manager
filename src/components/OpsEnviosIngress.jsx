@@ -162,6 +162,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
   function handleAddEnvio(event) {
     event.preventDefault()
     if (!origen || !destino || !hora) return
+    if (!codigoCliente.trim()) { setFormError('Código de cliente requerido'); return }
     setFormError(null)
     const airport = airports.find(a => a.id === origen)
     const huso = airport ? (airport.huso ?? 0) : 0
@@ -170,7 +171,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
     const offsetSign = huso >= 0 ? '+' : '-'
     const fechaHoraIngreso = `${today}T${hora}:00${offsetSign}${String(absOffset).padStart(2, '0')}:00`
     const horaSlice = hora.slice(0, 5)
-    const idCliente = codigoCliente.trim() || null
+    const idCliente = codigoCliente.trim()
 
     setPendingEnvios(prev => {
       // Merge: same manual origin+destino+hora → sum cantidades
@@ -484,19 +485,20 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
             </div>
 
             <div>
-              <label style={labelStyle}>Código de cliente <span style={{ opacity: 0.5 }}>(opcional)</span></label>
+              <label style={labelStyle}>Código de cliente</label>
               <input
                 type="text"
                 value={codigoCliente}
                 onChange={e => setCodigoCliente(e.target.value)}
-                placeholder="ej. CLI-001"
+                placeholder="ej. 0002850"
+                required
                 style={{ ...inputStyle }}
               />
             </div>
 
             <button
               type="submit"
-              disabled={!origen || !destino}
+              disabled={!origen || !destino || !codigoCliente.trim()}
               style={{
                 padding: '8px 12px',
                 background: 'rgba(34,197,94,0.1)',
@@ -506,8 +508,8 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
                 fontSize: 12,
                 textTransform: 'uppercase',
                 letterSpacing: 1,
-                cursor: !origen || !destino ? 'not-allowed' : 'pointer',
-                opacity: !origen || !destino ? 0.5 : 1,
+                cursor: (!origen || !destino || !codigoCliente.trim()) ? 'not-allowed' : 'pointer',
+                opacity: (!origen || !destino || !codigoCliente.trim()) ? 0.5 : 1,
               }}
             >
               + Agregar
