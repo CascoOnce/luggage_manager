@@ -153,6 +153,37 @@ export async function uploadOpsEnvios(file) {
   })
 }
 
+export async function previewOpsEnvios(file) {
+  return withHandling('previewOpsEnvios', async () => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await fetch(`${BASE_URL}/upload/ops/envios/preview`, {
+      method: 'POST',
+      body: formData,
+      mode: 'cors',
+      credentials: 'omit',
+    })
+    if (!response.ok) throw new Error(await toApiError(response))
+    return response.json()
+  })
+}
+
+export async function batchSaveOpsEnvios(dtos) {
+  return withHandling('batchSaveOpsEnvios', () =>
+    request('/ops/envios/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dtos),
+    })
+  )
+}
+
+export async function deleteOpsEnvio(id) {
+  return withHandling('deleteOpsEnvio', () =>
+    request(`/ops/envios/${id}`, { method: 'DELETE' })
+  )
+}
+
 export const api = {
   startSimulation,
 
@@ -236,6 +267,9 @@ export const api = {
   }),
 
   uploadOpsEnvios: async (file) => uploadOpsEnvios(file),
+  previewOpsEnvios: async (file) => previewOpsEnvios(file),
+  batchSaveOpsEnvios: async (dtos) => batchSaveOpsEnvios(dtos),
+  deleteOpsEnvio: async (id) => deleteOpsEnvio(id),
   addOpsEnvio: async (dto) => addOpsEnvio(dto),
   planificarOps: async () => planificarOps(),
   getOpsEnvios: async () => getOpsEnvios(),

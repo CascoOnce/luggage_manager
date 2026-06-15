@@ -126,7 +126,7 @@ function EnvioRow({ e }) {
   )
 }
 
-export default function DrawerAeropuerto({ airport, vuelos, onClose }) {
+export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInventoryTabs = false }) {
   const [tab, setTab] = useState('info')
   const [inventory, setInventory] = useState(null)
   const [loadingInv, setLoadingInv] = useState(false)
@@ -179,9 +179,9 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose }) {
 
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          <button style={TAB_STYLE(tab === 'info')}        onClick={() => setTab('info')}>Info</button>
-          <button style={TAB_STYLE(tab === 'inventario')}  onClick={() => setTab('inventario')}>Inventario</button>
-          <button style={TAB_STYLE(tab === 'planificado')} onClick={() => setTab('planificado')}>Planificado</button>
+          <button style={TAB_STYLE(tab === 'info')} onClick={() => setTab('info')}>Info</button>
+          {!hideInventoryTabs && <button style={TAB_STYLE(tab === 'inventario')} onClick={() => setTab('inventario')}>Inventario</button>}
+          {!hideInventoryTabs && <button style={TAB_STYLE(tab === 'planificado')} onClick={() => setTab('planificado')}>Planificado</button>}
         </div>
 
         {tab === 'inventario' && (

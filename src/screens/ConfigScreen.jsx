@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { api, startSimulation } from '../services/api.js'
+import { api, startSimulation, previewOpsEnvios, batchSaveOpsEnvios } from '../services/api.js'
 
 const FILE_PATTERN = /_envios_[A-Za-z]{4}_\.txt$/i
 
@@ -50,19 +50,15 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
   const [opsUploadFile, setOpsUploadFile] = useState([])
   const [opsUploadFileError, setOpsUploadFileError] = useState(null)
   const [opsUploadLoading, setOpsUploadLoading] = useState(false)
-  const [opsUploadResult, setOpsUploadResult] = useState(null)
   const [opsUploadError, setOpsUploadError] = useState(null)
-  const [opsUploadProgress, setOpsUploadProgress] = useState({ current: 0, total: 0 })
   const opsFileInputRef = useRef(null)
   const [opsOrigen, setOpsOrigen] = useState('')
   const [opsDestino, setOpsDestino] = useState('')
   const [opsCantidad, setOpsCantidad] = useState(1)
   const [opsHora, setOpsHora] = useState(() => { const n = new Date(); return `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}` })
-  const [opsFormLoading, setOpsFormLoading] = useState(false)
   const [opsFormError, setOpsFormError] = useState(null)
-  const [opsFormSuccess, setOpsFormSuccess] = useState(null)
-  const [opsEnvios, setOpsEnvios] = useState([])
-  const [opsEnviosLoading, setOpsEnviosLoading] = useState(false)
+  const [pendingEnvios, setPendingEnvios] = useState([])
+  const [opsIniciarLoading, setOpsIniciarLoading] = useState(false)
 
   useEffect(() => {
     if (!loading) { setLoadingElapsed(0); return }
@@ -77,11 +73,6 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
     api.getAirports().then(data => {
       setOpsAirports(data.map(a => ({ id: a.codigoIATA, name: a.nombre, huso: a.huso ?? 0 })))
     }).catch(() => {})
-  }, [modoConfig])
-
-  useEffect(() => {
-    if (modoConfig !== 'operaciones') return
-    refreshOpsEnvios()
   }, [modoConfig])
 
   useEffect(() => {
@@ -250,15 +241,6 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
     }
   }
 
-  async function refreshOpsEnvios() {
-    setOpsEnviosLoading(true)
-    try {
-      const data = await api.getOpsEnvios()
-      setOpsEnvios(data ?? [])
-    } catch (_) {}
-    finally { setOpsEnviosLoading(false) }
-  }
-
   function handleOpsFileChange(event) {
     const files = Array.from(event.target.files || [])
     setOpsUploadResult(null); setOpsUploadError(null)
@@ -274,18 +256,19 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
 
   async function handleOpsUpload() {
     if (!opsUploadFile.length) return
-    setOpsUploadLoading(true); setOpsUploadError(null); setOpsUploadResult(null)
+    setOpsUploadLoading(true)
+    setOpsUploadError(null)
     const initial = [...opsUploadFile]
-    let totalCount = 0; const errors = []; let processed = 0
+    const errors = []
     for (let i = 0; i < initial.length; i++) {
       setOpsUploadFile(prev => { const c = [...prev]; c[i] = { ...c[i], status: 'in_progress' }; return c })
-      setOpsUploadProgress({ current: processed, total: initial.length })
       try {
-        const result = await api.uploadOpsEnvios(initial[i].file)
-        totalCount += result.count ?? 0; processed++
+        const result = await previewOpsEnvios(initial[i].file)
+        const newItems = (result.items ?? []).map(item => ({ ...item, _localId: `${Date.now()}-${Math.random()}` }))
+        setPendingEnvios(prev => [...prev, ...newItems])
+        if (result.errors?.length) errors.push(...result.errors.map(e => `${initial[i].file.name}: ${e}`))
         setOpsUploadFile(prev => { const c = [...prev]; c[i] = { ...c[i], status: 'done' }; return c })
       } catch (err) {
-        processed++
         const msg = err instanceof Error ? err.message : String(err)
         errors.push(`${initial[i].file.name}: ${msg}`)
         setOpsUploadFile(prev => { const c = [...prev]; c[i] = { ...c[i], status: 'error', error: msg }; return c })
@@ -293,14 +276,11 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
     }
     if (opsFileInputRef.current) opsFileInputRef.current.value = ''
     if (errors.length) setOpsUploadError(errors.join(' | '))
-    if (totalCount > 0 || !errors.length) setOpsUploadResult({ count: totalCount, files: initial.length })
     setOpsUploadFile([])
     setOpsUploadLoading(false)
-    setOpsUploadProgress({ current: 0, total: 0 })
-    if (totalCount > 0) refreshOpsEnvios()
   }
 
-  async function handleOpsAddManual(e) {
+  function handleOpsAddManual(e) {
     e.preventDefault()
     if (!opsOrigen || !opsDestino || opsCantidad < 1) { setOpsFormError('Origen, destino y cantidad requeridos'); return }
     if (opsOrigen === opsDestino) { setOpsFormError('Origen y destino deben ser distintos'); return }
@@ -310,15 +290,40 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
     const sign = utcOffset >= 0 ? '+' : '-'
     const absOff = Math.abs(utcOffset)
     const fechaHoraIngreso = `${today}T${opsHora}:00${sign}${String(absOff).padStart(2, '0')}:00`
-    setOpsFormLoading(true); setOpsFormError(null); setOpsFormSuccess(null)
+    const newItem = {
+      _localId: `${Date.now()}-${Math.random()}`,
+      idPedido: null,
+      iataOrigen: opsOrigen,
+      iataDestino: opsDestino,
+      cantidadMaletas: Number(opsCantidad),
+      fechaHoraIngreso,
+      sla: null,
+    }
+    setPendingEnvios(prev => [...prev, newItem])
+    setOpsFormError(null)
+    setOpsDestino('')
+    setOpsCantidad(1)
+  }
+
+  async function handleOpsIniciar() {
+    setOpsIniciarLoading(true)
     try {
-      await api.addOpsEnvio({ iataOrigen: opsOrigen, iataDestino: opsDestino, cantidadMaletas: Number(opsCantidad), fechaHoraIngreso })
-      setOpsFormSuccess(`Envío agregado: ${opsOrigen} → ${opsDestino}, ${opsCantidad} maleta(s)`)
-      setOpsDestino(''); setOpsCantidad(1)
-      refreshOpsEnvios()
+      const dtos = pendingEnvios.map(({ idPedido, iataOrigen, iataDestino, cantidadMaletas, fechaHoraIngreso }) => ({
+        idPedido: idPedido ?? null,
+        iataOrigen,
+        iataDestino,
+        cantidadMaletas,
+        fechaHoraIngreso,
+      }))
+      if (dtos.length > 0) {
+        await batchSaveOpsEnvios(dtos)
+      }
+      onOperacionesStarted && onOperacionesStarted()
     } catch (err) {
-      setOpsFormError(err instanceof Error ? err.message : String(err))
-    } finally { setOpsFormLoading(false) }
+      setOpsUploadError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setOpsIniciarLoading(false)
+    }
   }
 
   return (
@@ -723,32 +728,23 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                       return (
                         <li key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', border: '1px solid var(--border)', marginBottom: 4 }}>
                           <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
-                          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.file.name}</span>
-                          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginLeft: 'auto', flexShrink: 0 }}>
-                            {item.status === 'pending' ? 'Pendiente' : item.status === 'in_progress' ? 'En curso' : item.status === 'done' ? 'Completado' : `Error: ${item.error}`}
-                          </span>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{item.file.name}</span>
+                          {item.status === 'in_progress' && <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--blue)', flexShrink: 0 }}>En curso</span>}
+                          {item.status === 'done' && <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--green)', flexShrink: 0 }}>Listo</span>}
+                          {item.status === 'error' && <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--red)', flexShrink: 0 }}>Error</span>}
+                          {item.status === 'pending' && (
+                            <button onClick={() => setOpsUploadFile(prev => prev.filter((_, i) => i !== idx))}
+                              style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: 'pointer', flexShrink: 0 }}>×</button>
+                          )}
                         </li>
                       )
                     })}
                   </ul>
-                  {opsUploadLoading && opsUploadProgress.total > 0 && (
-                    <div style={{ marginTop: 8 }}>
-                      <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
-                        Subiendo {opsUploadProgress.current}/{opsUploadProgress.total}
-                      </div>
-                      <div style={{ width: '100%', height: 6, background: 'rgba(255,255,255,0.04)', borderRadius: 3 }}>
-                        <div style={{ width: `${Math.round((opsUploadProgress.current / Math.max(1, opsUploadProgress.total)) * 100)}%`, height: '100%', background: 'var(--blue)', transition: 'width 300ms' }} />
-                      </div>
-                    </div>
-                  )}
                   <button onClick={handleOpsUpload} disabled={opsUploadLoading}
                     style={{ width: '100%', marginTop: 8, padding: '7px 12px', background: 'rgba(88,166,255,0.08)', border: '1px solid rgba(88,166,255,0.3)', color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, cursor: opsUploadLoading ? 'not-allowed' : 'pointer' }}>
                     {opsUploadLoading ? 'Subiendo...' : 'Subir'}
                   </button>
                 </div>
-              )}
-              {opsUploadResult && (
-                <div style={{ marginTop: 6, color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsUploadResult.count} envíos cargados</div>
               )}
               {opsUploadError && (
                 <div style={{ marginTop: 6, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsUploadError}</div>
@@ -765,7 +761,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                 <form onSubmit={handleOpsAddManual} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div>
                     <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Aeropuerto origen</div>
-                    <select value={opsOrigen} onChange={e => setOpsOrigen(e.target.value)} disabled={opsFormLoading}
+                    <select value={opsOrigen} onChange={e => setOpsOrigen(e.target.value)}
                       style={{ width: '100%', background: '#161b22', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box', colorScheme: 'dark' }}>
                       <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Seleccionar origen</option>
                       {opsAirports.map(a => <option key={a.id} value={a.id} style={{ background: '#161b22', color: 'var(--text)' }}>{a.id} — {a.name}</option>)}
@@ -773,7 +769,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                   </div>
                   <div>
                     <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Aeropuerto destino</div>
-                    <select value={opsDestino} onChange={e => setOpsDestino(e.target.value)} disabled={opsFormLoading}
+                    <select value={opsDestino} onChange={e => setOpsDestino(e.target.value)}
                       style={{ width: '100%', background: '#161b22', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box', colorScheme: 'dark' }}>
                       <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Seleccionar destino</option>
                       {opsAirports.filter(a => a.id !== opsOrigen).map(a => <option key={a.id} value={a.id} style={{ background: '#161b22', color: 'var(--text)' }}>{a.id} — {a.name}</option>)}
@@ -781,7 +777,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                   </div>
                   <div>
                     <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Cantidad de maletas</div>
-                    <input type="number" min={1} max={999} value={opsCantidad} onChange={e => setOpsCantidad(e.target.value)} disabled={opsFormLoading}
+                    <input type="number" min={1} max={999} value={opsCantidad} onChange={e => setOpsCantidad(e.target.value)}
                       style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }} />
                   </div>
                   <div>
@@ -790,14 +786,13 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                         ? (() => { const off = opsAirports.find(a => a.id === opsOrigen).huso; return `Hora de ingreso (local origen · UTC${off >= 0 ? '+' : ''}${off})` })()
                         : 'Hora de ingreso (local origen)'}
                     </div>
-                    <input type="time" value={opsHora} onChange={e => setOpsHora(e.target.value)} disabled={opsFormLoading}
+                    <input type="time" value={opsHora} onChange={e => setOpsHora(e.target.value)}
                       style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }} />
                   </div>
                   {opsFormError && <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsFormError}</div>}
-                  {opsFormSuccess && <div style={{ color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 11 }}>{opsFormSuccess}</div>}
-                  <button type="submit" disabled={opsFormLoading}
-                    style={{ padding: '7px 12px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.4)', color: '#22c55e', fontFamily: 'var(--mono)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, cursor: opsFormLoading ? 'not-allowed' : 'pointer', opacity: opsFormLoading ? 0.6 : 1 }}>
-                    {opsFormLoading ? 'Agregando...' : '+ Agregar envío'}
+                  <button type="submit"
+                    style={{ padding: '7px 12px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.4)', color: '#22c55e', fontFamily: 'var(--mono)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, cursor: 'pointer' }}>
+                    + Agregar envío
                   </button>
                 </form>
               </div>
@@ -805,44 +800,57 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
               {/* Bottom ~55%: preview table + footer */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div style={{ padding: '12px 20px 8px', flexShrink: 0 }}>
-                  <span style={sectionHeaderStyle()}>Envíos cargados ({opsEnvios.length})</span>
+                  <span style={sectionHeaderStyle()}>Por confirmar ({pendingEnvios.length})</span>
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 8px' }}>
-                  {opsEnviosLoading ? (
-                    <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>Cargando...</div>
-                  ) : opsEnvios.length === 0 ? (
-                    <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>Ningún envío. Sube un archivo o ingresa manualmente.</div>
+                  {pendingEnvios.length === 0 ? (
+                    <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>
+                      Ningún envío. Sube un archivo o ingresa manualmente.
+                    </div>
                   ) : (
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--mono)', fontSize: 11 }}>
                       <thead>
                         <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                          {['ID Pedido', 'Origen', 'Destino', 'Maletas', 'Estado'].map(h => (
+                          {['ID Pedido', 'Origen', 'Destino', 'Maletas', 'Hora', ''].map(h => (
                             <th key={h} style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 400, fontSize: 10 }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {opsEnvios.map((e, i) => (
-                          <tr key={e.id ?? i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                            <td style={{ padding: '5px 8px', color: 'var(--muted)', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.idPedido}</td>
-                            <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.iataOrigen}</td>
-                            <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.iataDestino}</td>
-                            <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.cantidadMaletas}</td>
-                            <td style={{ padding: '5px 8px', color: e.estado === 'PENDIENTE' ? 'var(--blue)' : e.estado === 'ENTREGADO' ? 'var(--green)' : 'var(--muted)' }}>{e.estado}</td>
-                          </tr>
-                        ))}
+                        {pendingEnvios.map((e) => {
+                          const horaDisplay = e.fechaHoraIngreso ? e.fechaHoraIngreso.slice(11, 16) : '—'
+                          return (
+                            <tr key={e._localId} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                              <td style={{ padding: '5px 8px', color: 'var(--muted)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.idPedido ?? '—'}</td>
+                              <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.iataOrigen}</td>
+                              <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.iataDestino}</td>
+                              <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.cantidadMaletas}</td>
+                              <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{horaDisplay}</td>
+                              <td style={{ padding: '5px 8px' }}>
+                                <button onClick={() => setPendingEnvios(prev => prev.filter(x => x._localId !== e._localId))}
+                                  title="Eliminar"
+                                  style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: 'pointer', padding: '0 4px' }}>×</button>
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   )}
                 </div>
                 <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 12, flexShrink: 0, background: 'var(--bg)' }}>
-                  <button onClick={onCancel}
-                    style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, padding: '8px 16px', cursor: 'pointer' }}>
+                  {opsUploadError && (
+                    <div style={{ flex: 1, borderLeft: '2px solid var(--red)', background: 'rgba(248,81,73,0.06)', padding: '8px 12px', color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11, marginRight: 12 }}>
+                      {opsUploadError}
+                    </div>
+                  )}
+                  <button onClick={onCancel} disabled={opsIniciarLoading}
+                    style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, padding: '8px 16px', cursor: opsIniciarLoading ? 'not-allowed' : 'pointer' }}>
                     Cancelar
                   </button>
-                  <button onClick={() => onOperacionesStarted && onOperacionesStarted()}
-                    style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)', color: '#22c55e', fontFamily: 'var(--mono)', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, padding: '8px 20px', cursor: 'pointer' }}>
-                    ▶ INICIAR OPERACIONES
+                  <button onClick={handleOpsIniciar} disabled={opsIniciarLoading}
+                    style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)', color: '#22c55e', fontFamily: 'var(--mono)', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, padding: '8px 20px', cursor: opsIniciarLoading ? 'not-allowed' : 'pointer', opacity: opsIniciarLoading ? 0.6 : 1 }}>
+                    {opsIniciarLoading ? 'INICIANDO...' : '▶ INICIAR OPERACIONES'}
                   </button>
                 </div>
               </div>

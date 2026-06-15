@@ -21,4 +21,6 @@ public interface OpsEnvioRepository extends JpaRepository<EnvioEntity, Long> {
     List<EnvioEntity> findAllPendientesOrdenados();
 
     List<EnvioEntity> findAllByOrderByFechaHoraIngresoDesc();
+
+    long countByIataOrigen(String iataOrigen);
 }

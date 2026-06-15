@@ -229,9 +229,9 @@ export default function OpsScreen({ opsState, theme, onBack }) {
             ))}
           </div>
 
-          {/* Tab content */}
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            {leftTab === 'filtros' ? (
+          {/* Tab content — both panels stay mounted; CSS toggle avoids slow remount */}
+          <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+            <div style={{ display: leftTab === 'filtros' ? 'block' : 'none', height: '100%', overflow: 'hidden' }}>
               <AirportFilterPanel
                 airports={airports}
                 originIds={originIds}
@@ -241,11 +241,10 @@ export default function OpsScreen({ opsState, theme, onBack }) {
                 threshold={threshold}
                 setThreshold={setThreshold}
               />
-            ) : (
-              <div style={{ height: '100%', overflowY: 'auto' }}>
-                <OpsEnviosIngress airports={ingressAirports} onEnviosChanged={() => {}} />
-              </div>
-            )}
+            </div>
+            <div style={{ display: leftTab === 'envios' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
+              <OpsEnviosIngress airports={ingressAirports} onEnviosChanged={() => {}} />
+            </div>
           </div>
         </div>
 
@@ -294,6 +293,7 @@ export default function OpsScreen({ opsState, theme, onBack }) {
             airport={selectedAirport}
             vuelos={visibleFlights}
             onClose={() => setSelectedAirport(null)}
+            hideInventoryTabs
           />
         </div>
 
