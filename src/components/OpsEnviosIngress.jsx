@@ -178,7 +178,8 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
         e._isManual &&
         e.iataOrigen === origen &&
         e.iataDestino === destino &&
-        e.fechaHoraIngreso.slice(11, 16) === horaSlice
+        e.fechaHoraIngreso.slice(11, 16) === horaSlice &&
+        (e.idCliente ?? null) === idCliente
       )
       if (matchIdx !== -1) {
         const copy = [...prev]

@@ -324,7 +324,8 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
         entry._isManual &&
         entry.iataOrigen === opsOrigen &&
         entry.iataDestino === opsDestino &&
-        entry.fechaHoraIngreso.slice(11, 16) === opsHora.slice(0, 5)
+        entry.fechaHoraIngreso.slice(11, 16) === opsHora.slice(0, 5) &&
+        (entry.idCliente ?? null) === idCliente
       )
       if (matchIdx !== -1) {
         const copy = [...prev]
