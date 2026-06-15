@@ -13,7 +13,7 @@ import OpsScreen from './screens/OpsScreen.jsx'
 import DrawerAeropuerto from './drawers/DrawerAeropuerto.jsx'
 import DrawerVuelo from './drawers/DrawerVuelo.jsx'
 import AirportFilterPanel from './components/AirportFilterPanel.jsx'
-import { getLiveState, getOpsState, getOpsOccupancy, planificarOps } from './services/api.js'
+import { getLiveState, getOpsState, getOpsOccupancy, planificarOps, getOpsEnvios, getOpsReporte } from './services/api.js'
 
 export default function App() {
   const ALGORITHM = 'SIMULATED_ANNEALING'
@@ -58,6 +58,8 @@ export default function App() {
   const liveNextStateRef = useRef(null)
 
   const [opsState, setOpsState] = useState(null)
+  const [opsEnvios, setOpsEnvios] = useState([])
+  const [opsReporte, setOpsReporte] = useState(null)
   const opsPollingRef = useRef(null)
   const opsOccRef = useRef(null)
 
@@ -519,6 +521,56 @@ export default function App() {
     return { ...base, globalFleetOccupancy, globalWarehouseOccupancy }
   }, [backendState?.kpis, simState?.kpis, backendFlights, clockedAirports])
 
+  const isOpsActive = Boolean(opsState)
+
+  const opsAsSimState = useMemo(() => {
+    if (!opsState) return null
+    const envios = opsEnvios.map((e) => ({
+      idEnvio: e.idPedido,
+      aeropuertoOrigen: e.iataOrigen,
+      aeropuertoDestino: e.iataDestino,
+      estado: e.estado,
+      cantidadMaletas: e.cantidadMaletas,
+      sla: e.sla,
+      escalas: [],
+      planResumen: e.estado !== 'PENDIENTE' ? `${e.iataOrigen} → ${e.iataDestino}` : null,
+    }))
+    const vuelos = (opsState.vuelos || []).map((v) => ({
+      codigoVuelo: v.codigoVuelo,
+      origen: v.origen,
+      destino: v.destino,
+      horaSalida: v.horaSalida,
+      horaLlegada: v.horaLlegada,
+      tipo: v.tipo,
+      estado: v.enUso ? 'EN_VUELO' : 'PROGRAMADO',
+      capacidadTotal: v.capacidadTotal,
+      cargaActual: v.cargaActual,
+      enUso: v.enUso,
+    }))
+    const kpisNorm = opsReporte ? {
+      maletasEnTransito: opsReporte.enviosPendientes,
+      maletasEntregadas: opsReporte.enviosEntregados,
+      cumplimientoSLA: opsReporte.porcentajeCumplimientoSla,
+      vuelosActivos: (opsState.vuelos || []).filter((v) => v.enUso).length,
+      slaVencidos: opsReporte.enviosViolados,
+      bagsInTransit: opsReporte.enviosPendientes,
+      bagsDelivered: opsReporte.enviosEntregados,
+      slaCompliance: opsReporte.porcentajeCumplimientoSla,
+      activeFlights: (opsState.vuelos || []).filter((v) => v.enUso).length,
+      slaViolated: opsReporte.enviosViolados,
+    } : null
+    return {
+      aeropuertos: opsState.aeropuertos || [],
+      vuelos,
+      envios,
+      kpis: kpisNorm,
+      finalizada: true,
+      totalDias: null,
+      logOperaciones: [],
+      cancelaciones: [],
+    }
+  }, [opsState, opsEnvios, opsReporte])
+
   async function handleReset() {
     prefetchFiredRef.current = false
     nextDayStateRef.current = null
@@ -630,6 +682,13 @@ export default function App() {
     opsPollingRef.current = null
     opsOccRef.current = null
     setOpsState(null)
+    setOpsEnvios([])
+    setOpsReporte(null)
+  }
+
+  function refreshOpsViewData() {
+    getOpsEnvios().then((data) => setOpsEnvios(data || [])).catch((err) => console.error('Ops envios error:', err))
+    getOpsReporte().then(setOpsReporte).catch((err) => console.error('Ops reporte error:', err))
   }
 
   // Ops is a REAL-time view. Full state (incl. flights) is heavier, so poll it
@@ -665,16 +724,20 @@ export default function App() {
     if (next === 'live') {
       setScreen('live')
       startLive()
-    } else if (next === 'ops') {
+    } else if (next === 'ops' || (next === 'main' && isOpsActive)) {
       if (screen === 'live') stopLive()
       setScreen('ops')
-      startOps()
+      if (!isOpsActive) startOps()
+    } else if (isOpsActive && (next === 'envios' || next === 'dashboard' || next === 'resultados')) {
+      // Stay in ops mode (keep polling), just switch view and refresh data
+      refreshOpsViewData()
+      setScreen(next)
     } else {
       if (screen === 'live') stopLive()
       if (screen === 'ops') stopOps()
       setScreen(next)
     }
-  }, [screen])
+  }, [screen, isOpsActive])
 
   const handleCloseAirport = useCallback(() => setMapSelectedAirport(null), [])
   const handleCloseVuelo   = useCallback(() => { setMapSelectedVuelo(null); setSelectedFlight(null) }, [])
@@ -712,7 +775,7 @@ export default function App() {
       alert('Error al cancelar vuelo: ' + (err instanceof Error ? err.message : String(err)))
     }
   }, [])
-  const handleBackToMain   = useCallback(() => setScreen('main'),            [])
+  const handleBackToMain   = useCallback(() => setScreen(isOpsActive ? 'ops' : 'main'), [isOpsActive])
 
   const handleCancelConfig = useCallback(() => {
     setScreen('main')
@@ -755,6 +818,7 @@ export default function App() {
         onIniciar={onIniciar}
         screen={screen}
         hasSimulation={Boolean(backendState)}
+        isOpsActive={isOpsActive}
         colapsoPunto={backendState?.colapsoPunto ?? null}
         liveActive={screen === 'live'}
       />
@@ -903,28 +967,31 @@ export default function App() {
           <div style={{ height: '100%', overflow: 'auto', background: 'var(--bg)' }}>
             {screen === 'envios' && (
               <EnviosScreen
-                simState={simState}
+                simState={isOpsActive ? opsAsSimState : simState}
                 theme={theme}
                 onBack={handleBackToMain}
-                onShowInMap={handleShowEnvioRoute}
-                onCancelFlight={handleCancelFlight}
-                simClockMinutes={simClockMinutes}
-                flights={activeVuelosWithTimes}
+                onShowInMap={isOpsActive ? null : handleShowEnvioRoute}
+                onCancelFlight={isOpsActive ? null : handleCancelFlight}
+                simClockMinutes={isOpsActive ? 0 : simClockMinutes}
+                flights={isOpsActive ? [] : activeVuelosWithTimes}
+                opsMode={isOpsActive}
               />
             )}
             {screen === 'dashboard' && (
               <DashboardScreen
-                simState={simState}
+                simState={isOpsActive ? opsAsSimState : simState}
                 theme={theme}
                 onBack={handleBackToMain}
-                globalKpis={activeKpis}
+                globalKpis={isOpsActive ? null : activeKpis}
+                opsMode={isOpsActive}
               />
             )}
             {screen === 'resultados' && (
               <ResultadosScreen
-                simState={simState}
+                simState={isOpsActive ? opsAsSimState : simState}
                 theme={theme}
                 onBack={handleBackToMain}
+                opsMode={isOpsActive}
               />
             )}
             {screen === 'config' && (

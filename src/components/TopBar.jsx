@@ -132,6 +132,7 @@ export default function TopBar({
   onIniciar,
   screen,
   hasSimulation,
+  isOpsActive,
   colapsoPunto,
   liveActive,
 }) {
@@ -156,7 +157,7 @@ export default function TopBar({
   ]
 
   function isActiveTab(key) {
-    if (key === 'main') return screen === 'main'
+    if (key === 'main') return screen === 'main' || screen === 'ops'
     if (key === 'resultados') return screen === 'resultados' || screen === 'config'
     return screen === key
   }
@@ -181,7 +182,7 @@ export default function TopBar({
         {tabs.map((tab) => {
           const active = isActiveTab(tab.key)
           const disabled =
-            !hasSimulation && (tab.key === 'envios' || tab.key === 'dashboard')
+            !hasSimulation && !isOpsActive && (tab.key === 'envios' || tab.key === 'dashboard')
           const isAlert = tab.alert
           return (
             <button

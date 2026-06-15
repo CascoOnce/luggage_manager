@@ -65,7 +65,6 @@ function warehouseColor(ap, threshold) {
 
 export default function RightPanel({ flights, airports, threshold, selectedFlight, setSelectedFlight, onVueloClick, showAllAirports, theme = 'dark' }) {
   const [flightQuery, setFlightQuery] = useState('')
-  const [flightPattern, setFlightPattern] = useState('')
   const [sortField, setSortField] = useState('occupancy')
   const [sortDir, setSortDir] = useState('desc')
   const [filterOrigin, setFilterOrigin] = useState('')
@@ -84,8 +83,7 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
     [...new Set(allActive.map(f => f.destination).filter(Boolean))].sort().filter(ap => !filterOrigin || ap !== filterOrigin)
   , [allActive, filterOrigin])
   const activeFlights = useMemo(() => {
-    const q = flightQuery.trim().toLowerCase()
-    const patternRaw = (flightPattern || '').trim()
+    const q = flightQuery.trim()
 
     function patternToRegExp(pat) {
       const esc = pat.replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&')
@@ -97,7 +95,9 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
       }
     }
 
-    const patternRe = patternRaw ? patternToRegExp(patternRaw.includes('*') ? patternRaw : `*${patternRaw}*`) : null
+    const isWildcard = q.includes('*')
+    const patternRe = isWildcard ? patternToRegExp(q) : null
+    const qLower = isWildcard ? '' : q.toLowerCase()
 
     function getTimeVal(val) {
       if (val == null) return null
@@ -114,16 +114,13 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
     const filtered = allActive.filter((f) => {
       if (filterOrigin && f.origin !== filterOrigin) return false
       if (filterDest   && f.destination !== filterDest) return false
-      if (patternRe) {
-        const id = f.id ?? ''
-        if (!patternRe.test(id)) return false
-      }
-      if (!q) return true
+      if (patternRe) return patternRe.test(f.id ?? '')
+      if (!qLower) return true
       return (
-        f.id?.toLowerCase().includes(q) ||
-        f.origin?.toLowerCase().includes(q) ||
-        f.destination?.toLowerCase().includes(q) ||
-        `${f.origin}-${f.destination}`.toLowerCase().includes(q)
+        f.id?.toLowerCase().includes(qLower) ||
+        f.origin?.toLowerCase().includes(qLower) ||
+        f.destination?.toLowerCase().includes(qLower) ||
+        `${f.origin}-${f.destination}`.toLowerCase().includes(qLower)
       )
     })
 
@@ -156,7 +153,7 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
     })
 
     return sorted
-  }, [allActive, flightQuery, flightPattern, filterOrigin, filterDest, sortField, sortDir])
+  }, [allActive, flightQuery, filterOrigin, filterDest, sortField, sortDir])
   const { occupiedAirports, hiddenCount } = useMemo(() => {
     const patternRaw = (airportPattern || '').trim()
     function patternToRegExp(pat) {
@@ -211,23 +208,10 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
             <input
               value={flightQuery}
               onChange={(e) => setFlightQuery(e.target.value)}
-              placeholder="Buscar vuelo, origen, destino..."
+              placeholder="Buscar vuelo, origen, destino… (usa * como wildcard)"
               style={{
                 flex: 1, minWidth: 0,
                 background: 'rgba(255,255,255,0.04)',
-                border: '1px solid var(--border)',
-                color: 'var(--text)',
-                fontFamily: 'var(--mono)', fontSize: 11,
-                padding: '5px 8px', borderRadius: 2, outline: 'none',
-              }}
-            />
-            <input
-              value={flightPattern}
-              onChange={(e) => setFlightPattern(e.target.value)}
-              placeholder="Código‑patrón (usa * como wildcard)"
-              style={{
-                width: 200, flex: '0 0 200px',
-                background: 'rgba(255,255,255,0.03)',
                 border: '1px solid var(--border)',
                 color: 'var(--text)',
                 fontFamily: 'var(--mono)', fontSize: 11,
