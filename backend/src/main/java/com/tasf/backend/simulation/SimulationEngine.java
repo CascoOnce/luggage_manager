@@ -146,6 +146,12 @@ public class SimulationEngine {
             .filter(envio -> sinRuta.contains(envio.getIdEnvio()))
             .forEach(envio -> envio.setEstado(EstadoEnvio.RETRASADO));
 
+        // Bags of unroutable envíos must be RETRASADA (not EN_ALMACEN) so they don't
+        // inflate warehouse occupation counts beyond what the planner actually reserved.
+        this.maletas.stream()
+            .filter(m -> sinRuta.contains(m.getIdEnvio()))
+            .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
+
         this.diaActual = 1;
         this.enEjecucion = true;
         this.finalizada = false;
@@ -275,6 +281,14 @@ public class SimulationEngine {
 
         // Rebuild maletas from envios (resets ubicacion to origin and estado to EN_ALMACEN)
         this.maletas = generarMaletas(this.envios);
+        // Restore RETRASADA state for envíos that had no route in the original planning.
+        Set<String> retrasadosReinicio = this.envios.stream()
+            .filter(e -> e.getEstado() == EstadoEnvio.RETRASADO)
+            .map(Envio::getIdEnvio)
+            .collect(Collectors.toSet());
+        this.maletas.stream()
+            .filter(m -> retrasadosReinicio.contains(m.getIdEnvio()))
+            .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
 
         // planes unchanged — reuse existing routes, no re-planning needed
 
@@ -435,6 +449,11 @@ public class SimulationEngine {
                 addOperationLog("ALERT replanification no route for envio " + envio.getIdEnvio());
             }
         }
+        // Same as inicializar: mark unroutable bags RETRASADA so warehouse counts stay accurate.
+        maletas.stream()
+            .filter(m -> sinRuta.contains(m.getIdEnvio()))
+            .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN)
+            .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
 
         long elapsed = System.currentTimeMillis() - start;
         String algorithmUsed = params.getAlgoritmo() != null ? params.getAlgoritmo() : "N/A";
