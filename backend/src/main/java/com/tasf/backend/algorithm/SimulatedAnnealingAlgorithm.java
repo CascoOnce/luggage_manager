@@ -102,36 +102,12 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                     remaining -= assign;
                 }
 
-                if (remaining > 0) {
-                    // Some bags could not be assigned without violating hard cap
-                    // Accept soft-cap violations for these to avoid full RETRASADO
-                    // Try remaining options ignoring warehouse (but respecting flight cap)
-                    for (RouteCandidate route : options) {
-                        if (remaining == 0) break;
-                        boolean alreadyUsed = parts.stream().anyMatch(p -> p.route().getSignature().equals(route.getSignature()));
-                        if (alreadyUsed) continue;
-
-                        int fitsByFlight = remaining;
-                        for (RouteCandidate.Leg leg : route.getLegs()) {
-                            int legAvail = leg.flight().getCapacidadTotal()
-                                - flightLoads.getOrDefault(leg.flight().getCodigoVuelo(), 0);
-                            fitsByFlight = Math.min(fitsByFlight, legAvail);
-                        }
-                        if (fitsByFlight <= 0) continue;
-
-                        int assign = Math.min(fitsByFlight, remaining);
-                        // Register soft-cap violation (overload penalized in objective)
-                        for (RouteCandidate.CapacityWindow w : route.getCapacityWindows(envio.getFechaHoraIngreso())) {
-                            timeline.addEvent(w.airport(), w.from(), assign);
-                            timeline.addEvent(w.airport(), w.to(), -assign);
-                        }
-                        for (RouteCandidate.Leg leg : route.getLegs()) {
-                            flightLoads.merge(leg.flight().getCodigoVuelo(), assign, Integer::sum);
-                        }
-                        parts.add(new PartialAssignment(route, assign));
-                        remaining -= assign;
-                    }
-                }
+                // Note: bags that don't fit here stay unassigned (remaining > 0) rather than
+                // being force-fit by bypassing the warehouse hard-cap check. The primary loop
+                // above already tried every candidate route under the true 100% hard cap; a
+                // fallback that ignored warehouse capacity would risk exceeding it, violating
+                // the "hard cap never exceeded" requirement. Unassigned bags surface as a
+                // partial RETRASADO below.
 
                 if (parts.isEmpty()) {
                     envio.setEstado(EstadoEnvio.RETRASADO);
