@@ -17,7 +17,11 @@ import com.tasf.backend.dto.LiveStateDTO.LiveVueloDTO;
 import com.tasf.backend.dto.OpsEnvioRequestDTO;
 import com.tasf.backend.dto.OpsReporteDTO;
 import com.tasf.backend.entity.EnvioEntity;
+import com.tasf.backend.entity.EscalaEntity;
+import com.tasf.backend.entity.ItinerarioEntity;
 import com.tasf.backend.ops.repository.OpsEnvioRepository;
+import com.tasf.backend.repository.EscalaRepository;
+import com.tasf.backend.repository.ItinerarioRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -50,6 +54,8 @@ public class OpsService {
     private final DataLoaderService dataLoaderService;
     private final PlanningService planningService;
     private final OpsEnvioRepository opsEnvioRepository;
+    private final ItinerarioRepository itinerarioRepository;
+    private final EscalaRepository escalaRepository;
 
     private final ConcurrentHashMap<String, PlanDeViaje> planesPorEnvio = new ConcurrentHashMap<>();
     // idEnvio -> bag count, captured at planning time (plans don't carry bag counts).
@@ -66,10 +72,14 @@ public class OpsService {
     public OpsService(
             DataLoaderService dataLoaderService,
             PlanningService planningService,
-            OpsEnvioRepository opsEnvioRepository) {
+            OpsEnvioRepository opsEnvioRepository,
+            ItinerarioRepository itinerarioRepository,
+            EscalaRepository escalaRepository) {
         this.dataLoaderService = dataLoaderService;
         this.planningService = planningService;
         this.opsEnvioRepository = opsEnvioRepository;
+        this.itinerarioRepository = itinerarioRepository;
+        this.escalaRepository = escalaRepository;
     }
 
     // -------------------------------------------------------------------------
@@ -302,6 +312,7 @@ public class OpsService {
         for (PlanDeViaje plan : result.getPlanes()) {
             planesPorEnvio.put(plan.getIdEnvio(), plan);
         }
+        persistOpsPlans(result.getPlanes());
 
         log.info("Planned {} envios; {} without route", result.getPlanes().size(),
                 result.getEnviosSinRuta().size());
@@ -328,6 +339,9 @@ public class OpsService {
     public Optional<EnvioDTO> getEnvioById(String idPedido) {
         return opsEnvioRepository.findByIdPedido(idPedido).map(ent -> {
             PlanDeViaje plan = planesPorEnvio.get(idPedido);
+            if (plan == null) {
+                plan = loadPlanFromDb(idPedido);
+            }
             return EnvioDTO.builder()
                 .idEnvio(ent.getIdPedido())
                 .codigoAerolinea(ent.getCodigoAerolinea())
@@ -340,6 +354,62 @@ public class OpsService {
                 .planDetalle(plan)
                 .build();
         });
+    }
+
+    private PlanDeViaje loadPlanFromDb(String idPedido) {
+        List<ItinerarioEntity> itinerarios = itinerarioRepository.findByIdPedidoAndEsActivo(idPedido, true);
+        if (itinerarios.isEmpty()) return null;
+        ItinerarioEntity it = itinerarios.get(0);
+        List<Escala> escalas = escalaRepository.findByIdItinerarioOrderByOrden(it.getIdItinerario())
+            .stream()
+            .map(e -> Escala.builder()
+                .orden(e.getOrden())
+                .codigoAeropuerto(e.getIataEscala())
+                .codigoVuelo(e.getCodigoVuelo())
+                .horaSalidaEst(e.getHoraSalidaEst())
+                .horaLlegadaEst(e.getHoraLlegadaEst())
+                .completada(e.isCompletada())
+                .build())
+            .collect(Collectors.toList());
+        return PlanDeViaje.builder()
+            .idPlan(it.getIdItinerario())
+            .idEnvio(idPedido)
+            .version(it.getVersion())
+            .esActivo(true)
+            .escalas(escalas)
+            .fechaCreacion(it.getFechaCreacion())
+            .build();
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void persistOpsPlans(List<PlanDeViaje> planes) {
+        List<ItinerarioEntity> itinerarios = new ArrayList<>();
+        List<EscalaEntity> escalas = new ArrayList<>();
+        for (PlanDeViaje plan : planes) {
+            String idIt = plan.getIdEnvio() + "-ops-v" + plan.getVersion();
+            itinerarios.add(ItinerarioEntity.builder()
+                .idItinerario(idIt)
+                .idPedido(plan.getIdEnvio())
+                .version(plan.getVersion())
+                .esActivo(true)
+                .fechaCreacion(LocalDateTime.now())
+                .build());
+            List<Escala> esc = plan.getEscalas();
+            for (int i = 0; i < esc.size(); i++) {
+                Escala e = esc.get(i);
+                escalas.add(EscalaEntity.builder()
+                    .idItinerario(idIt)
+                    .orden(i + 1)
+                    .codigoVuelo(e.getCodigoVuelo())
+                    .iataEscala(e.getCodigoAeropuerto())
+                    .horaSalidaEst(e.getHoraSalidaEst())
+                    .horaLlegadaEst(e.getHoraLlegadaEst())
+                    .completada(e.isCompletada())
+                    .build());
+            }
+        }
+        itinerarioRepository.saveAll(itinerarios);
+        escalaRepository.saveAll(escalas);
     }
 
     // -------------------------------------------------------------------------
