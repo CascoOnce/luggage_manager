@@ -1,12 +1,14 @@
 package com.tasf.backend.simulation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tasf.backend.domain.Aeropuerto;
 import com.tasf.backend.domain.Envio;
 import com.tasf.backend.domain.EstadoEnvio;
 import com.tasf.backend.domain.ParametrosSimulacion;
+import com.tasf.backend.dto.SimulationStateDTO;
 import com.tasf.backend.service.DataLoaderService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -118,6 +120,34 @@ class SimulationScenarioTest {
             .count();
         assertEquals(0, randomCancels,
             "No debe haber cancelaciones aleatorias cuando porcentajeCancelacionAleatoria=0");
+    }
+
+    @Test
+    void originWarehouseNeverExceedsHardCap() {
+        ParametrosSimulacion params = ParametrosSimulacion.builder()
+            .fechaInicio(LocalDate.of(2026, 1, 2))
+            .dias(3)
+            .diasSimulacion(3)
+            .esColapso(false)
+            .build();
+
+        simulationEngine.inicializar(params, sampleEnvios);
+
+        SimulationStateDTO state = null;
+        for (int day = 0; day < 3; day++) {
+            state = simulationEngine.avanzarDia();
+        }
+
+        assertNotNull(state);
+        state.getAeropuertos().forEach(ap -> {
+            if (ap.getCapacidadAlmacen() > 0) {
+                assertTrue(
+                    ap.getOcupacionMaxima() <= 100.0,
+                    () -> String.format("Airport %s exceeded 100%% hard cap (ocupacionMaxima=%.2f%%, capacidad=%d)",
+                        ap.getCodigoIATA(), ap.getOcupacionMaxima(), ap.getCapacidadAlmacen())
+                );
+            }
+        });
     }
 
     private List<Envio> createSampleEnvios(int count) {
