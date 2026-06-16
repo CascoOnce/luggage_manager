@@ -190,19 +190,13 @@ abstract class RoutePlannerSupport {
             })
             .count();
 
-        Map<String, Integer> warehouseLoads = new HashMap<>();
-        assignment.forEach((id, route) -> {
-            int quantity = envioById.get(id).getCantidadMaletas();
-            route.getIntermediateAirports().forEach(hub ->
-                warehouseLoads.merge(hub, quantity, Integer::sum)
-            );
-        });
-
+        AirportTimeline timeline = buildTimeline(assignment, envioById);
         int fallbackCapacity = airportCapacityCache.values().stream().mapToInt(v -> v).max().orElse(Integer.MAX_VALUE / 2);
-        double overload = warehouseLoads.entrySet().stream()
-            .mapToDouble(e -> {
-                double cap = airportCapacityCache.getOrDefault(e.getKey(), fallbackCapacity) * 0.9d;
-                return Math.max(0, e.getValue() - cap);
+        double overload = timeline.affectedAirports().stream()
+            .mapToDouble(airport -> {
+                int peak = timeline.globalPeak(airport);
+                double softCap = airportCapacityCache.getOrDefault(airport, fallbackCapacity) * params.getCapacidadBlandaFactor();
+                return Math.max(0, peak - softCap);
             })
             .sum();
 
@@ -215,7 +209,6 @@ abstract class RoutePlannerSupport {
         ParametrosSimulacion params
     ) {
         Map<String, Integer> flightLoads = new HashMap<>();
-        Map<String, Integer> warehouseLoads = new HashMap<>();
 
         for (Map.Entry<String, RouteCandidate> entry : assignment.entrySet()) {
             Envio envio = envioById.get(entry.getKey());
@@ -228,17 +221,33 @@ abstract class RoutePlannerSupport {
                     return false;
                 }
             }
+        }
 
-            int fallback = airportCapacityCache.values().stream().mapToInt(v -> v).max().orElse(Integer.MAX_VALUE / 2);
-            for (String hub : entry.getValue().getIntermediateAirports()) {
-                int hubCap = (int) Math.floor(airportCapacityCache.getOrDefault(hub, fallback) * 0.9d);
-                int projectedHubLoad = warehouseLoads.merge(hub, quantity, Integer::sum);
-                if (projectedHubLoad > hubCap) {
-                    return false;
-                }
+        AirportTimeline timeline = buildTimeline(assignment, envioById);
+        int fallback = airportCapacityCache.values().stream().mapToInt(v -> v).max().orElse(Integer.MAX_VALUE / 2);
+        for (String airport : timeline.affectedAirports()) {
+            int hardCap = airportCapacityCache.getOrDefault(airport, fallback);
+            if (timeline.globalPeak(airport) > hardCap) {
+                return false;
             }
         }
         return true;
+    }
+
+    private AirportTimeline buildTimeline(
+        Map<String, RouteCandidate> assignment,
+        Map<String, Envio> envioById
+    ) {
+        AirportTimeline timeline = new AirportTimeline();
+        assignment.forEach((id, route) -> {
+            Envio envio = envioById.get(id);
+            int qty = envio.getCantidadMaletas();
+            for (RouteCandidate.CapacityWindow window : route.getCapacityWindows(envio.getFechaHoraIngreso())) {
+                timeline.addEvent(window.airport(), window.from(), qty);
+                timeline.addEvent(window.airport(), window.to(), -qty);
+            }
+        });
+        return timeline;
     }
 
     protected LocalDateTime nextDateTimeForFlight(LocalDateTime earliest, LocalTime scheduleTime) {
