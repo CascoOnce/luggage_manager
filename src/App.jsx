@@ -1003,6 +1003,7 @@ export default function App() {
                 simClockMinutes={isOpsActive ? opsNowMinutes : simClockMinutes}
                 flights={isOpsActive ? opsActiveFlights : activeVuelosWithTimes}
                 opsMode={isOpsActive}
+                fetchEnvio={isOpsActive ? api.getOpsEnvioById : api.getEnvioById}
               />
             )}
             {screen === 'dashboard' && (

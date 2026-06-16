@@ -113,7 +113,7 @@ function fmtDwell(min) {
 }
 
 
-export default function DrawerEnvio({ envioId, onClose, onShowInMap }) {
+export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio = api.getEnvioById }) {
   const [envio, setEnvio]   = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]   = useState(null)
@@ -128,7 +128,7 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap }) {
     setError(null)
     setEnvio(null)
 
-    api.getEnvioById(envioId)
+    fetchEnvio(envioId)
       .then((v) => { if (active) setEnvio(v) })
       .catch((err) => { if (active) setError(err instanceof Error ? err.message : String(err)) })
       .finally(() => { if (active) setLoading(false) })

@@ -1,6 +1,7 @@
 package com.tasf.backend.controller;
 
 import com.tasf.backend.dto.AirportInventoryDTO;
+import com.tasf.backend.dto.EnvioDTO;
 import com.tasf.backend.dto.LiveStateDTO;
 import com.tasf.backend.dto.LiveStateDTO.LiveAeropuertoDTO;
 import com.tasf.backend.dto.OpsEnvioRequestDTO;
@@ -79,6 +80,13 @@ public class OpsController {
     @GetMapping("/envios")
     public ResponseEntity<List<EnvioEntity>> getEnvios() {
         return ResponseEntity.ok(opsService.getEnvios());
+    }
+
+    @GetMapping("/envios/{idPedido}")
+    public ResponseEntity<EnvioDTO> getEnvioById(@PathVariable String idPedido) {
+        return opsService.getEnvioById(idPedido)
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/reporte")

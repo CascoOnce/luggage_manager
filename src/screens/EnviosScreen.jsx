@@ -93,7 +93,7 @@ function flightStatus(flight, simMin) {
   return simMin < arrMin ? 'EN_VUELO' : 'COMPLETADO'
 }
 
-export default function EnviosScreen({ simState, onShowInMap, onCancelFlight, simClockMinutes = 0, flights = [], opsMode = false }) {
+export default function EnviosScreen({ simState, onShowInMap, onCancelFlight, simClockMinutes = 0, flights = [], opsMode = false, fetchEnvio }) {
   const [activeTab, setActiveTab] = useState('envios')
   // envíos filters
   const [query, setQuery] = useState('')
@@ -396,7 +396,7 @@ export default function EnviosScreen({ simState, onShowInMap, onCancelFlight, si
         ) : visible.map((envio) => (
           <div
             key={envio.idEnvio}
-            onClick={() => { if (!opsMode) setSelectedEnvioId(envio.idEnvio) }}
+            onClick={() => setSelectedEnvioId(envio.idEnvio)}
             style={{
               display: 'grid',
               gridTemplateColumns: '1.2fr 0.9fr 0.8fr 0.8fr 0.7fr 0.9fr 0.6fr 1.7fr',
@@ -427,6 +427,7 @@ export default function EnviosScreen({ simState, onShowInMap, onCancelFlight, si
         envioId={selectedEnvioId}
         onClose={() => setSelectedEnvioId(null)}
         onShowInMap={onShowInMap}
+        fetchEnvio={fetchEnvio}
       />
     </div>
       )}

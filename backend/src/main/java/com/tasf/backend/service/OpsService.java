@@ -9,6 +9,7 @@ import com.tasf.backend.domain.PlanDeViaje;
 import com.tasf.backend.domain.PlanningResult;
 import com.tasf.backend.domain.Vuelo;
 import com.tasf.backend.dto.AirportInventoryDTO;
+import com.tasf.backend.dto.EnvioDTO;
 import com.tasf.backend.dto.EnvioSummaryDTO;
 import com.tasf.backend.dto.LiveStateDTO;
 import com.tasf.backend.dto.LiveStateDTO.LiveAeropuertoDTO;
@@ -25,6 +26,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Optional;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -321,6 +323,23 @@ public class OpsService {
 
     public PlanDeViaje getPlan(String idPedido) {
         return planesPorEnvio.get(idPedido);
+    }
+
+    public Optional<EnvioDTO> getEnvioById(String idPedido) {
+        return opsEnvioRepository.findByIdPedido(idPedido).map(ent -> {
+            PlanDeViaje plan = planesPorEnvio.get(idPedido);
+            return EnvioDTO.builder()
+                .idEnvio(ent.getIdPedido())
+                .codigoAerolinea(ent.getCodigoAerolinea())
+                .aeropuertoOrigen(ent.getIataOrigen())
+                .aeropuertoDestino(ent.getIataDestino())
+                .cantidadMaletas(ent.getCantidadMaletas())
+                .estado(ent.getEstado())
+                .sla(ent.getSla())
+                .fechaHoraIngreso(ent.getFechaHoraIngreso() != null ? ent.getFechaHoraIngreso().toString() : null)
+                .planDetalle(plan)
+                .build();
+        });
     }
 
     // -------------------------------------------------------------------------

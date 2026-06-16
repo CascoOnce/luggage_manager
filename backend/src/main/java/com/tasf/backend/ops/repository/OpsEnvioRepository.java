@@ -7,10 +7,13 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface OpsEnvioRepository extends JpaRepository<EnvioEntity, Long> {
 
     boolean existsByIdPedido(String idPedido);
+
+    Optional<EnvioEntity> findByIdPedido(String idPedido);
 
     @Query("SELECT e.iataOrigen, SUM(e.cantidadMaletas) FROM EnvioEntity e " +
            "WHERE e.estado = 'PENDIENTE' AND e.fechaHoraIngreso <= :from " +

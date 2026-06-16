@@ -228,6 +228,10 @@ export const api = {
     return request(`/envios/${id}`)
   }),
 
+  getOpsEnvioById: async (id) => withHandling('getOpsEnvioById', async () => {
+    return request(`/ops/envios/${id}`)
+  }),
+
   cancelFlight: async (codigoVuelo) => withHandling('cancelFlight', async () => {
     return request(`/simulation/cancel-flight/${codigoVuelo}`, { method: 'POST' })
   }),
