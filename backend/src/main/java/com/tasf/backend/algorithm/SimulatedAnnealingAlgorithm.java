@@ -9,13 +9,11 @@ import com.tasf.backend.domain.PlanDeViaje;
 import com.tasf.backend.domain.Vuelo;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.Set;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -39,75 +37,129 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
 
         try {
             Map<String, List<RouteCandidate>> pool = buildCandidatePool(envios, vuelos, aeropuertos, params, routeCounter);
-            Map<String, Envio> envioById = envios.stream().collect(HashMap::new, (m, e) -> m.put(e.getIdEnvio(), e), Map::putAll);
+            Map<String, Envio> envioById = envios.stream()
+                .collect(HashMap::new, (m, e) -> m.put(e.getIdEnvio(), e), Map::putAll);
 
-            // ---- Seeding: incremental live-state feasibility (O(legs) per option) ----
             Map<String, Integer> capacityCache = getAirportCapacityCache();
             int fallback = capacityCache.values().stream().mapToInt(v -> v).max().orElse(Integer.MAX_VALUE / 2);
 
-            final Map<String, RouteCandidate> current = new HashMap<>();
+            // Sort by SLA deadline ascending — most urgent bags claim capacity first
+            List<Envio> sortedEnvios = new ArrayList<>(envios);
+            sortedEnvios.sort(Comparator.comparing(e -> e.getFechaHoraIngreso().plusDays(e.getSla())));
+
+            // assignments: envioId → list of (route, qty) partial assignments
+            final Map<String, List<PartialAssignment>> assignments = new HashMap<>();
+            AirportTimeline timeline = new AirportTimeline();
             Map<String, Integer> flightLoads = new HashMap<>();
-            Map<String, Integer> warehouseLoads = new HashMap<>();
             List<String> optimizableEnvios = new ArrayList<>();
 
-            for (Envio envio : envios) {
+            // ---- Seeding: greedy with split ----
+            for (Envio envio : sortedEnvios) {
                 List<RouteCandidate> options = pool.getOrDefault(envio.getIdEnvio(), List.of());
                 if (options.isEmpty()) {
                     envio.setEstado(EstadoEnvio.RETRASADO);
                     log.warn("Envio {} has no feasible routes; marked RETRASADO", envio.getIdEnvio());
                     continue;
                 }
-                int qty = envio.getCantidadMaletas();
 
-                RouteCandidate chosen = null;
-                for (RouteCandidate option : options) {
-                    boolean ok = true;
-                    for (RouteCandidate.Leg leg : option.getLegs()) {
-                        if (flightLoads.getOrDefault(leg.flight().getCodigoVuelo(), 0) + qty
-                                > leg.flight().getCapacidadTotal()) {
-                            ok = false; break;
-                        }
+                int totalQty = envio.getCantidadMaletas();
+                int remaining = totalQty;
+                List<PartialAssignment> parts = new ArrayList<>();
+
+                for (RouteCandidate route : options) {
+                    if (remaining == 0) break;
+
+                    // Flight capacity: how many can this route's flights still carry?
+                    int fitsByFlight = remaining;
+                    for (RouteCandidate.Leg leg : route.getLegs()) {
+                        int legAvail = leg.flight().getCapacidadTotal()
+                            - flightLoads.getOrDefault(leg.flight().getCodigoVuelo(), 0);
+                        fitsByFlight = Math.min(fitsByFlight, legAvail);
                     }
-                    if (!ok) continue;
-                    for (String hub : option.getIntermediateAirports()) {
-                        int hubCap = (int) Math.floor(capacityCache.getOrDefault(hub, fallback) * 0.9d);
-                        if (warehouseLoads.getOrDefault(hub, 0) + qty > hubCap) {
-                            ok = false; break;
-                        }
+                    if (fitsByFlight <= 0) continue;
+
+                    // Warehouse capacity: how many fit across all time windows?
+                    int fitsByWarehouse = fitsByFlight;
+                    for (RouteCandidate.CapacityWindow w : route.getCapacityWindows(envio.getFechaHoraIngreso())) {
+                        int hardCap = capacityCache.getOrDefault(w.airport(), fallback);
+                        int fits = timeline.howManyFit(w.airport(), w.from(), w.to(), fitsByWarehouse, hardCap);
+                        fitsByWarehouse = Math.min(fitsByWarehouse, fits);
                     }
-                    if (ok) { chosen = option; break; }
+                    if (fitsByWarehouse <= 0) continue;
+
+                    int assign = Math.min(fitsByWarehouse, remaining);
+
+                    // Register in timeline and flight loads
+                    for (RouteCandidate.CapacityWindow w : route.getCapacityWindows(envio.getFechaHoraIngreso())) {
+                        timeline.addEvent(w.airport(), w.from(), assign);
+                        timeline.addEvent(w.airport(), w.to(), -assign);
+                    }
+                    for (RouteCandidate.Leg leg : route.getLegs()) {
+                        flightLoads.merge(leg.flight().getCodigoVuelo(), assign, Integer::sum);
+                    }
+
+                    parts.add(new PartialAssignment(route, assign));
+                    remaining -= assign;
                 }
 
-                if (chosen != null) {
-                    current.put(envio.getIdEnvio(), chosen);
-                    envio.setEstado(EstadoEnvio.PLANIFICADO);
-                    optimizableEnvios.add(envio.getIdEnvio());
-                    for (RouteCandidate.Leg leg : chosen.getLegs()) {
-                        flightLoads.merge(leg.flight().getCodigoVuelo(), qty, Integer::sum);
+                if (remaining > 0) {
+                    // Some bags could not be assigned without violating hard cap
+                    // Accept soft-cap violations for these to avoid full RETRASADO
+                    // Try remaining options ignoring warehouse (but respecting flight cap)
+                    for (RouteCandidate route : options) {
+                        if (remaining == 0) break;
+                        boolean alreadyUsed = parts.stream().anyMatch(p -> p.route().getSignature().equals(route.getSignature()));
+                        if (alreadyUsed) continue;
+
+                        int fitsByFlight = remaining;
+                        for (RouteCandidate.Leg leg : route.getLegs()) {
+                            int legAvail = leg.flight().getCapacidadTotal()
+                                - flightLoads.getOrDefault(leg.flight().getCodigoVuelo(), 0);
+                            fitsByFlight = Math.min(fitsByFlight, legAvail);
+                        }
+                        if (fitsByFlight <= 0) continue;
+
+                        int assign = Math.min(fitsByFlight, remaining);
+                        // Register soft-cap violation (overload penalized in objective)
+                        for (RouteCandidate.CapacityWindow w : route.getCapacityWindows(envio.getFechaHoraIngreso())) {
+                            timeline.addEvent(w.airport(), w.from(), assign);
+                            timeline.addEvent(w.airport(), w.to(), -assign);
+                        }
+                        for (RouteCandidate.Leg leg : route.getLegs()) {
+                            flightLoads.merge(leg.flight().getCodigoVuelo(), assign, Integer::sum);
+                        }
+                        parts.add(new PartialAssignment(route, assign));
+                        remaining -= assign;
                     }
-                    for (String hub : chosen.getIntermediateAirports()) {
-                        warehouseLoads.merge(hub, qty, Integer::sum);
-                    }
-                } else {
+                }
+
+                if (parts.isEmpty()) {
                     envio.setEstado(EstadoEnvio.RETRASADO);
                     log.warn("No feasible initial route for envio {}", envio.getIdEnvio());
+                } else {
+                    assignments.put(envio.getIdEnvio(), parts);
+                    envio.setEstado(remaining > 0 ? EstadoEnvio.RETRASADO : EstadoEnvio.PLANIFICADO);
+                    optimizableEnvios.add(envio.getIdEnvio());
                 }
             }
 
-            if (current.isEmpty()) {
+            if (assignments.isEmpty()) {
                 saveMetric(start, routeCounter.get());
                 return List.of();
             }
 
-            double currentCost = objective(current, envioById, params);
+            // ---- SA loop: operates on primary route per envío (whole-envío swaps) ----
+            // Build a parallel Map<envioId, RouteCandidate> for the loop (primary route = first part)
+            Map<String, RouteCandidate> current = new HashMap<>();
+            assignments.forEach((id, parts) -> current.put(id, parts.get(0).route()));
 
-            // ---- SA loop with O(legs) delta evaluation ----
+            double currentCost = objectiveFromTimeline(timeline, assignments, envioById, params, capacityCache, fallback);
             double temperature = 1000.0d;
             final double coolingRate = 0.995d;
             final double minTemperature = 0.1d;
             final int maxIterations = Math.min(50000, 500 * Math.max(1, envios.size()));
 
-            Map<String, RouteCandidate> best = new HashMap<>(current);
+            Map<String, List<PartialAssignment>> best = deepCopyAssignments(assignments);
             double bestCost = currentCost;
 
             for (int i = 0; i < maxIterations && temperature >= minTemperature; i++) {
@@ -117,111 +169,139 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                 List<RouteCandidate> options = pool.getOrDefault(envioId, List.of());
                 if (options.isEmpty()) { temperature *= coolingRate; continue; }
 
-                RouteCandidate oldRoute = current.get(envioId);
+                List<PartialAssignment> oldParts = assignments.get(envioId);
                 RouteCandidate newRoute = options.get(random.nextInt(options.size()));
                 routeCounter.increment(1);
 
-                if (oldRoute != null && oldRoute.getSignature().equals(newRoute.getSignature())) {
+                // Skip if same primary route
+                if (!oldParts.isEmpty() && oldParts.get(0).route().getSignature().equals(newRoute.getSignature())) {
                     temperature *= coolingRate;
                     continue;
                 }
 
-                int qty = envioById.get(envioId).getCantidadMaletas();
-
-                // --- Feasibility check: O(legs) instead of O(n) ---
-                Set<String> oldFlightCodes = oldRoute == null ? Set.of()
-                    : oldRoute.getLegs().stream()
-                        .map(l -> l.flight().getCodigoVuelo())
-                        .collect(Collectors.toSet());
-                Set<String> oldHubs = oldRoute == null ? Set.of()
-                    : new HashSet<>(oldRoute.getIntermediateAirports());
-
-                boolean feasible = true;
-                for (RouteCandidate.Leg leg : newRoute.getLegs()) {
-                    // Flights shared with old route have no net load change
-                    if (oldFlightCodes.contains(leg.flight().getCodigoVuelo())) continue;
-                    if (flightLoads.getOrDefault(leg.flight().getCodigoVuelo(), 0) + qty
-                            > leg.flight().getCapacidadTotal()) {
-                        feasible = false;
-                        break;
-                    }
-                }
-                if (!feasible) { temperature *= coolingRate; continue; }
-
-                for (String hub : newRoute.getIntermediateAirports()) {
-                    if (oldHubs.contains(hub)) continue;
-                    int hubCap = (int) Math.floor(capacityCache.getOrDefault(hub, fallback) * 0.9d);
-                    if (warehouseLoads.getOrDefault(hub, 0) + qty > hubCap) {
-                        feasible = false;
-                        break;
-                    }
-                }
-                if (!feasible) { temperature *= coolingRate; continue; }
-
-                // --- Cost delta: O(hubs) instead of O(n) ---
                 Envio envio = envioById.get(envioId);
-                LocalDateTime deadline = envio.getFechaHoraIngreso().plusDays(envio.getSla());
-                boolean oldViolates = oldRoute != null
-                    && oldRoute.getFinalArrival().plusMinutes(params.getMinutosRecogidaDestino()).isAfter(deadline);
-                boolean newViolates = newRoute.getFinalArrival().plusMinutes(params.getMinutosRecogidaDestino()).isAfter(deadline);
+                int totalQty = envio.getCantidadMaletas();
+
+                // Remove old contributions from timeline
+                for (PartialAssignment pa : oldParts) {
+                    for (RouteCandidate.CapacityWindow w : pa.route().getCapacityWindows(envio.getFechaHoraIngreso())) {
+                        timeline.removeEvent(w.airport(), w.from(), pa.qty());
+                        timeline.removeEvent(w.airport(), w.to(), -pa.qty());
+                    }
+                    for (RouteCandidate.Leg leg : pa.route().getLegs()) {
+                        flightLoads.merge(leg.flight().getCodigoVuelo(), -pa.qty(), Integer::sum);
+                    }
+                }
+
+                // Check if new single route can fit all bags
+                int fitsFlight = totalQty;
+                for (RouteCandidate.Leg leg : newRoute.getLegs()) {
+                    int legAvail = leg.flight().getCapacidadTotal()
+                        - flightLoads.getOrDefault(leg.flight().getCodigoVuelo(), 0);
+                    fitsFlight = Math.min(fitsFlight, legAvail);
+                }
+
+                int fitsWarehouse = fitsFlight;
+                for (RouteCandidate.CapacityWindow w : newRoute.getCapacityWindows(envio.getFechaHoraIngreso())) {
+                    int hardCap = capacityCache.getOrDefault(w.airport(), fallback);
+                    fitsWarehouse = Math.min(fitsWarehouse, timeline.howManyFit(w.airport(), w.from(), w.to(), fitsWarehouse, hardCap));
+                }
+
+                // If new route can't fit all bags, restore old and skip
+                if (fitsWarehouse < totalQty) {
+                    for (PartialAssignment pa : oldParts) {
+                        for (RouteCandidate.CapacityWindow w : pa.route().getCapacityWindows(envio.getFechaHoraIngreso())) {
+                            timeline.addEvent(w.airport(), w.from(), pa.qty());
+                            timeline.addEvent(w.airport(), w.to(), -pa.qty());
+                        }
+                        for (RouteCandidate.Leg leg : pa.route().getLegs()) {
+                            flightLoads.merge(leg.flight().getCodigoVuelo(), pa.qty(), Integer::sum);
+                        }
+                    }
+                    temperature *= coolingRate;
+                    continue;
+                }
+
+                // Evaluate cost delta
+                Envio e = envioById.get(envioId);
+                LocalDateTime deadline = e.getFechaHoraIngreso().plusDays(e.getSla());
+                boolean oldViolates = oldParts.stream().anyMatch(pa ->
+                    pa.route().getFinalArrival().plusMinutes(params.getMinutosRecogidaDestino()).isAfter(deadline));
+                boolean newViolates = newRoute.getFinalArrival()
+                    .plusMinutes(params.getMinutosRecogidaDestino()).isAfter(deadline);
                 double slaDelta = (newViolates ? 1.0 : 0.0) - (oldViolates ? 1.0 : 0.0);
 
-                // Net load change per hub (handles hubs shared between old and new)
-                Map<String, Integer> hubChanges = new HashMap<>();
-                if (oldRoute != null) {
-                    for (String hub : oldRoute.getIntermediateAirports()) {
-                        hubChanges.merge(hub, -qty, Integer::sum);
-                    }
+                // Apply new route tentatively to compute overload delta
+                for (RouteCandidate.CapacityWindow w : newRoute.getCapacityWindows(e.getFechaHoraIngreso())) {
+                    timeline.addEvent(w.airport(), w.from(), totalQty);
+                    timeline.addEvent(w.airport(), w.to(), -totalQty);
                 }
-                for (String hub : newRoute.getIntermediateAirports()) {
-                    hubChanges.merge(hub, qty, Integer::sum);
+                for (RouteCandidate.Leg leg : newRoute.getLegs()) {
+                    flightLoads.merge(leg.flight().getCodigoVuelo(), totalQty, Integer::sum);
                 }
 
-                double overloadDelta = 0.0;
-                for (Map.Entry<String, Integer> change : hubChanges.entrySet()) {
-                    if (change.getValue() == 0) continue;
-                    String hub = change.getKey();
-                    double cap = capacityCache.getOrDefault(hub, fallback) * 0.9d;
-                    int currentLoad = warehouseLoads.getOrDefault(hub, 0);
-                    overloadDelta += Math.max(0, currentLoad + change.getValue() - cap)
-                                   - Math.max(0, currentLoad - cap);
+                double softFactor = params.getCapacidadBlandaFactor();
+                double overloadAfter = timeline.affectedAirports().stream()
+                    .mapToDouble(ap -> {
+                        double softCap = capacityCache.getOrDefault(ap, fallback) * softFactor;
+                        return Math.max(0.0, timeline.globalPeak(ap) - softCap);
+                    }).sum();
+
+                // Temporarily remove new to compute overload without it
+                for (RouteCandidate.CapacityWindow w : newRoute.getCapacityWindows(e.getFechaHoraIngreso())) {
+                    timeline.removeEvent(w.airport(), w.from(), totalQty);
+                    timeline.removeEvent(w.airport(), w.to(), -totalQty);
+                }
+                for (RouteCandidate.Leg leg : newRoute.getLegs()) {
+                    flightLoads.merge(leg.flight().getCodigoVuelo(), -totalQty, Integer::sum);
                 }
 
-                double neighborCost = currentCost + slaDelta + overloadDelta * 10.0d;
+                double overloadBefore = timeline.affectedAirports().stream()
+                    .mapToDouble(ap -> {
+                        double softCap = capacityCache.getOrDefault(ap, fallback) * softFactor;
+                        return Math.max(0.0, timeline.globalPeak(ap) - softCap);
+                    }).sum();
+
+                double neighborCost = currentCost + slaDelta + (overloadAfter - overloadBefore) * 10.0d;
                 double delta = neighborCost - currentCost;
-
                 boolean accept = delta < 0 || Math.exp(-delta / temperature) > random.nextDouble();
-                if (accept) {
-                    current.put(envioId, newRoute);
 
-                    // Update live flight loads
-                    if (oldRoute != null) {
-                        for (RouteCandidate.Leg leg : oldRoute.getLegs()) {
-                            flightLoads.merge(leg.flight().getCodigoVuelo(), -qty, Integer::sum);
-                        }
+                if (accept) {
+                    // Apply new route permanently
+                    for (RouteCandidate.CapacityWindow w : newRoute.getCapacityWindows(e.getFechaHoraIngreso())) {
+                        timeline.addEvent(w.airport(), w.from(), totalQty);
+                        timeline.addEvent(w.airport(), w.to(), -totalQty);
                     }
                     for (RouteCandidate.Leg leg : newRoute.getLegs()) {
-                        flightLoads.merge(leg.flight().getCodigoVuelo(), qty, Integer::sum);
+                        flightLoads.merge(leg.flight().getCodigoVuelo(), totalQty, Integer::sum);
                     }
-
-                    // Update live warehouse loads
-                    for (Map.Entry<String, Integer> change : hubChanges.entrySet()) {
-                        if (change.getValue() != 0) {
-                            warehouseLoads.merge(change.getKey(), change.getValue(), Integer::sum);
-                        }
-                    }
-
+                    assignments.put(envioId, List.of(new PartialAssignment(newRoute, totalQty)));
+                    current.put(envioId, newRoute);
                     currentCost = neighborCost;
                     if (neighborCost < bestCost) {
-                        best = new HashMap<>(current);
+                        best = deepCopyAssignments(assignments);
                         bestCost = neighborCost;
                     }
+                } else {
+                    // Restore old
+                    for (PartialAssignment pa : oldParts) {
+                        for (RouteCandidate.CapacityWindow w : pa.route().getCapacityWindows(e.getFechaHoraIngreso())) {
+                            timeline.addEvent(w.airport(), w.from(), pa.qty());
+                            timeline.addEvent(w.airport(), w.to(), -pa.qty());
+                        }
+                        for (RouteCandidate.Leg leg : pa.route().getLegs()) {
+                            flightLoads.merge(leg.flight().getCodigoVuelo(), pa.qty(), Integer::sum);
+                        }
+                    }
+                    assignments.put(envioId, oldParts);
                 }
+
                 temperature *= coolingRate;
             }
 
             saveMetric(start, routeCounter.get());
             return toPlans(best, envioById, params, getNombre());
+
         } catch (RuntimeException ex) {
             log.error("Simulated annealing failed; returning best known partial solution", ex);
             envios.stream()
@@ -242,16 +322,62 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
         return ultimaMetrica;
     }
 
+    private Map<String, List<PartialAssignment>> deepCopyAssignments(Map<String, List<PartialAssignment>> src) {
+        Map<String, List<PartialAssignment>> copy = new HashMap<>();
+        src.forEach((k, v) -> copy.put(k, new ArrayList<>(v)));
+        return copy;
+    }
+
+    private double objectiveFromTimeline(
+        AirportTimeline timeline,
+        Map<String, List<PartialAssignment>> assignments,
+        Map<String, Envio> envioById,
+        ParametrosSimulacion params,
+        Map<String, Integer> capacityCache,
+        int fallback
+    ) {
+        long slaViolations = assignments.entrySet().stream()
+            .mapToLong(entry -> {
+                Envio envio = envioById.get(entry.getKey());
+                LocalDateTime deadline = envio.getFechaHoraIngreso().plusDays(envio.getSla());
+                return entry.getValue().stream()
+                    .filter(pa -> pa.route().getFinalArrival()
+                        .plusMinutes(params.getMinutosRecogidaDestino()).isAfter(deadline))
+                    .count();
+            })
+            .sum();
+
+        double softFactor = params.getCapacidadBlandaFactor();
+        double overload = timeline.affectedAirports().stream()
+            .mapToDouble(ap -> {
+                double softCap = capacityCache.getOrDefault(ap, fallback) * softFactor;
+                return Math.max(0.0, timeline.globalPeak(ap) - softCap);
+            })
+            .sum();
+
+        return slaViolations + (overload * 10.0d);
+    }
+
     private List<PlanDeViaje> toPlans(
-        Map<String, RouteCandidate> selectedRoutes,
+        Map<String, List<PartialAssignment>> assignments,
         Map<String, Envio> envioById,
         ParametrosSimulacion params,
         String algorithm
     ) {
-        return selectedRoutes.entrySet().stream()
+        List<PlanDeViaje> plans = new ArrayList<>();
+        assignments.entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
-            .map(entry -> entry.getValue().toPlan(envioById.get(entry.getKey()), algorithm, 1, params))
-            .toList();
+            .forEach(entry -> {
+                Envio envio = envioById.get(entry.getKey());
+                List<PartialAssignment> parts = entry.getValue();
+                for (int i = 0; i < parts.size(); i++) {
+                    PartialAssignment pa = parts.get(i);
+                    PlanDeViaje plan = pa.route().toPlan(envio, algorithm, i + 1, params);
+                    plan.setCantidadMaletas(pa.qty());
+                    plans.add(plan);
+                }
+            });
+        return plans;
     }
 
     private void saveMetric(long start, int routesEvaluated) {
