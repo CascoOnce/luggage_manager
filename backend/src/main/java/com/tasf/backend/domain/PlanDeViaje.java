@@ -18,4 +18,7 @@ public class PlanDeViaje {
     private boolean esActivo;
     private List<Escala> escalas;
     private LocalDateTime fechaCreacion;
+    /** Cantidad de maletas cubiertas por este plan (0 = todas las del envío, sin dividir). */
+    @Builder.Default
+    private int cantidadMaletas = 0;
 }

@@ -18,4 +18,7 @@ public class Maleta {
     /** Fecha en que el envío ingresa al sistema; usada para no contar la maleta
      *  en el almacén antes de que su envío haya llegado físicamente. */
     private LocalDate fechaIngreso;
+    /** Versión del PlanDeViaje que rige la ruta de esta maleta (soporta envíos divididos en varias rutas). */
+    @Builder.Default
+    private int planVersion = 1;
 }
