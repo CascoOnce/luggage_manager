@@ -943,6 +943,7 @@ export default function App() {
                 airport={mapSelectedAirport}
                 vuelos={backendState?.vuelos || []}
                 onClose={handleCloseAirport}
+                fetchInventory={isOpsActive ? api.getOpsAirportInventory : api.getAirportInventory}
               />
               <DrawerVuelo
                 vuelo={mapSelectedVuelo}
