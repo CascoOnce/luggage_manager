@@ -30,4 +30,7 @@ public class ParametrosSimulacion {
     private double umbralColapsoPorcentajeSlaVencido = 50.0;
     @Builder.Default
     private double porcentajeCancelacionAleatoria = 0.0;
+    /** Fracción de capacidad de almacén usada como tope blando (preferido, puede excederse si es necesario). El tope duro real (100%) se aplica por separado. */
+    @Builder.Default
+    private double capacidadBlandaFactor = 0.9;
 }
