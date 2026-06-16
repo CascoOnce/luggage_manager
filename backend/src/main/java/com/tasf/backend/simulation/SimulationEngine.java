@@ -198,7 +198,7 @@ public class SimulationEngine {
             processArrivals(vueloByCode, airportByCode, maletasByEnvio);
         }
         DeliveryStats deliveryStats = processDeliveries(envioById, airportByCode, maletasByEnvio);
-        checkSlaViolations();
+        checkSlaViolations(maletasByEnvio);
 
         if (Boolean.TRUE.equals(params.getEsColapso()) && colapsoPunto == null) {
             long retrasados = envios.stream()
@@ -921,10 +921,11 @@ public class SimulationEngine {
             .anyMatch(e -> e.getHoraLlegadaEst().toLocalDate().isAfter(simEnd));
     }
 
-    private void checkSlaViolations() {
+    private void checkSlaViolations(Map<String, List<Maleta>> maletasByEnvio) {
         LocalDate simEnd = params == null ? null
             : params.getFechaInicio().plusDays(params.getDiasSimulacion() - 1);
         Map<String, PlanDeViaje> latestPlans = buildLatestPlanByEnvio();
+        int newViolations = 0;
 
         for (Envio envio : envios) {
             if (envio.getEstado() == EstadoEnvio.ENTREGADO) {
@@ -934,16 +935,17 @@ public class SimulationEngine {
                 continue;
             }
             LocalDateTime deadline = envio.getFechaHoraIngreso().plusDays(envio.getSla());
-            if (fechaSimulada.isAfter(deadline)) {
+            if (fechaSimulada.isAfter(deadline) && envio.getEstado() != EstadoEnvio.RETRASADO) {
                 envio.setEstado(EstadoEnvio.RETRASADO);
-                maletas.stream()
-                    .filter(m -> m.getIdEnvio().equals(envio.getIdEnvio()))
+                maletasByEnvio.getOrDefault(envio.getIdEnvio(), List.of()).stream()
                     .filter(m -> m.getEstado() != EstadoMaleta.ENTREGADA)
                     .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
-                long exceeded = Duration.between(deadline, fechaSimulada).toHours();
-                addOperationLog("WARNING SLA exceeded for envio " + envio.getIdEnvio()
-                    + " by " + exceeded + " sim-hours");
+                newViolations++;
             }
+        }
+
+        if (newViolations > 0) {
+            addOperationLog("WARNING " + newViolations + " new SLA violations on day " + diaActual);
         }
     }
 

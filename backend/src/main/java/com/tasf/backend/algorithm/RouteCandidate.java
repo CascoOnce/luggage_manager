@@ -60,9 +60,12 @@ class RouteCandidate {
             legs.get(0).departure().toLocalDate().plusDays(1).atStartOfDay()
         ));
         for (int i = 0; i < legs.size() - 1; i++) {
+            // Hub: bag arrives during day-N passes (AFTER the start-of-day snapshot), so
+            // the first snapshot that counts it is day N+1. Departure is also post-snapshot,
+            // so the last snapshot counting it is the departure day (to = departure+1 start).
             windows.add(new CapacityWindow(
                 legs.get(i).flight().getDestino(),
-                legs.get(i).arrival().toLocalDate().atStartOfDay(),
+                legs.get(i).arrival().toLocalDate().plusDays(1).atStartOfDay(),
                 legs.get(i + 1).departure().toLocalDate().plusDays(1).atStartOfDay()
             ));
         }
