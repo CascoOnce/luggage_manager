@@ -47,6 +47,22 @@ class RouteCandidate {
         return hubs;
     }
 
+    List<CapacityWindow> getCapacityWindows(LocalDateTime fechaIngreso) {
+        if (legs.isEmpty()) return List.of();
+        List<CapacityWindow> windows = new ArrayList<>();
+        windows.add(new CapacityWindow(
+            legs.get(0).flight().getOrigen(), fechaIngreso, legs.get(0).departure()
+        ));
+        for (int i = 0; i < legs.size() - 1; i++) {
+            windows.add(new CapacityWindow(
+                legs.get(i).flight().getDestino(),
+                legs.get(i).arrival(),
+                legs.get(i + 1).departure()
+            ));
+        }
+        return windows;
+    }
+
     PlanDeViaje toPlan(Envio envio, String algorithmName, int version, ParametrosSimulacion params) {
         List<Escala> escalas = new ArrayList<>();
         for (int i = 0; i < legs.size(); i++) {
@@ -72,5 +88,8 @@ class RouteCandidate {
     }
 
     record Leg(Vuelo flight, LocalDateTime departure, LocalDateTime arrival) {
+    }
+
+    record CapacityWindow(String airport, LocalDateTime from, LocalDateTime to) {
     }
 }
