@@ -770,9 +770,11 @@ public class SimulationEngine {
                 }
 
                 String legOrigin = vuelo.getOrigen();
+                final int planVersion = plan.getVersion();
                 List<Maleta> maletasEnvio = maletasByEnvio.getOrDefault(envio.getIdEnvio(), List.of()).stream()
                     .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN || m.getEstado() == EstadoMaleta.RETRASADA)
                     .filter(m -> legOrigin.equals(m.getUbicacionActual()))
+                    .filter(m -> m.getPlanVersion() == planVersion)
                     .toList();
                 
                 for (Maleta maleta : maletasEnvio) {
@@ -1479,16 +1481,47 @@ public class SimulationEngine {
     }
 
     private List<Maleta> generarMaletas(List<Envio> enviosInput) {
+        // Group plans by envioId, sorted by version — needed to assign planVersion to bags
+        Map<String, List<PlanDeViaje>> plansByEnvio = planes.stream()
+            .collect(Collectors.groupingBy(PlanDeViaje::getIdEnvio));
+
         List<Maleta> generated = new ArrayList<>();
         for (Envio envio : enviosInput) {
-            for (int i = 1; i <= envio.getCantidadMaletas(); i++) {
-                generated.add(Maleta.builder()
-                    .idMaleta(envio.getIdEnvio() + "-" + i)
-                    .idEnvio(envio.getIdEnvio())
-                    .ubicacionActual(envio.getAeropuertoOrigen())
-                    .estado(EstadoMaleta.EN_ALMACEN)
-                    .fechaIngreso(envio.getFechaHoraIngreso().toLocalDate())
-                    .build());
+            List<PlanDeViaje> envioPlans = plansByEnvio
+                .getOrDefault(envio.getIdEnvio(), List.of())
+                .stream()
+                .sorted(Comparator.comparingInt(PlanDeViaje::getVersion))
+                .collect(Collectors.toList());
+
+            int maletaIdx = 1;
+
+            if (envioPlans.isEmpty() || envioPlans.stream().allMatch(p -> p.getCantidadMaletas() == 0)) {
+                // Non-split plan: all bags go to version 1
+                for (int i = 1; i <= envio.getCantidadMaletas(); i++) {
+                    generated.add(Maleta.builder()
+                        .idMaleta(envio.getIdEnvio() + "-" + i)
+                        .idEnvio(envio.getIdEnvio())
+                        .ubicacionActual(envio.getAeropuertoOrigen())
+                        .estado(EstadoMaleta.EN_ALMACEN)
+                        .fechaIngreso(envio.getFechaHoraIngreso().toLocalDate())
+                        .planVersion(1)
+                        .build());
+                }
+            } else {
+                // Split plan: distribute bags according to cantidadMaletas per version
+                for (PlanDeViaje plan : envioPlans) {
+                    int count = plan.getCantidadMaletas();
+                    for (int i = 0; i < count; i++) {
+                        generated.add(Maleta.builder()
+                            .idMaleta(envio.getIdEnvio() + "-" + maletaIdx++)
+                            .idEnvio(envio.getIdEnvio())
+                            .ubicacionActual(envio.getAeropuertoOrigen())
+                            .estado(EstadoMaleta.EN_ALMACEN)
+                            .fechaIngreso(envio.getFechaHoraIngreso().toLocalDate())
+                            .planVersion(plan.getVersion())
+                            .build());
+                    }
+                }
             }
         }
         return generated;
