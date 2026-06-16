@@ -523,10 +523,14 @@ export default function App() {
 
   const isOpsActive = Boolean(opsState)
 
+  const opsNowMinutes = useMemo(() => {
+    const now = new Date()
+    return now.getHours() * 60 + now.getMinutes()
+  }, [opsState?.vuelos])
+
   const opsActiveFlights = useMemo(() => {
     if (!opsState?.vuelos) return []
     return opsState.vuelos
-      .filter((v) => v.enUso)
       .map((v) => ({
         id: v.codigoVuelo,
         origin: v.origen,
@@ -534,7 +538,7 @@ export default function App() {
         currentLoad: v.cargaActual,
         capacity: v.capacidadTotal,
         type: v.tipo === 'continental' ? 'continental' : 'intercontinental',
-        status: 'active',
+        status: v.enUso ? 'active' : 'inactive',
         horaSalida: v.horaSalida,
         horaLlegada: v.horaLlegada,
         depMin: parseTimeToMinutes(v.horaSalida),
@@ -995,7 +999,7 @@ export default function App() {
                 onBack={handleBackToMain}
                 onShowInMap={isOpsActive ? null : handleShowEnvioRoute}
                 onCancelFlight={isOpsActive ? null : handleCancelFlight}
-                simClockMinutes={isOpsActive ? 0 : simClockMinutes}
+                simClockMinutes={isOpsActive ? opsNowMinutes : simClockMinutes}
                 flights={isOpsActive ? opsActiveFlights : activeVuelosWithTimes}
                 opsMode={isOpsActive}
               />
