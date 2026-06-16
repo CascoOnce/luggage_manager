@@ -63,8 +63,9 @@ jobs:
     name: Deploy to PUCP VM
     needs: build
     runs-on: [self-hosted, pucp]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
+    #if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
+    
     steps:
       - name: Download frontend dist
         uses: actions/download-artifact@v4
