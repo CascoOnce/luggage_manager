@@ -60,4 +60,4 @@ docs/superpowers/
 # ─── Scripts de infraestructura (no van al repo público) ────────────
 scripts/*.pem
 scripts/*.key
-*.py
+*.py.worktrees/
