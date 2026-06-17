@@ -6,24 +6,24 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
-class AirportTimeline {
+public class AirportTimeline {
 
     // airport → (time → cumulative delta at that moment)
     private final Map<String, TreeMap<LocalDateTime, Integer>> events = new HashMap<>();
 
     /** Add delta bags at airport starting at time (positive = arrive, negative = depart). */
-    void addEvent(String airport, LocalDateTime time, int delta) {
+    public void addEvent(String airport, LocalDateTime time, int delta) {
         events.computeIfAbsent(airport, k -> new TreeMap<>())
               .merge(time, delta, Integer::sum);
     }
 
     /** Undo a previously added event. */
-    void removeEvent(String airport, LocalDateTime time, int delta) {
+    public void removeEvent(String airport, LocalDateTime time, int delta) {
         addEvent(airport, time, -delta);
     }
 
     /** Maximum simultaneous bags at airport across all recorded events. */
-    int globalPeak(String airport) {
+    public int globalPeak(String airport) {
         TreeMap<LocalDateTime, Integer> map = events.get(airport);
         if (map == null) return 0;
         int running = 0;
@@ -40,14 +40,14 @@ class AirportTimeline {
      * without the peak load exceeding hardCap.
      * Returns a value in [0, qty].
      */
-    int howManyFit(String airport, LocalDateTime from, LocalDateTime to, int qty, int hardCap) {
+    public int howManyFit(String airport, LocalDateTime from, LocalDateTime to, int qty, int hardCap) {
         int peakExisting = peakBetween(airport, from, to);
         int available = Math.max(0, hardCap - peakExisting);
         return Math.min(qty, available);
     }
 
     /** Peak load at airport strictly within [from, to] inclusive. */
-    int peakBetween(String airport, LocalDateTime from, LocalDateTime to) {
+    public int peakBetween(String airport, LocalDateTime from, LocalDateTime to) {
         TreeMap<LocalDateTime, Integer> map = events.get(airport);
         if (map == null) return 0;
         int running = 0;
@@ -64,7 +64,7 @@ class AirportTimeline {
     }
 
     /** All airports that have at least one registered event. */
-    Set<String> affectedAirports() {
+    public Set<String> affectedAirports() {
         return events.keySet();
     }
 }

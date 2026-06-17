@@ -33,4 +33,14 @@ public class ParametrosSimulacion {
     /** Fracción de capacidad de almacén usada como tope blando (preferido, puede excederse si es necesario). El tope duro real (100%) se aplica por separado. */
     @Builder.Default
     private double capacidadBlandaFactor = 0.9;
+    /** Duración en minutos de cada ventana de planificación del SA (rolling-planning). */
+    @Builder.Default
+    private int saMinutos = 5;
+    /** Número de ventanas SA que componen un ciclo completo (SC = k × saMinutos). */
+    @Builder.Default
+    private int k = 14;
+    /** Duración total en minutos de un ciclo de planificación (SC). */
+    public int getScMinutos() {
+        return k * saMinutos;
+    }
 }
