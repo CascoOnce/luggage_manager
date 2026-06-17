@@ -277,6 +277,33 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                 temperature *= coolingRate;
             }
 
+            // Sync shared timeline and flightLoads to match `best` (not the final
+            // `assignments` state, which may have drifted after post-best accepted swaps).
+            assignments.forEach((id, parts) -> {
+                Envio envio = envioById.get(id);
+                for (PartialAssignment pa : parts) {
+                    for (RouteCandidate.CapacityWindow w : pa.route().getCapacityWindows(envio.getFechaHoraIngreso())) {
+                        timeline.removeEvent(w.airport(), w.from(), pa.qty());
+                        timeline.removeEvent(w.airport(), w.to(), -pa.qty());
+                    }
+                    for (RouteCandidate.Leg leg : pa.route().getLegs()) {
+                        flightLoads.merge(leg.flight().getCodigoVuelo(), -pa.qty(), Integer::sum);
+                    }
+                }
+            });
+            best.forEach((id, parts) -> {
+                Envio envio = envioById.get(id);
+                for (PartialAssignment pa : parts) {
+                    for (RouteCandidate.CapacityWindow w : pa.route().getCapacityWindows(envio.getFechaHoraIngreso())) {
+                        timeline.addEvent(w.airport(), w.from(), pa.qty());
+                        timeline.addEvent(w.airport(), w.to(), -pa.qty());
+                    }
+                    for (RouteCandidate.Leg leg : pa.route().getLegs()) {
+                        flightLoads.merge(leg.flight().getCodigoVuelo(), pa.qty(), Integer::sum);
+                    }
+                }
+            });
+
             saveMetric(start, routeCounter.get());
             return toPlans(best, envioById, params, getNombre());
 
