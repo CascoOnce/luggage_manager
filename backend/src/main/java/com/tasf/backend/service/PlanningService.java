@@ -1,5 +1,6 @@
 package com.tasf.backend.service;
 
+import com.tasf.backend.algorithm.AirportTimeline;
 import com.tasf.backend.algorithm.MetaheuristicAlgorithm;
 import com.tasf.backend.domain.Aeropuerto;
 import com.tasf.backend.domain.Envio;
@@ -45,6 +46,33 @@ public class PlanningService {
         ParametrosSimulacion params
     ) {
         return planificarInterno(envios, vuelos, aeropuertos, params, true);
+    }
+
+    /**
+     * Planifica un lote de envíos usando estado de capacidad compartido entre ciclos.
+     * timeline y flightLoads son mutados in-place por el algoritmo.
+     */
+    public PlanningResult planificarLote(
+        List<Envio> envios,
+        List<Vuelo> vuelos,
+        List<Aeropuerto> aeropuertos,
+        ParametrosSimulacion params,
+        AirportTimeline timeline,
+        Map<String, Integer> flightLoads
+    ) {
+        MetaheuristicAlgorithm selected = selectAlgorithm(params, false);
+        log.info("Planning batch of {} envios with {} (rolling)", envios.size(), selected.getNombre());
+        List<PlanDeViaje> planes = selected.planificarConEstado(envios, vuelos, aeropuertos, params, timeline, flightLoads);
+        Set<String> enviosConPlan = planes.stream().map(PlanDeViaje::getIdEnvio).collect(Collectors.toSet());
+        List<String> enviosSinRuta = envios.stream()
+            .map(Envio::getIdEnvio)
+            .filter(id -> !enviosConPlan.contains(id))
+            .toList();
+        return PlanningResult.builder()
+            .planes(planes)
+            .metrica(selected.getUltimaMetrica())
+            .enviosSinRuta(enviosSinRuta)
+            .build();
     }
 
     private PlanningResult planificarInterno(
