@@ -38,7 +38,7 @@ public class ParametrosSimulacion {
     private int saMinutos = 5;
     /** Número de ventanas SA que componen un ciclo completo (SC = k × saMinutos). */
     @Builder.Default
-    private int k = 14;
+    private int k = 24;
     /** Duración total en minutos de un ciclo de planificación (SC). */
     public int getScMinutos() {
         return k * saMinutos;

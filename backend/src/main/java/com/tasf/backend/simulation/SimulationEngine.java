@@ -169,11 +169,13 @@ public class SimulationEngine {
         // previous simulated day must be reset so that the same flight can operate again.
         vuelos.forEach(v -> v.setCancelado(false));
 
-        // Plan next batch of orders entering this window
-        if (horizonPointer != null) {
+        // Plan all batches covering the current simulated day (loop until horizon
+        // reaches midnight of the next day, so no orders are left unplanned).
+        LocalDateTime endOfDay = params.getFechaInicio().plusDays(diaActual).atStartOfDay();
+        while (horizonPointer != null && horizonPointer.isBefore(endOfDay)) {
             PlanningResult batchResult = planificarSiguienteBloque();
             aplicarResultadoPlanificacion(batchResult);
-            addOperationLog("Rolling plan: batch admitted up to " + horizonPointer + " — " + batchResult.getPlanes().size() + " new plans");
+            addOperationLog("Rolling plan: batch up to " + horizonPointer + " — " + batchResult.getPlanes().size() + " new plans");
         }
 
         // Snapshot warehouse state at the START of the day — before any departures or
