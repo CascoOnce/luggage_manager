@@ -1,5 +1,6 @@
 package com.tasf.backend.simulation;
 
+import com.tasf.backend.algorithm.AirportTimeline;
 import com.tasf.backend.domain.Aeropuerto;
 import com.tasf.backend.domain.ColapsoPunto;
 import com.tasf.backend.domain.Cancelacion;
@@ -72,6 +73,11 @@ public class SimulationEngine {
 
     private ColapsoPunto colapsoPunto = null;
 
+    // Rolling planning state — persist across planning cycles
+    private AirportTimeline sharedTimeline;
+    private Map<String, Integer> sharedFlightLoads;
+    private LocalDateTime horizonPointer;
+
     private final Deque<String> logBuffer = new ArrayDeque<>();
     private final Map<String, String> maletaVueloActual = new HashMap<>();
     private final List<ThroughputDiaDTO> throughputHistorial = new ArrayList<>();
@@ -130,27 +136,15 @@ public class SimulationEngine {
         this.metricas = new ArrayList<>();
         this.fechaSimulada = params.getFechaInicio().atTime(parseHoraInicio(params.getHoraInicio()));
 
-        this.envios.forEach(envio -> envio.setEstado(EstadoEnvio.PLANIFICADO));
+        this.envios.forEach(envio -> envio.setEstado(EstadoEnvio.PENDIENTE));
         this.maletas.forEach(maleta -> {
             maleta.setEstado(EstadoMaleta.EN_ALMACEN);
         });
 
-        PlanningResult planning = planningService.planificar(this.envios, this.vuelos, this.aeropuertos, this.params);
-        this.planes = new ArrayList<>(planning.getPlanes());
-        if (planning.getMetrica() != null) {
-            this.metricas.add(planning.getMetrica());
-        }
-
-        Set<String> sinRuta = new HashSet<>(planning.getEnviosSinRuta());
-        this.envios.stream()
-            .filter(envio -> sinRuta.contains(envio.getIdEnvio()))
-            .forEach(envio -> envio.setEstado(EstadoEnvio.RETRASADO));
-
-        // Bags of unroutable envíos must be RETRASADA (not EN_ALMACEN) so they don't
-        // inflate warehouse occupation counts beyond what the planner actually reserved.
-        this.maletas.stream()
-            .filter(m -> sinRuta.contains(m.getIdEnvio()))
-            .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
+        // Rolling planning: set horizon pointer to simulation start then plan first batch
+        this.horizonPointer = params.getFechaInicio().atTime(parseHoraInicio(params.getHoraInicio()));
+        PlanningResult planning = planificarSiguienteBloque();
+        aplicarResultadoPlanificacion(planning);
 
         this.diaActual = 1;
         this.enEjecucion = true;
@@ -174,6 +168,13 @@ public class SimulationEngine {
         // Vuelos have only LocalTime (daily repeating schedule). Cancellations from a
         // previous simulated day must be reset so that the same flight can operate again.
         vuelos.forEach(v -> v.setCancelado(false));
+
+        // Plan next batch of orders entering this window
+        if (horizonPointer != null) {
+            PlanningResult batchResult = planificarSiguienteBloque();
+            aplicarResultadoPlanificacion(batchResult);
+            addOperationLog("Rolling plan: batch admitted up to " + horizonPointer + " — " + batchResult.getPlanes().size() + " new plans");
+        }
 
         // Snapshot warehouse state at the START of the day — before any departures or
         // deliveries — so that [OCUPACION] logs capture origin warehouses (e.g. OJAI)
@@ -614,6 +615,9 @@ public class SimulationEngine {
         this.maletaVueloActual.clear();
         this.throughputHistorial.clear();
         this.colapsoPunto = null;
+        this.sharedTimeline = new AirportTimeline();
+        this.sharedFlightLoads = new HashMap<>();
+        this.horizonPointer = null;
     }
 
     public synchronized boolean estaInicializada() {
@@ -1549,6 +1553,60 @@ public class SimulationEngine {
             }
         }
         return generated;
+    }
+
+    private PlanningResult planificarSiguienteBloque() {
+        if (horizonPointer == null) {
+            return PlanningResult.builder().planes(List.of()).enviosSinRuta(List.of()).build();
+        }
+
+        int scMinutos = params.getScMinutos();
+        LocalDateTime windowEnd = horizonPointer.plusMinutes(scMinutos);
+
+        // Batch: envios whose ingreso falls within [horizonPointer, windowEnd)
+        List<Envio> batch = this.envios.stream()
+            .filter(e -> {
+                LocalDateTime t = e.getFechaHoraIngreso();
+                return !t.isBefore(horizonPointer) && t.isBefore(windowEnd);
+            })
+            .filter(e -> e.getEstado() == EstadoEnvio.PENDIENTE)
+            .collect(Collectors.toList());
+
+        long startMs = System.currentTimeMillis();
+        PlanningResult result = planningService.planificarLote(
+            batch, this.vuelos, this.aeropuertos, this.params,
+            this.sharedTimeline, this.sharedFlightLoads
+        );
+        long taMs = System.currentTimeMillis() - startMs;
+
+        int saMs = params.getSaMinutos() * 60_000; // Sa in ms
+        if (taMs > saMs) {
+            log.warn("Ta ({} ms) > Sa ({} ms) — planner too slow for selected Sa. Risk of solution degradation.", taMs, saMs);
+        } else {
+            log.info("Planning batch [{} → {}]: {} envios, Ta={} ms, Sa={} ms, Sc={} min",
+                horizonPointer, windowEnd, batch.size(), taMs, saMs, scMinutos);
+        }
+
+        // Advance horizon
+        this.horizonPointer = windowEnd;
+
+        return result;
+    }
+
+    private void aplicarResultadoPlanificacion(PlanningResult planning) {
+        this.planes.addAll(planning.getPlanes());
+        if (planning.getMetrica() != null) {
+            this.metricas.add(planning.getMetrica());
+        }
+        Set<String> sinRuta = new HashSet<>(planning.getEnviosSinRuta());
+        this.envios.stream()
+            .filter(envio -> sinRuta.contains(envio.getIdEnvio()))
+            .forEach(envio -> envio.setEstado(EstadoEnvio.RETRASADO));
+        // Bags of unroutable envíos must be RETRASADA (not EN_ALMACEN) so they don't
+        // inflate warehouse occupation counts beyond what the planner actually reserved.
+        this.maletas.stream()
+            .filter(m -> sinRuta.contains(m.getIdEnvio()))
+            .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
     }
 
     private java.time.LocalTime parseHoraInicio(String horaInicio) {
