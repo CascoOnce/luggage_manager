@@ -50,22 +50,18 @@ class RouteCandidate {
     List<CapacityWindow> getCapacityWindows(LocalDateTime fechaIngreso) {
         if (legs.isEmpty()) return List.of();
         List<CapacityWindow> windows = new ArrayList<>();
-        // Use day-granular boundaries: the simulation snapshots warehouse counts once per
-        // day (start of day, before departures), so a bag occupies warehouse space for every
-        // calendar day from its registration date through its departure date (inclusive).
-        // Using midnight boundaries here makes the timeline peak match the simulation count.
+        // from = exact arrival datetime (bag only counted once it physically arrives).
+        // to   = start of day AFTER departure: the daily snapshot runs before departures,
+        //        so a bag departing on day D is still counted in day D's snapshot.
         windows.add(new CapacityWindow(
             legs.get(0).flight().getOrigen(),
-            fechaIngreso.toLocalDate().atStartOfDay(),
+            fechaIngreso,
             legs.get(0).departure().toLocalDate().plusDays(1).atStartOfDay()
         ));
         for (int i = 0; i < legs.size() - 1; i++) {
-            // Hub: bag arrives during day-N passes (AFTER the start-of-day snapshot), so
-            // the first snapshot that counts it is day N+1. Departure is also post-snapshot,
-            // so the last snapshot counting it is the departure day (to = departure+1 start).
             windows.add(new CapacityWindow(
                 legs.get(i).flight().getDestino(),
-                legs.get(i).arrival().toLocalDate().plusDays(1).atStartOfDay(),
+                legs.get(i).arrival(),
                 legs.get(i + 1).departure().toLocalDate().plusDays(1).atStartOfDay()
             ));
         }

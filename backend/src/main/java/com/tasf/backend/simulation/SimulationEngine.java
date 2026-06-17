@@ -836,6 +836,7 @@ public class SimulationEngine {
                 for (Maleta maleta : inFlight) {
                     maleta.setUbicacionActual(escala.getCodigoAeropuerto());
                     maleta.setEstado(EstadoMaleta.EN_ALMACEN);
+                    maleta.setFechaHoraLlegadaUbicacion(escala.getHoraLlegadaEst());
                     maletaVueloActual.remove(maleta.getIdMaleta());
                 }
                 if (!inFlight.isEmpty()) {
@@ -1136,10 +1137,10 @@ public class SimulationEngine {
     }
 
     private void updateWarehouseOccupation() {
-        LocalDate today = fechaSimulada == null ? null : fechaSimulada.toLocalDate();
         Map<String, Long> counts = maletas.stream()
             .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN)
-            .filter(m -> today == null || m.getFechaIngreso() == null || !m.getFechaIngreso().isAfter(today))
+            .filter(m -> fechaSimulada == null || m.getFechaHoraLlegadaUbicacion() == null
+                || !m.getFechaHoraLlegadaUbicacion().isAfter(fechaSimulada))
             .collect(Collectors.groupingBy(Maleta::getUbicacionActual, Collectors.counting()));
 
         for (Aeropuerto aeropuerto : aeropuertos) {
@@ -1525,6 +1526,7 @@ public class SimulationEngine {
                         .ubicacionActual(envio.getAeropuertoOrigen())
                         .estado(EstadoMaleta.EN_ALMACEN)
                         .fechaIngreso(envio.getFechaHoraIngreso().toLocalDate())
+                        .fechaHoraLlegadaUbicacion(envio.getFechaHoraIngreso())
                         .planVersion(1)
                         .build());
                 }
@@ -1539,6 +1541,7 @@ public class SimulationEngine {
                             .ubicacionActual(envio.getAeropuertoOrigen())
                             .estado(EstadoMaleta.EN_ALMACEN)
                             .fechaIngreso(envio.getFechaHoraIngreso().toLocalDate())
+                            .fechaHoraLlegadaUbicacion(envio.getFechaHoraIngreso())
                             .planVersion(plan.getVersion())
                             .build());
                     }
