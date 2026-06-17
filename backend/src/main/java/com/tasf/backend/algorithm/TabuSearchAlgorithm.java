@@ -62,11 +62,13 @@ public class TabuSearchAlgorithm extends RoutePlannerSupport implements Metaheur
     private MetricaAlgoritmo ultimaMetrica;
 
     @Override
-    public List<PlanDeViaje> planificar(
+    public List<PlanDeViaje> planificarConEstado(
         List<Envio> envios,
         List<Vuelo> vuelos,
         List<Aeropuerto> aeropuertos,
-        ParametrosSimulacion params
+        ParametrosSimulacion params,
+        AirportTimeline timeline,
+        Map<String, Integer> flightLoads
     ) {
         long start = System.currentTimeMillis();
         MutableCounter routeCounter = new MutableCounter();

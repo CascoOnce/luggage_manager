@@ -25,11 +25,13 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
     private MetricaAlgoritmo ultimaMetrica;
 
     @Override
-    public List<PlanDeViaje> planificar(
+    public List<PlanDeViaje> planificarConEstado(
         List<Envio> envios,
         List<Vuelo> vuelos,
         List<Aeropuerto> aeropuertos,
-        ParametrosSimulacion params
+        ParametrosSimulacion params,
+        AirportTimeline timeline,
+        Map<String, Integer> flightLoads
     ) {
         long start = System.currentTimeMillis();
         MutableCounter routeCounter = new MutableCounter();
@@ -49,8 +51,8 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
 
             // assignments: envioId → list of (route, qty) partial assignments
             final Map<String, List<PartialAssignment>> assignments = new HashMap<>();
-            AirportTimeline timeline = new AirportTimeline();
-            Map<String, Integer> flightLoads = new HashMap<>();
+            // timeline y flightLoads son parámetros — NO crear nuevos
+            // ya contienen reservas de lotes anteriores
             List<String> optimizableEnvios = new ArrayList<>();
 
             // ---- Seeding: greedy with split ----
