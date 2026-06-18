@@ -470,3 +470,6 @@ mvn test
 | `PlanningServiceIntegrationTest` | Integration | Verifies that `planificar()` and `planificarConIncidencia()` both honour `params.algoritmo`: SA runs use SA, TS runs use TS, and replanning after an incident also uses the operator-selected algorithm rather than a hardcoded fallback. Uses envios from `DataLoaderService`. |
 | `SimulationScenarioTest` | Integration | Tests three full `SimulationEngine` scenarios: exact 3-day run (checks `finalizada` and `throughputHistorial.size`), collapse mode (checks `totalDias` is derived from envio span when `diasSimulacion` is preset), and a 5-day run that verifies `[INCIDENCIA]` and replanificación log entries can appear. |
 | `SimulationControllerIntegrationTest` | Integration (MockMvc) | Full HTTP flow: `POST /api/simulation/start` with a JSON body (no multipart), `POST /step`, `GET /state`, `GET /airports`, `GET /flights`, `GET /envios`, `GET /envios/{id}`, `POST /reset`, `GET /state` → 204. Confirms the envio `000000001` exists with a `planDetalle` field. |
+
+TEST BACKEND
+./mvnw test -Dtest=SimulationDiagnosticTest -Dsurefire.useFile=false 2>&1 | tee log.txt

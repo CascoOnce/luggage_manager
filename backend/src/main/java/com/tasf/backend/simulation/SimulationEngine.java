@@ -246,7 +246,7 @@ public class SimulationEngine {
         }
 
         if (diaActual >= params.getDiasSimulacion()) {
-            updateWarehouseOccupation();
+            updateWarehouseOccupation(fechaSimulada.plusDays(1));
             this.finalizada = true;
             this.enEjecucion = false;
             applySimulationEnd(params.getFechaInicio().plusDays(params.getDiasSimulacion() - 1));
@@ -260,15 +260,20 @@ public class SimulationEngine {
             return getEstado();
         }
 
-        // Advance AFTER processing current day so day-1 departures are not skipped
+        // Capture end-of-day state BEFORE advancing diaActual so the DTO shows
+        // the completed day number. Use fechaSimulada+1 as the warehouse reference
+        // so that all bags ingested during the completed day are visible.
+        updateWarehouseOccupation(fechaSimulada.plusDays(1));
+        SimulationStateDTO dayResult = getEstado();
+
+        // Advance for next planning cycle / frontend polling.
         diaActual++;
         this.fechaSimulada = this.fechaSimulada.plusDays(1);
-        // Recompute warehouse occupation AFTER date advance so that bags of the
-        // upcoming day (fechaIngreso == new today) become visible during the
-        // polling window before the next avanzarDia() runs.
+        // Recompute so upcoming-day bags (fechaIngreso == new today) are visible
+        // during the polling window before the next avanzarDia() runs.
         updateWarehouseOccupation();
 
-        return getEstado();
+        return dayResult;
     }
 
     public synchronized SimulationStateDTO reiniciar() {
@@ -942,7 +947,7 @@ public class SimulationEngine {
                 continue;
             }
             LocalDateTime deadline = envio.getFechaHoraIngreso().plusDays(envio.getSla());
-            if (fechaSimulada.isAfter(deadline) && envio.getEstado() != EstadoEnvio.RETRASADO) {
+            if (!fechaSimulada.isBefore(deadline) && envio.getEstado() != EstadoEnvio.RETRASADO) {
                 envio.setEstado(EstadoEnvio.RETRASADO);
                 maletasByEnvio.getOrDefault(envio.getIdEnvio(), List.of()).stream()
                     .filter(m -> m.getEstado() != EstadoMaleta.ENTREGADA)
@@ -1143,10 +1148,14 @@ public class SimulationEngine {
     }
 
     private void updateWarehouseOccupation() {
+        updateWarehouseOccupation(fechaSimulada);
+    }
+
+    private void updateWarehouseOccupation(LocalDateTime ref) {
         Map<String, Long> counts = maletas.stream()
             .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN)
-            .filter(m -> fechaSimulada == null || m.getFechaHoraLlegadaUbicacion() == null
-                || !m.getFechaHoraLlegadaUbicacion().isAfter(fechaSimulada))
+            .filter(m -> ref == null || m.getFechaHoraLlegadaUbicacion() == null
+                || !m.getFechaHoraLlegadaUbicacion().isAfter(ref))
             .collect(Collectors.groupingBy(Maleta::getUbicacionActual, Collectors.counting()));
 
         for (Aeropuerto aeropuerto : aeropuertos) {
@@ -1565,12 +1574,10 @@ public class SimulationEngine {
         int scMinutos = params.getScMinutos();
         LocalDateTime windowEnd = horizonPointer.plusMinutes(scMinutos);
 
-        // Batch: envios whose ingreso falls within [horizonPointer, windowEnd)
+        // Batch: all PENDIENTE envios that entered before windowEnd.
+        // Includes carry-overs from prior windows deferred due to capacity exhaustion.
         List<Envio> batch = this.envios.stream()
-            .filter(e -> {
-                LocalDateTime t = e.getFechaHoraIngreso();
-                return !t.isBefore(horizonPointer) && t.isBefore(windowEnd);
-            })
+            .filter(e -> e.getFechaHoraIngreso().isBefore(windowEnd))
             .filter(e -> e.getEstado() == EstadoEnvio.PENDIENTE)
             .collect(Collectors.toList());
 
@@ -1601,13 +1608,17 @@ public class SimulationEngine {
             this.metricas.add(planning.getMetrica());
         }
         Set<String> sinRuta = new HashSet<>(planning.getEnviosSinRuta());
-        this.envios.stream()
-            .filter(envio -> sinRuta.contains(envio.getIdEnvio()))
-            .forEach(envio -> envio.setEstado(EstadoEnvio.RETRASADO));
-        // Bags of unroutable envíos must be RETRASADA (not EN_ALMACEN) so they don't
-        // inflate warehouse occupation counts beyond what the planner actually reserved.
+        // SA already set each envio's estado correctly:
+        //   - truly unroutable (empty pool)  → RETRASADO
+        //   - capacity-failed (deferred)     → PENDIENTE (will retry in next batch)
+        // Only sync maletas to RETRASADA for envíos the SA confirmed as RETRASADO,
+        // so warehouse counts stay accurate without overriding deferred PENDIENTE bags.
+        Set<String> confirmedRetrasado = this.envios.stream()
+            .filter(e -> sinRuta.contains(e.getIdEnvio()) && e.getEstado() == EstadoEnvio.RETRASADO)
+            .map(Envio::getIdEnvio)
+            .collect(Collectors.toSet());
         this.maletas.stream()
-            .filter(m -> sinRuta.contains(m.getIdEnvio()))
+            .filter(m -> confirmedRetrasado.contains(m.getIdEnvio()))
             .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
     }
 

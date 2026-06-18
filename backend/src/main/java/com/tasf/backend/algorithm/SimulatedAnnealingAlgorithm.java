@@ -45,9 +45,13 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
             Map<String, Integer> capacityCache = getAirportCapacityCache();
             int fallback = capacityCache.values().stream().mapToInt(v -> v).max().orElse(Integer.MAX_VALUE / 2);
 
-            // Sort by SLA deadline ascending — most urgent bags claim capacity first
+            // Sort by SLA deadline ascending; tiebreak by origin capacity ascending
+            // (smaller-capacity airports = more constrained, claim space before transit bags
+            // from large airports that would only use them as a hub)
             List<Envio> sortedEnvios = new ArrayList<>(envios);
-            sortedEnvios.sort(Comparator.comparing(e -> e.getFechaHoraIngreso().plusDays(e.getSla())));
+            sortedEnvios.sort(Comparator
+                .comparing((Envio e) -> e.getFechaHoraIngreso().plusDays(e.getSla()))
+                .thenComparingInt(e -> capacityCache.getOrDefault(e.getAeropuertoOrigen(), fallback)));
 
             // assignments: envioId → list of (route, qty) partial assignments
             final Map<String, List<PartialAssignment>> assignments = new HashMap<>();
@@ -55,12 +59,21 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
             // ya contienen reservas de lotes anteriores
             List<String> optimizableEnvios = new ArrayList<>();
 
+            // Native demand per airport: total bags in this batch that originate here.
+            // Used to reserve capacity so transit bags don't crowd out origin bags.
+            // Decremented as native bags are processed (routed or deferred).
+            Map<String, Integer> nativeUnrouted = new HashMap<>();
+            for (Envio e : sortedEnvios) {
+                nativeUnrouted.merge(e.getAeropuertoOrigen(), e.getCantidadMaletas(), Integer::sum);
+            }
+
             // ---- Seeding: greedy with split ----
             for (Envio envio : sortedEnvios) {
                 List<RouteCandidate> options = pool.getOrDefault(envio.getIdEnvio(), List.of());
                 if (options.isEmpty()) {
                     envio.setEstado(EstadoEnvio.RETRASADO);
                     log.warn("Envio {} has no feasible routes; marked RETRASADO", envio.getIdEnvio());
+                    nativeUnrouted.merge(envio.getAeropuertoOrigen(), -envio.getCantidadMaletas(), Integer::sum);
                     continue;
                 }
 
@@ -75,15 +88,21 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                     int fitsByFlight = remaining;
                     for (RouteCandidate.Leg leg : route.getLegs()) {
                         int legAvail = leg.flight().getCapacidadTotal()
-                            - flightLoads.getOrDefault(leg.flight().getCodigoVuelo(), 0);
+                            - flightLoads.getOrDefault(flightDayKey(leg), 0);
                         fitsByFlight = Math.min(fitsByFlight, legAvail);
                     }
                     if (fitsByFlight <= 0) continue;
 
                     // Warehouse capacity: how many fit across all time windows?
+                    // For transit hubs (airport ≠ this bag's origin), reserve space for
+                    // native bags still waiting to be processed, so they always have room.
                     int fitsByWarehouse = fitsByFlight;
                     for (RouteCandidate.CapacityWindow w : route.getCapacityWindows(envio.getFechaHoraIngreso())) {
                         int hardCap = capacityCache.getOrDefault(w.airport(), fallback);
+                        if (!w.airport().equals(envio.getAeropuertoOrigen())) {
+                            int reserve = nativeUnrouted.getOrDefault(w.airport(), 0);
+                            hardCap = Math.max(0, hardCap - reserve);
+                        }
                         int fits = timeline.howManyFit(w.airport(), w.from(), w.to(), fitsByWarehouse, hardCap);
                         fitsByWarehouse = Math.min(fitsByWarehouse, fits);
                     }
@@ -97,7 +116,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                         timeline.addEvent(w.airport(), w.to(), -assign);
                     }
                     for (RouteCandidate.Leg leg : route.getLegs()) {
-                        flightLoads.merge(leg.flight().getCodigoVuelo(), assign, Integer::sum);
+                        flightLoads.merge(flightDayKey(leg), assign, Integer::sum);
                     }
 
                     parts.add(new PartialAssignment(route, assign));
@@ -111,9 +130,13 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                 // the "hard cap never exceeded" requirement. Unassigned bags surface as a
                 // partial RETRASADO below.
 
+                // This bag's origin slot is now "spent" — decrement native reserve so
+                // later transit bags through this airport gain back the freed capacity.
+                nativeUnrouted.merge(envio.getAeropuertoOrigen(), -envio.getCantidadMaletas(), Integer::sum);
+
                 if (parts.isEmpty()) {
-                    envio.setEstado(EstadoEnvio.RETRASADO);
-                    log.warn("No feasible initial route for envio {}", envio.getIdEnvio());
+                    // ponytail: leave PENDIENTE — capacity may free up in next batch; avanzarDia() catches SLA expiry
+                    log.warn("No feasible initial route for envio {} (capacity full) — deferred to next batch", envio.getIdEnvio());
                 } else {
                     assignments.put(envio.getIdEnvio(), parts);
                     envio.setEstado(remaining > 0 ? EstadoEnvio.RETRASADO : EstadoEnvio.PLANIFICADO);
@@ -167,7 +190,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                         timeline.removeEvent(w.airport(), w.to(), -pa.qty());
                     }
                     for (RouteCandidate.Leg leg : pa.route().getLegs()) {
-                        flightLoads.merge(leg.flight().getCodigoVuelo(), -pa.qty(), Integer::sum);
+                        flightLoads.merge(flightDayKey(leg), -pa.qty(), Integer::sum);
                     }
                 }
 
@@ -175,7 +198,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                 int fitsFlight = totalQty;
                 for (RouteCandidate.Leg leg : newRoute.getLegs()) {
                     int legAvail = leg.flight().getCapacidadTotal()
-                        - flightLoads.getOrDefault(leg.flight().getCodigoVuelo(), 0);
+                        - flightLoads.getOrDefault(flightDayKey(leg), 0);
                     fitsFlight = Math.min(fitsFlight, legAvail);
                 }
 
@@ -193,7 +216,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                             timeline.addEvent(w.airport(), w.to(), -pa.qty());
                         }
                         for (RouteCandidate.Leg leg : pa.route().getLegs()) {
-                            flightLoads.merge(leg.flight().getCodigoVuelo(), pa.qty(), Integer::sum);
+                            flightLoads.merge(flightDayKey(leg), pa.qty(), Integer::sum);
                         }
                     }
                     temperature *= coolingRate;
@@ -215,7 +238,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                     timeline.addEvent(w.airport(), w.to(), -totalQty);
                 }
                 for (RouteCandidate.Leg leg : newRoute.getLegs()) {
-                    flightLoads.merge(leg.flight().getCodigoVuelo(), totalQty, Integer::sum);
+                    flightLoads.merge(flightDayKey(leg), totalQty, Integer::sum);
                 }
 
                 double softFactor = params.getCapacidadBlandaFactor();
@@ -231,7 +254,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                     timeline.removeEvent(w.airport(), w.to(), -totalQty);
                 }
                 for (RouteCandidate.Leg leg : newRoute.getLegs()) {
-                    flightLoads.merge(leg.flight().getCodigoVuelo(), -totalQty, Integer::sum);
+                    flightLoads.merge(flightDayKey(leg), -totalQty, Integer::sum);
                 }
 
                 double overloadBefore = timeline.affectedAirports().stream()
@@ -251,7 +274,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                         timeline.addEvent(w.airport(), w.to(), -totalQty);
                     }
                     for (RouteCandidate.Leg leg : newRoute.getLegs()) {
-                        flightLoads.merge(leg.flight().getCodigoVuelo(), totalQty, Integer::sum);
+                        flightLoads.merge(flightDayKey(leg), totalQty, Integer::sum);
                     }
                     assignments.put(envioId, List.of(new PartialAssignment(newRoute, totalQty)));
                     current.put(envioId, newRoute);
@@ -268,7 +291,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                             timeline.addEvent(w.airport(), w.to(), -pa.qty());
                         }
                         for (RouteCandidate.Leg leg : pa.route().getLegs()) {
-                            flightLoads.merge(leg.flight().getCodigoVuelo(), pa.qty(), Integer::sum);
+                            flightLoads.merge(flightDayKey(leg), pa.qty(), Integer::sum);
                         }
                     }
                     assignments.put(envioId, oldParts);
@@ -287,7 +310,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                         timeline.removeEvent(w.airport(), w.to(), -pa.qty());
                     }
                     for (RouteCandidate.Leg leg : pa.route().getLegs()) {
-                        flightLoads.merge(leg.flight().getCodigoVuelo(), -pa.qty(), Integer::sum);
+                        flightLoads.merge(flightDayKey(leg), -pa.qty(), Integer::sum);
                     }
                 }
             });
@@ -299,7 +322,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                         timeline.addEvent(w.airport(), w.to(), -pa.qty());
                     }
                     for (RouteCandidate.Leg leg : pa.route().getLegs()) {
-                        flightLoads.merge(leg.flight().getCodigoVuelo(), pa.qty(), Integer::sum);
+                        flightLoads.merge(flightDayKey(leg), pa.qty(), Integer::sum);
                     }
                 }
             });
@@ -325,6 +348,11 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
     @Override
     public MetricaAlgoritmo getUltimaMetrica() {
         return ultimaMetrica;
+    }
+
+    // ponytail: flight code alone is date-agnostic; same flight runs daily with fresh capacity
+    private String flightDayKey(RouteCandidate.Leg leg) {
+        return leg.flight().getCodigoVuelo() + "|" + leg.departure().toLocalDate();
     }
 
     private Map<String, List<PartialAssignment>> deepCopyAssignments(Map<String, List<PartialAssignment>> src) {

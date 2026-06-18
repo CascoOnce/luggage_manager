@@ -78,9 +78,8 @@ class SimulationDiagnosticTest {
             .build();
 
         simulationEngine.inicializar(params, envios);
-        imprimirEstado(simulationEngine.getEstado());
 
-        for (int dia = 2; dia <= DIAS; dia++) {
+        for (int dia = 1; dia <= DIAS; dia++) {
             SimulationStateDTO estado = simulationEngine.avanzarDia();
             imprimirEstado(estado);
         }

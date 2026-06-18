@@ -50,19 +50,19 @@ class RouteCandidate {
     List<CapacityWindow> getCapacityWindows(LocalDateTime fechaIngreso) {
         if (legs.isEmpty()) return List.of();
         List<CapacityWindow> windows = new ArrayList<>();
-        // from = exact arrival datetime (bag only counted once it physically arrives).
-        // to   = start of day AFTER departure: the daily snapshot runs before departures,
-        //        so a bag departing on day D is still counted in day D's snapshot.
+        // from = exact arrival datetime, to = actual departure time.
+        // Using next-day midnight caused SA to see the hub as empty after midnight,
+        // allowing over-assignment when bags physically hadn't departed yet.
         windows.add(new CapacityWindow(
             legs.get(0).flight().getOrigen(),
             fechaIngreso,
-            legs.get(0).departure().toLocalDate().plusDays(1).atStartOfDay()
+            legs.get(0).departure()
         ));
         for (int i = 0; i < legs.size() - 1; i++) {
             windows.add(new CapacityWindow(
                 legs.get(i).flight().getDestino(),
                 legs.get(i).arrival(),
-                legs.get(i + 1).departure().toLocalDate().plusDays(1).atStartOfDay()
+                legs.get(i + 1).departure()
             ));
         }
         return windows;

@@ -1,253 +1,25 @@
---------------------------------------------------------------------------------
-Tengo el panorama completo. Déjame resumir los hallazgos y proponer las queries SQL.
-
-Análisis: Días 1 y 2
-Problemas identificados
-Día 1 — Estado al inicio (post-inicializar, pre-avanzarDia)
-
-Solo 552 de 21,154 planificados — esto es correcto: es solo el primer batch rolling (08:00–10:00)
-Los 7 batches restantes del día 1 se ejecutan durante avanzarDia()
-Problema real — 374 SLA vencidos ya en Día 2:
-Decenas de No feasible initial route para envíos OMDB-* (Dubai), UBBB-* (Baku), SLLP-* (La Paz), LOWW-* (Viena). Estos quedan sin ruta → RETRASADO antes de que termine el día 1.
-
-Problema crítico — SLLP 105.2% en Día 2:
-AirportTimeline debería prevenir esto, pero 442 bags en capacidad de 420. El fix de state-sync (obs. 176) no lo eliminó completamente.
-
-Diagnóstico: ¿dónde está el bug?
-Síntoma	Hipótesis
-No feasible initial route masivo para OMDB	Sin vuelos desde Dubai en el ventana 08:00–10:00 del 2027-06-01, o los vuelos en BD no cubren esa fecha simulada
-SLA violations = 374 en día 2	Consecuencia directa de los sin-ruta
-SLLP > capacidad	AirportTimeline inicializado con ocupación 0 aunque ya hay bags en almacén
-La sospecha más fuerte: la simulación usa fecha 2027-06-01 pero la BD puede tener vuelos solo para fechas distintas (ej. 2026). Hay que verificar.
-
-Queries SQL para investigar
-1. ¿Vuelos desde OMDB existen y en qué fechas?
 
 
-SELECT codigo_vuelo, iata_origen, iata_destino, 
-       fecha_hora_salida, fecha_hora_llegada, capacidad_maletas
-FROM vuelo_entity
-WHERE iata_origen = 'OMDB'
-ORDER BY fecha_hora_salida
-LIMIT 20;
-2. ¿Hay vuelos en 2027 en general?
-
-
-SELECT DATE(fecha_hora_salida) AS fecha, COUNT(*) AS vuelos
-FROM vuelo_entity
-WHERE fecha_hora_salida >= '2027-01-01'
-GROUP BY DATE(fecha_hora_salida)
-ORDER BY fecha
-LIMIT 20;
--- Si vacío → los vuelos son solo para 2026, bug de fechas
-3. ¿Cuándo salen los primeros vuelos desde OMDB?
-
-
-SELECT MIN(fecha_hora_salida), MAX(fecha_hora_salida)
-FROM vuelo_entity
-WHERE iata_origen = 'OMDB';
-4. Capacidad y ocupación real de SLLP:
-
-
-SELECT codigo_iata, capacidad_almacen, ocupacion_actual
-FROM aeropuerto_entity
-WHERE codigo_iata = 'SLLP';
-5. ¿Cuántos envíos OMDB tienen SLA muy corto?
-
-
-SELECT iata_origen, 
-       COUNT(*) AS total,
-       AVG(sla) AS sla_promedio_dias,
-       MIN(sla) AS sla_min
-FROM envio_entity
-WHERE iata_origen = 'OMDB'
-  AND fecha_hora_ingreso BETWEEN '2027-06-01' AND '2027-06-04'
-GROUP BY iata_origen;
-La query #2 es la más diagnóstica. Si devuelve vacío, el problema es que los vuelos en BD son de 2026 pero la simulación corre con fechas 2027 — el RoutePlannerSupport busca vuelos por fecha y no encuentra ninguno → No feasible initial route para todo.
-
-¿Tienes acceso a la BD ahora para correr estas queries?
-------------------------------------------------------------------------------
-
-
-[INFO] Scanning for projects...
-[INFO] 
-[INFO] --------------------------< com.tasf:backend >--------------------------
-[INFO] Building  1.0.0
-[INFO]   from pom.xml
-[INFO] --------------------------------[ jar ]---------------------------------
-[INFO] 
-[INFO] --- resources:3.3.1:resources (default-resources) @ backend ---
-[INFO] Copying 3 resources from src/main/resources to target/classes
-[INFO] Copying 32 resources from src/main/resources to target/classes
-[INFO] 
-[INFO] --- compiler:3.14.1:compile (default-compile) @ backend ---
-[INFO] Nothing to compile - all classes are up to date.
-[INFO] 
-[INFO] --- resources:3.3.1:testResources (default-testResources) @ backend ---
-[INFO] Copying 1 resource from src/test/resources to target/test-classes
-[INFO] 
-[INFO] --- compiler:3.14.1:testCompile (default-testCompile) @ backend ---
-[INFO] Nothing to compile - all classes are up to date.
-[INFO] 
-[INFO] --- surefire:3.5.5:test (default-test) @ backend ---
-[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
-[INFO] 
-[INFO] -------------------------------------------------------
-[INFO]  T E S T S
-[INFO] -------------------------------------------------------
-[INFO] Running com.tasf.backend.simulation.SimulationDiagnosticTest
-12:40:47.147 [main] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [com.tasf.backend.simulation.SimulationDiagnosticTest]: SimulationDiagnosticTest does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
-12:40:47.282 [main] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration com.tasf.backend.BackendApplication for test class com.tasf.backend.simulation.SimulationDiagnosticTest
-12:40:47.442 [main] INFO org.springframework.boot.devtools.restart.RestartApplicationListener -- Restart disabled due to context in which it is running
-
-  .   ____          _            __ _ _
- /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
-( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
- \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
-  '  |____| .__|_| |_|_| |_\__, | / / / /
- =========|_|==============|___/=/_/_/_/
-
- :: Spring Boot ::               (v3.5.13)
-
-2026-06-17T12:40:47.782-05:00  INFO 44033 --- [backend] [           main] c.t.b.s.SimulationDiagnosticTest         : Starting SimulationDiagnosticTest using Java 21.0.11 with PID 44033 (started by anibal in /home/anibal/Documentos/PUCP/2026-1/DP1/luggage_manager/backend)
-2026-06-17T12:40:47.784-05:00  INFO 44033 --- [backend] [           main] c.t.b.s.SimulationDiagnosticTest         : The following 1 profile is active: "local"
-2026-06-17T12:40:48.358-05:00  INFO 44033 --- [backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-06-17T12:40:48.394-05:00  INFO 44033 --- [backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 28 ms. Found 1 JPA repository interface.
-2026-06-17T12:40:48.395-05:00  INFO 44033 --- [backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-06-17T12:40:48.418-05:00  INFO 44033 --- [backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 19 ms. Found 7 JPA repository interfaces.
-2026-06-17T12:40:49.165-05:00  INFO 44033 --- [backend] [           main] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: ops]
-2026-06-17T12:40:49.211-05:00  INFO 44033 --- [backend] [           main] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.6.45.Final
-2026-06-17T12:40:49.243-05:00  INFO 44033 --- [backend] [           main] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-06-17T12:40:49.543-05:00  INFO 44033 --- [backend] [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-06-17T12:40:49.573-05:00  INFO 44033 --- [backend] [           main] com.zaxxer.hikari.HikariDataSource       : OpsPool - Starting...
-2026-06-17T12:40:50.093-05:00  INFO 44033 --- [backend] [           main] com.zaxxer.hikari.pool.HikariPool        : OpsPool - Added connection com.mysql.cj.jdbc.ConnectionImpl@6ae42248
-2026-06-17T12:40:50.094-05:00  INFO 44033 --- [backend] [           main] com.zaxxer.hikari.HikariDataSource       : OpsPool - Start completed.
-2026-06-17T12:40:50.348-05:00  INFO 44033 --- [backend] [           main] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
-	Database JDBC URL [Connecting through datasource 'HikariDataSource (OpsPool)']
-	Database driver: undefined/unknown
-	Database version: 8.4.6
-	Autocommit mode: undefined/unknown
-	Isolation level: undefined/unknown
-	Minimum pool size: undefined/unknown
-	Maximum pool size: undefined/unknown
-2026-06-17T12:40:51.189-05:00  INFO 44033 --- [backend] [           main] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-06-17T12:40:51.338-05:00  INFO 44033 --- [backend] [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'ops'
-2026-06-17T12:40:51.345-05:00  INFO 44033 --- [backend] [           main] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: sim]
-2026-06-17T12:40:51.346-05:00  INFO 44033 --- [backend] [           main] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-06-17T12:40:51.354-05:00  INFO 44033 --- [backend] [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-06-17T12:40:51.355-05:00  INFO 44033 --- [backend] [           main] com.zaxxer.hikari.HikariDataSource       : TasfPool - Starting...
-2026-06-17T12:40:51.576-05:00  INFO 44033 --- [backend] [           main] com.zaxxer.hikari.pool.HikariPool        : TasfPool - Added connection com.mysql.cj.jdbc.ConnectionImpl@46573cfe
-2026-06-17T12:40:51.576-05:00  INFO 44033 --- [backend] [           main] com.zaxxer.hikari.HikariDataSource       : TasfPool - Start completed.
-2026-06-17T12:40:51.588-05:00  INFO 44033 --- [backend] [           main] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
-	Database JDBC URL [Connecting through datasource 'HikariDataSource (TasfPool)']
-	Database driver: undefined/unknown
-	Database version: 8.4.6
-	Autocommit mode: undefined/unknown
-	Isolation level: undefined/unknown
-	Minimum pool size: undefined/unknown
-	Maximum pool size: undefined/unknown
-2026-06-17T12:40:51.634-05:00  INFO 44033 --- [backend] [           main] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-06-17T12:40:51.663-05:00  INFO 44033 --- [backend] [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'sim'
-2026-06-17T12:40:51.974-05:00  INFO 44033 --- [backend] [           main] o.s.d.j.r.query.QueryEnhancerFactory     : Hibernate is in classpath; If applicable, HQL parser will be used.
-2026-06-17T12:40:52.486-05:00  WARN 44033 --- [backend] [           main] com.tasf.backend.parser.AirportParser    : Skipping malformed airport line 1: ﻿PDDS 26-1 (basado en 2026.1)  20260404
-2026-06-17T12:40:52.490-05:00  INFO 44033 --- [backend] [           main] com.tasf.backend.parser.AirportParser    : Loaded 30 airports
-2026-06-17T12:41:13.672-05:00  INFO 44033 --- [backend] [           main] c.t.backend.service.DataLoaderService    : Loading static data from database...
-2026-06-17T12:41:14.098-05:00  INFO 44033 --- [backend] [           main] c.t.backend.service.DataLoaderService    : Loaded 30 airports and 2866 flights from DB
-2026-06-17T12:41:14.101-05:00  INFO 44033 --- [backend] [           main] c.t.backend.service.DataLoaderService    : Built airport adjacency graph with 30 nodes
-2026-06-17T12:41:14.796-05:00  INFO 44033 --- [backend] [           main] c.t.b.s.SimulationDiagnosticTest         : Started SimulationDiagnosticTest in 27.365 seconds (process running for 28.316)
-Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build as described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
-OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
-WARNING: A Java agent has been loaded dynamically (/home/anibal/.m2/repository/net/bytebuddy/byte-buddy-agent/1.17.8/byte-buddy-agent-1.17.8.jar)
-WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
-WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
-WARNING: Dynamic loading of agents will be disallowed by default in a future release
 
 ╔══════════════════════════════════════════════════════════════╗
 ║  DIAGNÓSTICO — 2027-06-01  08:00  3 días  alg=SA
 ║  Envíos cargados de DB: 21160
 ╚══════════════════════════════════════════════════════════════╝
-2026-06-17T12:41:16.257-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 552 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:16.517-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 552 envios, 26452 total routes, 0 without route
-2026-06-17T12:41:16.696-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-01T08:00 → 2027-06-01T10:00]: 552 envios, Ta=439 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:16.709-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Simulation initialized - Day 1 - 21154 envios - algorithm: SA - routes evaluated: 28290
+
 
 ┌─── DÍA 1 (2027-06-01T08:00:00) ──────────────────────────────────────────────
 │  Envíos total      : 21154
-│  Planificados      : 552
-│  Pendientes        : 20602
-│  Entregados        : 0
-│  Retrasados        : 0
-│  Sin ruta          : 0
-│  Batches rolling   : 0
-│  SLA cumplimiento  : 0.0%
-│  SLA vencidos      : 0
-│  Maletas en tráns. : 1444
-│  Maletas entregadas: 0
-│  Ocup. prom. almac.: 64.6%
-│
-│  Aeropuertos (top 8 por ocupación):
-│  ┌──────────┬──────────────────┬──────────┬────────┬────────┐
-│  │ IATA     │ Nombre           │  Ocup    │   Cap  │  %     │
-│  ├──────────┼──────────────────┼──────────┼────────┼────────┤
-│  │ UBBB     │ Baku Airport     │        5 │    400 │   1.3%
-│  │ SGAS     │ Asunción Airport │        3 │    400 │   0.8%
-│  │ EBCI     │ Bruselas Airport │        2 │    440 │   0.5%
-│  │ OAKB     │ Kabul Airport    │        2 │    480 │   0.4%
-│  │ LBSF     │ Sofia Airport    │        1 │    400 │   0.3%
-│  │ SCEL     │ Santiago de Chi… │        1 │    460 │   0.2%
-│  │ EDDI     │ Berlin Airport   │        0 │    480 │   0.0%
-│  │ EHAM     │ Amsterdam Airpo… │        0 │    480 │   0.0%
-│  └──────────┴──────────────────┴──────────┴────────┴────────┘
-└──────────────────────────────────────────────────────────────
-2026-06-17T12:41:16.977-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Processing day 1
-2026-06-17T12:41:16.979-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 550 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:17.238-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 550 envios, 26372 total routes, 0 without route
-2026-06-17T12:41:17.386-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-01T10:00 → 2027-06-01T12:00]: 550 envios, Ta=407 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:17.388-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-01T12:00 — 550 new plans
-2026-06-17T12:41:17.390-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 554 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:17.461-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 554 envios, 26342 total routes, 0 without route
-2026-06-17T12:41:17.618-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-01T12:00 → 2027-06-01T14:00]: 554 envios, Ta=228 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:17.621-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-01T14:00 — 554 new plans
-2026-06-17T12:41:17.622-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 555 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:17.683-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 555 envios, 26603 total routes, 0 without route
-
-2026-06-17T12:41:17.866-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-01T14:00 → 2027-06-01T16:00]: 555 envios, Ta=244 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:17.869-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-01T16:00 — 530 new plans
-2026-06-17T12:41:17.870-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 550 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:17.929-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 550 envios, 26410 total routes, 0 without route
-
-2026-06-17T12:41:18.144-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-01T16:00 → 2027-06-01T18:00]: 550 envios, Ta=274 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:18.148-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-01T18:00 — 501 new plans
-2026-06-17T12:41:18.150-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 474 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:18.207-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 474 envios, 22637 total routes, 0 without route
-
-2026-06-17T12:41:18.514-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-01T18:00 → 2027-06-01T20:00]: 474 envios, Ta=364 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:18.519-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-01T20:00 — 350 new plans
-2026-06-17T12:41:18.524-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 315 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:18.598-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 315 envios, 14989 total routes, 0 without route
-
-2026-06-17T12:41:18.933-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-01T20:00 → 2027-06-01T22:00]: 315 envios, Ta=410 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:18.938-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-01T22:00 — 168 new plans
-2026-06-17T12:41:18.939-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 43 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:18.943-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 43 envios, 2095 total routes, 0 without route
-
-2026-06-17T12:41:19.207-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-01T22:00 → 2027-06-02T00:00]: 43 envios, Ta=268 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:19.209-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-02T00:00 — 18 new plans
-2026-06-17T12:41:19.328-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : processDeliveries: 2121 envios entregados this pass
-
-┌─── DÍA 2 (2027-06-02T08:00:00) ──────────────────────────────────────────────
-│  Envíos total      : 21154
 │  Planificados      : 3593
 │  Pendientes        : 17561
-│  Entregados        : 2121
-│  Retrasados        : 374
+│  Entregados        : 2217
+│  Retrasados        : 0
 │  Sin ruta          : 0
 │  Batches rolling   : 7
-│  SLA cumplimiento  : 33.6%
-│  SLA vencidos      : 374
-│  Maletas en tráns. : 2405
-│  Maletas entregadas: 5177
-│  Ocup. prom. almac.: 116.8%
+│  SLA cumplimiento  : 35.1%
+│  SLA vencidos      : 0
+│  Maletas en tráns. : 2963
+│  Maletas entregadas: 5349
+│  Ocup. prom. almac.: 5.2%
 │
 │  Aeropuertos (top 8 por ocupación):
 │  ┌──────────┬──────────────────┬──────────┬────────┬────────┐
@@ -255,105 +27,73 @@ WARNING: Dynamic loading of agents will be disallowed by default in a future rel
 │  ├──────────┼──────────────────┼──────────┼────────┼────────┤
 │  │ SLLP     │ La Paz Airport   │      442 │    420 │ 105.2% ❌
 │  │ SBBR     │ Brasilia Airport │      455 │    480 │  94.8% ⚠
-│  │ UMMS     │ Minsk Airport    │      326 │    400 │  81.5% ~
-│  │ SGAS     │ Asunción Airport │      297 │    400 │  74.3% ~
+│  │ UMMS     │ Minsk Airport    │      331 │    400 │  82.8% ~
+│  │ OSDI     │ Damasco Airport  │      288 │    400 │  72.0% ~
+│  │ SGAS     │ Asunción Airport │      285 │    400 │  71.3% ~
+│  │ UBBB     │ Baku Airport     │      284 │    400 │  71.0% ~
 │  │ OJAI     │ Aman Airport     │      276 │    400 │  69.0%
-│  │ OSDI     │ Damasco Airport  │      274 │    400 │  68.5%
-│  │ EDDI     │ Berlin Airport   │      318 │    480 │  66.3%
-│  │ UBBB     │ Baku Airport     │      249 │    400 │  62.3%
+│  │ EDDI     │ Berlin Airport   │      323 │    480 │  67.3%
 │  └──────────┴──────────────────┴──────────┴────────┴────────┘
 │  ❌ 1 aeropuerto(s) superan capacidad máxima (tope duro violado)
 └──────────────────────────────────────────────────────────────
-2026-06-17T12:41:20.193-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Processing day 2
-2026-06-17T12:41:20.193-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 876 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:20.290-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 876 envios, 41659 total routes, 0 without route
-2026-06-17T12:41:20.572-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-02T00:00 → 2027-06-02T02:00]: 876 envios, Ta=379 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:20.573-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-02T02:00 — 876 new plans
-2026-06-17T12:41:20.574-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 902 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:20.671-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 902 envios, 42639 total routes, 0 without route
-2026-06-17T12:41:21.057-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-02T02:00 → 2027-06-02T04:00]: 902 envios, Ta=483 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:21.058-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-02T04:00 — 902 new plans
-2026-06-17T12:41:21.059-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 902 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:21.162-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 902 envios, 42655 total routes, 0 without route
-2026-06-17T12:41:21.176-05:00  WARN 44033 --- [backend] [           main] c.t.b.a.SimulatedAnnealingAlgorithm      : No feasible initial route for envio OMDB-000060190
-2026-06-17T12:41:21.176-05:00  WARN 44033 --- [backend] [           main] c.t.b.a.SimulatedAnnealingAlgorithm      : No feasible initial route for envio OMDB-000060191
-2026-06-17T12:41:21.587-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-02T04:00 → 2027-06-02T06:00]: 902 envios, Ta=528 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:21.590-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-02T06:00 — 901 new plans
-2026-06-17T12:41:21.590-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 904 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:21.705-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 904 envios, 43286 total routes, 0 without route
-
-2026-06-17T12:41:22.199-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-02T06:00 → 2027-06-02T08:00]: 904 envios, Ta=609 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:22.204-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-02T08:00 — 726 new plans
-2026-06-17T12:41:22.205-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 903 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:22.306-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 903 envios, 43171 total routes, 0 without route
-
-2026-06-17T12:41:22.942-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-02T08:00 → 2027-06-02T10:00]: 903 envios, Ta=737 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:22.944-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-02T10:00 — 414 new plans
-2026-06-17T12:41:22.945-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 901 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:23.059-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 901 envios, 42748 total routes, 0 without route
-
-2026-06-17T12:41:23.764-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-02T10:00 → 2027-06-02T12:00]: 901 envios, Ta=819 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:23.768-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-02T12:00 — 242 new plans
-2026-06-17T12:41:23.769-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 905 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:23.866-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 905 envios, 43213 total routes, 0 without route
-2026-06-17T12:41:23.868-05:00  WARN 44033 --- [backend] [           main] c.t.b.a.SimulatedAnnealingAlgorithm      : No feasible initial route for envio LKPR-000065370
-
-2026-06-17T12:41:24.475-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-02T12:00 → 2027-06-02T14:00]: 905 envios, Ta=706 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:24.477-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-02T14:00 — 158 new plans
-2026-06-17T12:41:24.478-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 898 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:24.602-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 898 envios, 42554 total routes, 0 without route
-
-2026-06-17T12:41:25.616-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-02T14:00 → 2027-06-02T16:00]: 898 envios, Ta=1138 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:25.621-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-02T16:00 — 110 new plans
-2026-06-17T12:41:25.623-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 792 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:25.719-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 792 envios, 37953 total routes, 0 without route
 
 
-2026-06-17T12:41:26.428-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-02T16:00 → 2027-06-02T18:00]: 792 envios, Ta=805 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:26.433-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-02T18:00 — 14 new plans
-2026-06-17T12:41:26.435-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 506 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:26.700-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 506 envios, 24416 total routes, 0 without route
-
-2026-06-17T12:41:27.045-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-02T18:00 → 2027-06-02T20:00]: 506 envios, Ta=610 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:27.048-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-02T20:00 — 0 new plans
-2026-06-17T12:41:27.051-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 255 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:27.077-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 255 envios, 12363 total routes, 0 without route
-
-2026-06-17T12:41:27.256-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-02T20:00 → 2027-06-02T22:00]: 255 envios, Ta=206 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:27.258-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-02T22:00 — 0 new plans
-2026-06-17T12:41:27.259-05:00  INFO 44033 --- [backend] [           main] c.tasf.backend.service.PlanningService   : Planning batch of 53 envios with SIMULATED_ANNEALING (rolling)
-2026-06-17T12:41:27.265-05:00  INFO 44033 --- [backend] [           main] c.t.b.algorithm.RoutePlannerSupport      : Candidate pool built: 53 envios, 2553 total routes, 0 without route
-
-2026-06-17T12:41:27.319-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Planning batch [2027-06-02T22:00 → 2027-06-03T00:00]: 53 envios, Ta=60 ms, Sa=300000 ms, Sc=120 min
-2026-06-17T12:41:27.322-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : Rolling plan: batch up to 2027-06-03T00:00 — 3 new plans
-2026-06-17T12:41:27.410-05:00  INFO 44033 --- [backend] [           main] c.t.backend.simulation.SimulationEngine  : processDeliveries: 5194 envios entregados this pass
-
-┌─── DÍA 3 (2027-06-03T08:00:00) ──────────────────────────────────────────────
+┌─── DÍA 2 (2027-06-02T08:00:00) ──────────────────────────────────────────────
 │  Envíos total      : 21154
 │  Planificados      : 12390
 │  Pendientes        : 8764
-│  Entregados        : 7315
-│  Retrasados        : 4824
+│  Entregados        : 10636
+│  Retrasados        : 0
 │  Sin ruta          : 0
 │  Batches rolling   : 19
-│  SLA cumplimiento  : 73.9%
-│  SLA vencidos      : 4824
-│  Maletas en tráns. : 361
-│  Maletas entregadas: 15043
-│  Ocup. prom. almac.: 113.7%
+│  SLA cumplimiento  : 95.4%
+│  SLA vencidos      : 0
+│  Maletas en tráns. : 2551
+│  Maletas entregadas: 20277
+│  Ocup. prom. almac.: 3.7%
 │
 │  Aeropuertos (top 8 por ocupación):
 │  ┌──────────┬──────────────────┬──────────┬────────┬────────┐
 │  │ IATA     │ Nombre           │  Ocup    │   Cap  │  %     │
 │  ├──────────┼──────────────────┼──────────┼────────┼────────┤
 │  │ UMMS     │ Minsk Airport    │      318 │    400 │  79.5% ~
-│  │ SKBO     │ Bogota Airport   │      299 │    430 │  69.5%
+│  │ SBBR     │ Brasilia Airport │      351 │    480 │  73.1% ~
+│  │ SKBO     │ Bogota Airport   │      303 │    430 │  70.5% ~
+│  │ OSDI     │ Damasco Airport  │      275 │    400 │  68.8%
+│  │ SGAS     │ Asunción Airport │      273 │    400 │  68.3%
 │  │ SLLP     │ La Paz Airport   │      281 │    420 │  66.9%
-│  │ SBBR     │ Brasilia Airport │      318 │    480 │  66.3%
-│  │ OSDI     │ Damasco Airport  │      243 │    400 │  60.8%
-│  │ OJAI     │ Aman Airport     │      242 │    400 │  60.5%
-│  │ SGAS     │ Asunción Airport │      240 │    400 │  60.0%
-│  │ LATI     │ Tirana Airport   │      241 │    410 │  58.8%
+│  │ OJAI     │ Aman Airport     │      257 │    400 │  64.3%
+│  │ UBBB     │ Baku Airport     │      256 │    400 │  64.0%
+│  └──────────┴──────────────────┴──────────┴────────┴────────┘
+└──────────────────────────────────────────────────────────────
+
+
+┌─── DÍA 3 (2027-06-03T08:00:00) ──────────────────────────────────────────────
+│  Envíos total      : 21154
+│  Planificados      : 21154
+│  Pendientes        : 0
+│  Entregados        : 19415
+│  Retrasados        : 0
+│  Sin ruta          : 0
+│  Batches rolling   : 31
+│  SLA cumplimiento  : 100.0%
+│  SLA vencidos      : 0
+│  Maletas en tráns. : 2624
+│  Maletas entregadas: 34720
+│  Ocup. prom. almac.: 37.1%
+│
+│  Aeropuertos (top 8 por ocupación):
+│  ┌──────────┬──────────────────┬──────────┬────────┬────────┐
+│  │ IATA     │ Nombre           │  Ocup    │   Cap  │  %     │
+│  ├──────────┼──────────────────┼──────────┼────────┼────────┤
+│  │ SBBR     │ Brasilia Airport │       72 │    480 │  15.0%
+│  │ SPIM     │ Lima Airport     │       46 │    440 │  10.5%
+│  │ OMDB     │ Dubai Airport    │       39 │    420 │   9.3%
+│  │ UBBB     │ Baku Airport     │       37 │    400 │   9.3%
+│  │ OPKC     │ Karachi Airport  │       36 │    410 │   8.8%
+│  │ SGAS     │ Asunción Airport │       35 │    400 │   8.8%
+│  │ OOMS     │ Mascate Airport  │       36 │    460 │   7.8%
+│  │ OSDI     │ Damasco Airport  │       24 │    400 │   6.0%
 │  └──────────┴──────────────────┴──────────┴────────┴────────┘
 └──────────────────────────────────────────────────────────────
 
@@ -361,15 +101,4 @@ WARNING: Dynamic loading of agents will be disallowed by default in a future rel
   FIN SIMULACIÓN
 ══════════════════════════════════════════════════════════════
 
-[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 42.44 s -- in com.tasf.backend.simulation.SimulationDiagnosticTest
-[INFO] 
-[INFO] Results:
-[INFO] 
-[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
-[INFO] 
-[INFO] ------------------------------------------------------------------------
-[INFO] BUILD SUCCESS
-[INFO] ------------------------------------------------------------------------
-[INFO] Total time:  44.532 s
-[INFO] Finished at: 2026-06-17T12:41:29-05:00
-[INFO] ------------------------------------------------------------------------
+

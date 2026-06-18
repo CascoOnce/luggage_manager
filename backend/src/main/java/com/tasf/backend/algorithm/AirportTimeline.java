@@ -50,15 +50,16 @@ public class AirportTimeline {
     public int peakBetween(String airport, LocalDateTime from, LocalDateTime to) {
         TreeMap<LocalDateTime, Integer> map = events.get(airport);
         if (map == null) return 0;
+        // Carry-over: bags already at the airport at the start of the window
         int running = 0;
-        int peak = 0;
-        // Compute running total from all events at or before 'to', tracking max within [from,to]
-        for (Map.Entry<LocalDateTime, Integer> e : map.entrySet()) {
-            if (e.getKey().isAfter(to)) break;
+        for (int delta : map.headMap(from).values()) {
+            running += delta;
+        }
+        int peak = Math.max(0, running);
+        // Apply events within [from, to] and track peak
+        for (Map.Entry<LocalDateTime, Integer> e : map.subMap(from, true, to, true).entrySet()) {
             running += e.getValue();
-            if (!e.getKey().isBefore(from) && running > peak) {
-                peak = running;
-            }
+            if (running > peak) peak = running;
         }
         return Math.max(0, peak);
     }
