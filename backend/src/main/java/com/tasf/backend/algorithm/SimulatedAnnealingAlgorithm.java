@@ -232,6 +232,17 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                     .plusMinutes(params.getMinutosRecogidaDestino()).isAfter(deadline);
                 double slaDelta = (newViolates ? 1.0 : 0.0) - (oldViolates ? 1.0 : 0.0);
 
+                // Collect only airports touched by this swap — delta for unaffected airports cancels out
+                Set<String> swapAirports = new HashSet<>();
+                for (PartialAssignment pa : oldParts) {
+                    for (RouteCandidate.CapacityWindow w : pa.route().getCapacityWindows(e.getFechaHoraIngreso())) {
+                        swapAirports.add(w.airport());
+                    }
+                }
+                for (RouteCandidate.CapacityWindow w : newRoute.getCapacityWindows(e.getFechaHoraIngreso())) {
+                    swapAirports.add(w.airport());
+                }
+
                 // Apply new route tentatively to compute overload delta
                 for (RouteCandidate.CapacityWindow w : newRoute.getCapacityWindows(e.getFechaHoraIngreso())) {
                     timeline.addEvent(w.airport(), w.from(), totalQty);
@@ -242,7 +253,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                 }
 
                 double softFactor = params.getCapacidadBlandaFactor();
-                double overloadAfter = timeline.affectedAirports().stream()
+                double overloadAfter = swapAirports.stream()
                     .mapToDouble(ap -> {
                         double softCap = capacityCache.getOrDefault(ap, fallback) * softFactor;
                         return Math.max(0.0, timeline.globalPeak(ap) - softCap);
@@ -257,7 +268,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                     flightLoads.merge(flightDayKey(leg), -totalQty, Integer::sum);
                 }
 
-                double overloadBefore = timeline.affectedAirports().stream()
+                double overloadBefore = swapAirports.stream()
                     .mapToDouble(ap -> {
                         double softCap = capacityCache.getOrDefault(ap, fallback) * softFactor;
                         return Math.max(0.0, timeline.globalPeak(ap) - softCap);

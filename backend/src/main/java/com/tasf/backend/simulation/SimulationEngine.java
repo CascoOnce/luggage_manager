@@ -130,16 +130,13 @@ public class SimulationEngine {
         params.setDiasSimulacion(diasSimulacion);
 
         this.envios = deepCopyEnvios(filteredEnvios);
-        this.maletas = generarMaletas(this.envios);
+        this.maletas = new ArrayList<>();  // populated lazily per batch in aplicarResultadoPlanificacion
         this.planes = new ArrayList<>();
         this.cancelaciones = new ArrayList<>();
         this.metricas = new ArrayList<>();
         this.fechaSimulada = params.getFechaInicio().atTime(parseHoraInicio(params.getHoraInicio()));
 
         this.envios.forEach(envio -> envio.setEstado(EstadoEnvio.PENDIENTE));
-        this.maletas.forEach(maleta -> {
-            maleta.setEstado(EstadoMaleta.EN_ALMACEN);
-        });
 
         // Rolling planning: set horizon pointer to simulation start then plan first batch
         this.horizonPointer = params.getFechaInicio().atTime(parseHoraInicio(params.getHoraInicio()));
@@ -1607,12 +1604,22 @@ public class SimulationEngine {
         if (planning.getMetrica() != null) {
             this.metricas.add(planning.getMetrica());
         }
-        Set<String> sinRuta = new HashSet<>(planning.getEnviosSinRuta());
+
+        // Lazy bag generation: only create bags for envíos that received a plan this batch.
+        // Envíos deferred (PENDIENTE, capacity full) get bags when they're routed in a later batch.
+        // Envíos with empty candidate pool are already RETRASADO — no bags created.
+        Set<String> yaGenerados = this.maletas.stream()
+            .map(Maleta::getIdEnvio)
+            .collect(Collectors.toSet());
+        List<Maleta> nuevas = generarMaletasDeBatch(planning.getPlanes(), yaGenerados);
+        this.maletas.addAll(nuevas);
+
         // SA already set each envio's estado correctly:
         //   - truly unroutable (empty pool)  → RETRASADO
         //   - capacity-failed (deferred)     → PENDIENTE (will retry in next batch)
         // Only sync maletas to RETRASADA for envíos the SA confirmed as RETRASADO,
         // so warehouse counts stay accurate without overriding deferred PENDIENTE bags.
+        Set<String> sinRuta = new HashSet<>(planning.getEnviosSinRuta());
         Set<String> confirmedRetrasado = this.envios.stream()
             .filter(e -> sinRuta.contains(e.getIdEnvio()) && e.getEstado() == EstadoEnvio.RETRASADO)
             .map(Envio::getIdEnvio)
@@ -1620,6 +1627,40 @@ public class SimulationEngine {
         this.maletas.stream()
             .filter(m -> confirmedRetrasado.contains(m.getIdEnvio()))
             .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
+    }
+
+    private List<Maleta> generarMaletasDeBatch(List<PlanDeViaje> batchPlanes, Set<String> yaGenerados) {
+        Map<String, List<PlanDeViaje>> porEnvio = batchPlanes.stream()
+            .filter(p -> !yaGenerados.contains(p.getIdEnvio()))
+            .collect(Collectors.groupingBy(PlanDeViaje::getIdEnvio));
+
+        List<Maleta> result = new ArrayList<>();
+        Map<String, Envio> envioById = this.envios.stream()
+            .collect(Collectors.toMap(Envio::getIdEnvio, e -> e));
+
+        for (Map.Entry<String, List<PlanDeViaje>> entry : porEnvio.entrySet()) {
+            Envio envio = envioById.get(entry.getKey());
+            if (envio == null) continue;
+            List<PlanDeViaje> envioPlans = entry.getValue().stream()
+                .sorted(Comparator.comparingInt(PlanDeViaje::getVersion))
+                .collect(Collectors.toList());
+            int idx = 1;
+            for (PlanDeViaje plan : envioPlans) {
+                int count = plan.getCantidadMaletas() > 0 ? plan.getCantidadMaletas() : envio.getCantidadMaletas();
+                for (int i = 0; i < count; i++) {
+                    result.add(Maleta.builder()
+                        .idMaleta(envio.getIdEnvio() + "-" + idx++)
+                        .idEnvio(envio.getIdEnvio())
+                        .ubicacionActual(envio.getAeropuertoOrigen())
+                        .estado(EstadoMaleta.EN_ALMACEN)
+                        .fechaIngreso(envio.getFechaHoraIngreso().toLocalDate())
+                        .fechaHoraLlegadaUbicacion(envio.getFechaHoraIngreso())
+                        .planVersion(plan.getVersion())
+                        .build());
+                }
+            }
+        }
+        return result;
     }
 
     private java.time.LocalTime parseHoraInicio(String horaInicio) {
