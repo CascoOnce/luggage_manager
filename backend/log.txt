@@ -1,11 +1,8 @@
 
-
-
 ╔══════════════════════════════════════════════════════════════╗
 ║  DIAGNÓSTICO — 2027-06-01  08:00  3 días  alg=SA
 ║  Envíos cargados de DB: 21160
 ╚══════════════════════════════════════════════════════════════╝
-
 
 ┌─── DÍA 1 (2027-06-01T08:00:00) ──────────────────────────────────────────────
 │  Envíos total      : 21154
@@ -25,18 +22,16 @@
 │  ┌──────────┬──────────────────┬──────────┬────────┬────────┐
 │  │ IATA     │ Nombre           │  Ocup    │   Cap  │  %     │
 │  ├──────────┼──────────────────┼──────────┼────────┼────────┤
-│  │ SLLP     │ La Paz Airport   │      442 │    420 │ 105.2% ❌
-│  │ SBBR     │ Brasilia Airport │      455 │    480 │  94.8% ⚠
-│  │ UMMS     │ Minsk Airport    │      331 │    400 │  82.8% ~
-│  │ OSDI     │ Damasco Airport  │      288 │    400 │  72.0% ~
-│  │ SGAS     │ Asunción Airport │      285 │    400 │  71.3% ~
-│  │ UBBB     │ Baku Airport     │      284 │    400 │  71.0% ~
-│  │ OJAI     │ Aman Airport     │      276 │    400 │  69.0%
-│  │ EDDI     │ Berlin Airport   │      323 │    480 │  67.3%
+│  │ OMDB     │ Dubai Airport    │       80 │    420 │  19.0%
+│  │ SBBR     │ Brasilia Airport │       80 │    480 │  16.7%
+│  │ OOMS     │ Mascate Airport  │       76 │    460 │  16.5%
+│  │ SUAA     │ Motenvideo Airp… │       47 │    400 │  11.8%
+│  │ SGAS     │ Asunción Airport │       43 │    400 │  10.8%
+│  │ UBBB     │ Baku Airport     │       35 │    400 │   8.8%
+│  │ OAKB     │ Kabul Airport    │       41 │    480 │   8.5%
+│  │ SPIM     │ Lima Airport     │       37 │    440 │   8.4%
 │  └──────────┴──────────────────┴──────────┴────────┴────────┘
-│  ❌ 1 aeropuerto(s) superan capacidad máxima (tope duro violado)
 └──────────────────────────────────────────────────────────────
-
 
 ┌─── DÍA 2 (2027-06-02T08:00:00) ──────────────────────────────────────────────
 │  Envíos total      : 21154
@@ -56,17 +51,16 @@
 │  ┌──────────┬──────────────────┬──────────┬────────┬────────┐
 │  │ IATA     │ Nombre           │  Ocup    │   Cap  │  %     │
 │  ├──────────┼──────────────────┼──────────┼────────┼────────┤
-│  │ UMMS     │ Minsk Airport    │      318 │    400 │  79.5% ~
-│  │ SBBR     │ Brasilia Airport │      351 │    480 │  73.1% ~
-│  │ SKBO     │ Bogota Airport   │      303 │    430 │  70.5% ~
-│  │ OSDI     │ Damasco Airport  │      275 │    400 │  68.8%
-│  │ SGAS     │ Asunción Airport │      273 │    400 │  68.3%
-│  │ SLLP     │ La Paz Airport   │      281 │    420 │  66.9%
-│  │ OJAI     │ Aman Airport     │      257 │    400 │  64.3%
-│  │ UBBB     │ Baku Airport     │      256 │    400 │  64.0%
+│  │ OPKC     │ Karachi Airport  │       42 │    410 │  10.2%
+│  │ OAKB     │ Kabul Airport    │       45 │    480 │   9.4%
+│  │ SGAS     │ Asunción Airport │       33 │    400 │   8.3%
+│  │ OMDB     │ Dubai Airport    │       34 │    420 │   8.1%
+│  │ OSDI     │ Damasco Airport  │       32 │    400 │   8.0%
+│  │ SPIM     │ Lima Airport     │       34 │    440 │   7.7%
+│  │ SBBR     │ Brasilia Airport │       33 │    480 │   6.9%
+│  │ UBBB     │ Baku Airport     │       22 │    400 │   5.5%
 │  └──────────┴──────────────────┴──────────┴────────┴────────┘
 └──────────────────────────────────────────────────────────────
-
 
 ┌─── DÍA 3 (2027-06-03T08:00:00) ──────────────────────────────────────────────
 │  Envíos total      : 21154
@@ -101,4 +95,18 @@
   FIN SIMULACIÓN
 ══════════════════════════════════════════════════════════════
 
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 43.33 s -- in com.tasf.backend.simulation.SimulationDiagnosticTest
+2026-06-20T11:29:29.882-05:00  INFO 136975 --- [backend] [         task-1] c.t.b.s.SimulationPersistenceService     : Persisting simulation results to database...
+[ERROR] Surefire is going to kill self fork JVM. The exit has elapsed 30 seconds after System.exit(0).
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  01:14 min
+[INFO] Finished at: 2026-06-20T11:29:59-05:00
+[INFO] ------------------------------------------------------------------------
 
