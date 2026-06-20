@@ -84,7 +84,8 @@ public class SimulationController {
         if (!simulationEngine.estaInicializada()) {
             return ResponseEntity.noContent().build();
         }
-        return ResponseEntity.ok(simulationEngine.getEstado());
+        SimulationStateDTO cached = simulationEngine.getCachedEstado();
+        return cached != null ? ResponseEntity.ok(cached) : ResponseEntity.noContent().build();
     }
 
     @PostMapping("/simulation/stop")

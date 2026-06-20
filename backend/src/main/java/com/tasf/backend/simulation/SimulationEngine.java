@@ -82,6 +82,10 @@ public class SimulationEngine {
     private final Map<String, String> maletaVueloActual = new HashMap<>();
     private final List<ThroughputDiaDTO> throughputHistorial = new ArrayList<>();
 
+    // Non-blocking cache: updated at end of each avanzarDia/inicializar/detener/reiniciar.
+    // Allows /state polling to return immediately without contending on the synchronized lock.
+    private volatile SimulationStateDTO cachedState;
+
     public SimulationEngine(DataLoaderService dataLoaderService, PlanningService planningService, SimulationPersistenceService persistenceService) {
         this.dataLoaderService = dataLoaderService;
         this.planningService = planningService;
@@ -153,6 +157,7 @@ public class SimulationEngine {
         addOperationLog("Simulation initialized - Day 1 - " + this.envios.size()
             + " envios - algorithm: " + algoritmoInicial
             + " - routes evaluated: " + Optional.ofNullable(planning.getMetrica()).map(MetricaAlgoritmo::getRutasEvaluadas).orElse(0));
+        this.cachedState = getEstado();
     }
 
     public synchronized SimulationStateDTO avanzarDia() {
@@ -254,14 +259,14 @@ public class SimulationEngine {
                 List.copyOf(logOperaciones),
                 List.copyOf(envios)
             );
-            return getEstado();
+            return this.cachedState = getEstado();
         }
 
         // Capture end-of-day state BEFORE advancing diaActual so the DTO shows
         // the completed day number. Use fechaSimulada+1 as the warehouse reference
         // so that all bags ingested during the completed day are visible.
         updateWarehouseOccupation(fechaSimulada.plusDays(1));
-        SimulationStateDTO dayResult = getEstado();
+        SimulationStateDTO dayResult = this.cachedState = getEstado();
 
         // Advance for next planning cycle / frontend polling.
         diaActual++;
@@ -314,7 +319,7 @@ public class SimulationEngine {
         updateWarehouseOccupation();
         aeropuertos.forEach(a -> a.setOcupacionInicioDia(a.getOcupacionActual()));
         addOperationLog("Simulation restarted - Day 1 - reusing previous plans");
-        return getEstado();
+        return this.cachedState = getEstado();
     }
 
     public synchronized SimulationStateDTO detener() {
@@ -331,7 +336,7 @@ public class SimulationEngine {
             List.copyOf(logOperaciones),
             List.copyOf(envios)
         );
-        return getEstado();
+        return this.cachedState = getEstado();
     }
 
     private void applySimulationEnd(LocalDate simulationEndDate) {
@@ -510,6 +515,10 @@ public class SimulationEngine {
         
         replanificar(nuevasMaletas);
         updateWarehouseOccupation();
+    }
+
+    public SimulationStateDTO getCachedEstado() {
+        return cachedState;
     }
 
     public synchronized SimulationStateDTO getEstado() {
