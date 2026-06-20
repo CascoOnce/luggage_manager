@@ -9,6 +9,7 @@ import com.tasf.backend.domain.Envio;
 import com.tasf.backend.domain.EstadoEnvio;
 import com.tasf.backend.domain.ParametrosSimulacion;
 import com.tasf.backend.dto.SimulationStateDTO;
+import com.tasf.backend.repository.EnvioRepository;
 import com.tasf.backend.service.DataLoaderService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -27,6 +28,9 @@ class SimulationScenarioTest {
 
     @Autowired
     private DataLoaderService dataLoaderService;
+
+    @Autowired
+    private EnvioRepository envioRepository;
 
     private List<Envio> sampleEnvios;
 
@@ -120,6 +124,61 @@ class SimulationScenarioTest {
             .count();
         assertEquals(0, randomCancels,
             "No debe haber cancelaciones aleatorias cuando porcentajeCancelacionAleatoria=0");
+    }
+
+    @Test
+    void simulacionFechasCriticas2027() {
+        LocalDate fechaInicio = LocalDate.of(2027, 6, 1);
+        LocalDateTime inicio = fechaInicio.atStartOfDay();
+        LocalDateTime fin = inicio.plusDays(3);
+
+        List<Envio> envios = envioRepository.findByFechaHoraIngresoBetween(inicio, fin).stream()
+            .map(e -> Envio.builder()
+                .idEnvio(e.getIdPedido())
+                .codigoAerolinea(e.getCodigoAerolinea())
+                .aeropuertoOrigen(e.getIataOrigen())
+                .aeropuertoDestino(e.getIataDestino())
+                .fechaHoraIngreso(e.getFechaHoraIngreso())
+                .cantidadMaletas(e.getCantidadMaletas())
+                .sla(e.getSla())
+                .estado(EstadoEnvio.valueOf(e.getEstado()))
+                .build())
+            .toList();
+
+        org.junit.jupiter.api.Assumptions.assumeTrue(!envios.isEmpty(),
+            "Sin envíos en DB para 2027-06-01, saltando test");
+
+        ParametrosSimulacion params = ParametrosSimulacion.builder()
+            .fechaInicio(fechaInicio)
+            .dias(3)
+            .diasSimulacion(3)
+            .esColapso(false)
+            .build();
+
+        simulationEngine.inicializar(params, envios);
+
+        SimulationStateDTO state = null;
+        for (int day = 0; day < 3; day++) {
+            state = simulationEngine.avanzarDia();
+        }
+
+        assertNotNull(state);
+        assertTrue(state.isFinalizada(), "Simulación debe finalizar en día 3");
+        assertEquals(3, state.getThroughputHistorial().size(), "Debe haber 3 días de historial");
+
+        state.getAeropuertos().forEach(ap -> {
+            if (ap.getCapacidadAlmacen() > 0) {
+                assertTrue(
+                    ap.getOcupacionMaxima() <= 100.0,
+                    () -> String.format("Aeropuerto %s superó capacidad (%.2f%% > 100%%)",
+                        ap.getCodigoIATA(), ap.getOcupacionMaxima())
+                );
+            }
+        });
+
+        System.out.printf("2027-06-01: %d envíos, SLA=%.1f%%%n",
+            envios.size(),
+            state.getKpis() != null ? state.getKpis().getCumplimientoSLA() : -1.0);
     }
 
     @Test
