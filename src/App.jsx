@@ -135,9 +135,9 @@ export default function App() {
         setPollingError(null)
         // Only update state if backend has real data or is actively running/finished.
         // Prevents empty post-reset state from overwriting a valid finalizada snapshot.
-        if (state && (state.enEjecucion || state.finalizada)) {
+        if (state && (state.enEjecucion || state.finalizada) && !stepInProgressRef.current) {
           setBackendState(state)
-          if (state.finalizada && !stepInProgressRef.current) {
+          if (state.finalizada) {
             stopPolling()
             setTimeout(() => setScreen('resultados'), 8000)
           }

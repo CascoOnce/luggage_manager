@@ -144,10 +144,20 @@ public class SimulationEngine {
 
         this.envios.forEach(envio -> envio.setEstado(EstadoEnvio.PENDIENTE));
 
-        // Rolling planning: set horizon pointer to simulation start then plan first batch
+        // Rolling planning: set horizon pointer to simulation start then plan ALL batches
+        // covering day 1. Planning the full first day (instead of a single batch) means the
+        // frontend renders day-1 flights gradually by schedule (isActiveAtMinute) instead of
+        // showing a near-empty map that floods when the first avanzarDia() runs.
         this.horizonPointer = params.getFechaInicio().atTime(parseHoraInicio(params.getHoraInicio()));
-        PlanningResult planning = planificarSiguienteBloque();
-        aplicarResultadoPlanificacion(planning);
+        LocalDateTime endOfDay1 = params.getFechaInicio().plusDays(1).atStartOfDay();
+        PlanningResult planning = null;
+        int rutasEvaluadasInit = 0;
+        while (horizonPointer != null && horizonPointer.isBefore(endOfDay1)) {
+            planning = planificarSiguienteBloque();
+            aplicarResultadoPlanificacion(planning);
+            rutasEvaluadasInit += Optional.ofNullable(planning.getMetrica())
+                .map(MetricaAlgoritmo::getRutasEvaluadas).orElse(0);
+        }
 
         this.diaActual = 1;
         this.enEjecucion = true;
@@ -158,7 +168,7 @@ public class SimulationEngine {
         String algoritmoInicial = params.getAlgoritmo() != null ? params.getAlgoritmo() : "N/A";
         addOperationLog("Simulation initialized - Day 1 - " + this.envios.size()
             + " envios - algorithm: " + algoritmoInicial
-            + " - routes evaluated: " + Optional.ofNullable(planning.getMetrica()).map(MetricaAlgoritmo::getRutasEvaluadas).orElse(0));
+            + " - routes evaluated: " + rutasEvaluadasInit);
         this.cachedState = getEstado();
     }
 
