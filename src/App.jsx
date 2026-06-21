@@ -17,7 +17,7 @@ import { getLiveState, getOpsState, getOpsOccupancy, planificarOps, getOpsEnvios
 
 export default function App() {
   const ALGORITHM = 'SIMULATED_ANNEALING'
-  const SIM_MINUTES_PER_REAL_SECOND = 30 // ~48s per simulated day
+  const SIM_MINUTES_PER_REAL_SECOND = 6  // 6 min/tick @ 250ms = ~60s per simulated day
   const [realElapsedSeconds, setRealElapsedSeconds] = useState(0)
 
   const [threshold, setThreshold] = useState(80)
@@ -241,22 +241,25 @@ export default function App() {
           const next = current + SIM_MINUTES_PER_REAL_SECOND
           return Math.min(next, 1440)
         })
-      }, 1000)
+      }, 250)
     } else {
       clearInterval(autoStepRef.current)
     }
     return () => clearInterval(autoStepRef.current)
   }, [autoStep])
 
-  // At midnight: fire /step (fast now — backend returns before background planning
-  // finishes). stepInProgressRef blocks polling for the few seconds the HTTP call
-  // takes. After that, polling picks up progressive background batch states.
+  // At midnight: reset clock immediately (no freeze) and fire /step in background.
+  // Animation resumes for the next day while /step processes. When response arrives,
+  // setBackendState swaps in new day data. Brief window (~1-4s) of prior-day flight
+  // data is acceptable and masked by fine-grained ticks.
   useEffect(() => {
     if (!autoStep) return
     if (simClockMinutes < 1440) return
     if (stepInProgressRef.current) return  // already fired this midnight
 
     stepInProgressRef.current = true
+    // Reset clock immediately — don't wait for /step response
+    setSimClockMinutes(simStartMinuteRef.current)
     let cancelled = false
     ;(async () => {
       try {
@@ -264,7 +267,6 @@ export default function App() {
         if (cancelled || !newState) return
         stepInProgressRef.current = false
         setBackendState(newState)
-        setSimClockMinutes(simStartMinuteRef.current)
         if (newState.finalizada) {
           setAutoStep(false)
           clearInterval(autoStepRef.current)

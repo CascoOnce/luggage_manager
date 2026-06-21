@@ -117,22 +117,25 @@ public class SimulationEngine {
         // Resolve the number of days requested by the user
         int filterDias = resolveDias(params);
 
-        // Apply date-window filter: fecha >= fechaInicio AND fecha < fechaInicio + dias
-        // When esColapso=true there is no upper bound
+        // Apply date-window filter: fechaHoraIngreso >= inicioExacto AND fecha < fechaInicio + dias
+        // inicioExacto uses horaInicio so shipments registered before the start hour on day 1
+        // are excluded — prevents pre-loaded flights appearing on the map at t=0.
+        // When esColapso=true there is no upper bound.
         LocalDate fechaInicio = params.getFechaInicio();
+        LocalDateTime inicioExacto = fechaInicio.atTime(parseHoraInicio(params.getHoraInicio()));
         boolean esColapso = Boolean.TRUE.equals(params.getEsColapso());
 
         List<Envio> filteredEnvios;
         if (esColapso) {
             filteredEnvios = todosLosEnvios.stream()
-                .filter(e -> !e.getFechaHoraIngreso().toLocalDate().isBefore(fechaInicio))
+                .filter(e -> !e.getFechaHoraIngreso().isBefore(inicioExacto))
                 .collect(Collectors.toCollection(ArrayList::new));
         } else {
             LocalDate dateEnd = fechaInicio.plusDays(filterDias);
             filteredEnvios = todosLosEnvios.stream()
                 .filter(e -> {
-                    LocalDate d = e.getFechaHoraIngreso().toLocalDate();
-                    return !d.isBefore(fechaInicio) && d.isBefore(dateEnd);
+                    LocalDateTime dt = e.getFechaHoraIngreso();
+                    return !dt.isBefore(inicioExacto) && dt.toLocalDate().isBefore(dateEnd);
                 })
                 .collect(Collectors.toCollection(ArrayList::new));
         }
