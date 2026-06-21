@@ -183,15 +183,11 @@ public class SimulationEngine {
         // previous simulated day must be reset so that the same flight can operate again.
         vuelos.forEach(v -> v.setCancelado(false));
 
-        // Plan all batches covering the current simulated day (loop until horizon
-        // reaches midnight of the next day, so no orders are left unplanned).
-        LocalDateTime endOfDay = params.getFechaInicio().plusDays(diaActual).atStartOfDay();
-        while (horizonPointer != null && horizonPointer.isBefore(endOfDay)) {
-            PlanningResult batchResult = planificarSiguienteBloque();
-            aplicarResultadoPlanificacion(batchResult);
-            addOperationLog("Rolling plan: batch up to " + horizonPointer + " — " + batchResult.getPlanes().size() + " new plans");
-            this.cachedState = getEstado();
-        }
+        // The current day's batches were already planned ahead of time — by inicializar()
+        // for day 1, or by the previous avanzarDia()'s look-ahead for later days. This means
+        // the state returned by each step already carries the flights for the day the frontend
+        // is about to animate, so days advance 1:1 with the visual clock (no duplicate day-1
+        // frame, and the final day animates before the redirect to resultados).
 
         // Snapshot warehouse state at the START of the day — before any departures or
         // deliveries — so that [OCUPACION] logs capture origin warehouses (e.g. OJAI)
@@ -275,20 +271,25 @@ public class SimulationEngine {
             return this.cachedState = getEstado();
         }
 
-        // Capture end-of-day state BEFORE advancing diaActual so the DTO shows
-        // the completed day number. Use fechaSimulada+1 as the warehouse reference
-        // so that all bags ingested during the completed day are visible.
-        updateWarehouseOccupation(fechaSimulada.plusDays(1));
-        SimulationStateDTO dayResult = this.cachedState = getEstado();
-
-        // Advance for next planning cycle / frontend polling.
+        // Advance to the next simulated day, then plan that day's batches (look-ahead) so the
+        // returned state carries the upcoming day's flights for the frontend to animate. The
+        // returned diaActual is the day the frontend will show next — keeping the visual day
+        // counter aligned 1:1 with the backend (init=day 1, step1=day 2, step2=day 3, ...).
         diaActual++;
         this.fechaSimulada = this.fechaSimulada.plusDays(1);
-        // Recompute so upcoming-day bags (fechaIngreso == new today) are visible
-        // during the polling window before the next avanzarDia() runs.
+
+        LocalDateTime endOfDay = params.getFechaInicio().plusDays(diaActual).atStartOfDay();
+        while (horizonPointer != null && horizonPointer.isBefore(endOfDay)) {
+            PlanningResult batchResult = planificarSiguienteBloque();
+            aplicarResultadoPlanificacion(batchResult);
+            addOperationLog("Rolling plan: batch up to " + horizonPointer + " — " + batchResult.getPlanes().size() + " new plans");
+            this.cachedState = getEstado();
+        }
+
+        // Recompute so upcoming-day bags (fechaIngreso == new today) are visible.
         updateWarehouseOccupation();
 
-        return dayResult;
+        return this.cachedState = getEstado();
     }
 
     public synchronized SimulationStateDTO reiniciar() {
