@@ -135,11 +135,11 @@ export default function App() {
         setPollingError(null)
         // Only update state if backend has real data or is actively running/finished.
         // Prevents empty post-reset state from overwriting a valid finalizada snapshot.
-        if (state && (state.enEjecucion || state.finalizada) && !stepInProgressRef.current) {
+        if (state && (state.enEjecucion || state.finalizada)) {
           setBackendState(state)
-          if (state.finalizada) {
+          if (state.finalizada && !stepInProgressRef.current) {
             stopPolling()
-            setScreen('resultados')
+            setTimeout(() => setScreen('resultados'), 8000)
           }
         }
       } catch (err) {
@@ -281,7 +281,7 @@ export default function App() {
         setAutoStep(false)
         clearInterval(autoStepRef.current)
         stopPolling()
-        setScreen('resultados')
+        setTimeout(() => setScreen('resultados'), 8000)
       }
     }
 

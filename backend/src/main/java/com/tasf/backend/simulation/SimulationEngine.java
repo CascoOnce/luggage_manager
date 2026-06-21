@@ -180,6 +180,7 @@ public class SimulationEngine {
             PlanningResult batchResult = planificarSiguienteBloque();
             aplicarResultadoPlanificacion(batchResult);
             addOperationLog("Rolling plan: batch up to " + horizonPointer + " — " + batchResult.getPlanes().size() + " new plans");
+            this.cachedState = getEstado();
         }
 
         // Snapshot warehouse state at the START of the day — before any departures or
