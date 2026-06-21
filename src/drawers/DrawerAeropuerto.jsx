@@ -174,7 +174,10 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
 
   const occ = airport.currentOccupation ?? airport.ocupacionActual ?? 0
   const cap = airport.warehouseCapacity ?? airport.capacidadAlmacen ?? 600
-  const pct = cap > 0 ? Math.round((occ / cap) * 100) : 0
+  const pctRaw = cap > 0 ? (occ / cap) * 100 : 0
+  const pct = Math.round(pctRaw)
+  // Show "<1%" when there are bags but rounding drops it to 0, so 1/410 isn't shown as 0%.
+  const pctLabel = pctRaw > 0 && pct === 0 ? '<1%' : `${pct}%`
   const color = semaforoColor(pct)
 
   const iata = airport.id
@@ -265,7 +268,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
             <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 9 }}>
               {occ.toLocaleString()} / {cap.toLocaleString()} maletas
             </span>
-            <span style={{ color, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700 }}>{pct}%</span>
+            <span style={{ color, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700 }}>{pctLabel}</span>
           </div>
         </div>
 
@@ -352,7 +355,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
           </div>
           <div style={{ width: 1, background: 'var(--border)', margin: '8px 0' }} />
           <div style={s.stat}>
-            <span style={{ ...s.statVal, color }}>{pct}%</span>
+            <span style={{ ...s.statVal, color }}>{pctLabel}</span>
             <span style={s.statLabel}>Ocupación</span>
           </div>
         </div>
