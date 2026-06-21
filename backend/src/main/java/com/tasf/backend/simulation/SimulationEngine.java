@@ -707,13 +707,19 @@ public class SimulationEngine {
         Map<String, Envio> envioById = envios.stream()
             .collect(Collectors.toMap(Envio::getIdEnvio, e -> e, (a, b) -> a));
 
-        // Envíos actualmente en almacén
+        // Envíos actualmente en almacén — same temporal filter as updateWarehouseOccupation
+        // so that inventory count is consistent with the occupancy percentage shown in the UI.
+        LocalDateTime simRef = fechaSimulada;
         Set<String> idsEnAlmacen = maletas.stream()
             .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN && iata.equals(m.getUbicacionActual()))
+            .filter(m -> simRef == null || m.getFechaHoraLlegadaUbicacion() == null
+                || !m.getFechaHoraLlegadaUbicacion().isAfter(simRef))
             .map(com.tasf.backend.domain.Maleta::getIdEnvio)
             .collect(Collectors.toSet());
         Map<String, Long> maletasPorEnvio = maletas.stream()
             .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN && iata.equals(m.getUbicacionActual()))
+            .filter(m -> simRef == null || m.getFechaHoraLlegadaUbicacion() == null
+                || !m.getFechaHoraLlegadaUbicacion().isAfter(simRef))
             .collect(Collectors.groupingBy(com.tasf.backend.domain.Maleta::getIdEnvio, Collectors.counting()));
 
         List<com.tasf.backend.dto.EnvioSummaryDTO> enAlmacen = idsEnAlmacen.stream()
