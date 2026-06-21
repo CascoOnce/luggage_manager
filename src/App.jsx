@@ -248,80 +248,31 @@ export default function App() {
     return () => clearInterval(autoStepRef.current)
   }, [autoStep])
 
-  // Prefetch next day starting at sim 20:00 (minute 1200) so it's ready at midnight.
-  // stepInProgressRef stays true until applyNewDay fires at 1440 to block polling
-  // from picking up the new backend state before the frontend clock reaches midnight.
-  useEffect(() => {
-    if (!autoStep) return
-    if (simClockMinutes < 1200 || simClockMinutes >= 1440) return
-    if (prefetchFiredRef.current) return
-
-    prefetchFiredRef.current = true
-    stepInProgressRef.current = true
-    nextDayStateRef.current = null
-    ;(async () => {
-      try {
-        const newState = await api.stepSimulation()
-        nextDayStateRef.current = newState ?? null
-      } catch (err) {
-        console.error('Prefetch error:', err)
-        nextDayStateRef.current = null
-        prefetchFiredRef.current = false
-        stepInProgressRef.current = false
-      }
-      // intentionally NO finally — stepInProgressRef released only in applyNewDay
-    })()
-  }, [simClockMinutes, autoStep])
-
-  // At midnight: apply prefetched state (instant) or wait if prefetch not ready yet
+  // At midnight: fire /step (fast now — backend returns before background planning
+  // finishes). stepInProgressRef blocks polling for the few seconds the HTTP call
+  // takes. After that, polling picks up progressive background batch states.
   useEffect(() => {
     if (!autoStep) return
     if (simClockMinutes < 1440) return
+    if (stepInProgressRef.current) return  // already fired this midnight
 
-    const applyNewDay = (newState) => {
-      stepInProgressRef.current = false
-      setBackendState(newState)
-      setSimClockMinutes(simStartMinuteRef.current)
-      prefetchFiredRef.current = false
-      nextDayStateRef.current = null
-      if (newState.finalizada) {
-        setAutoStep(false)
-        clearInterval(autoStepRef.current)
-        stopPolling()
-        setTimeout(() => setScreen('resultados'), 8000)
-      }
-    }
-
-    if (nextDayStateRef.current) {
-      // Prefetch already done — apply instantly, no freeze
-      applyNewDay(nextDayStateRef.current)
-      return
-    }
-
-    // Prefetch not ready (backend took > 8s) — wait for it
     stepInProgressRef.current = true
     let cancelled = false
     ;(async () => {
       try {
-        // If prefetch is in-flight, poll until it resolves
-        const poll = () => new Promise((resolve) => {
-          const check = () => {
-            if (nextDayStateRef.current !== null || !prefetchFiredRef.current) {
-              resolve(nextDayStateRef.current)
-            } else {
-              setTimeout(check, 100)
-            }
-          }
-          check()
-        })
-        const newState = prefetchFiredRef.current
-          ? await poll()
-          : await api.stepSimulation()
+        const newState = await api.stepSimulation()
         if (cancelled || !newState) return
-        applyNewDay(newState)
+        stepInProgressRef.current = false
+        setBackendState(newState)
+        setSimClockMinutes(simStartMinuteRef.current)
+        if (newState.finalizada) {
+          setAutoStep(false)
+          clearInterval(autoStepRef.current)
+          stopPolling()
+          setTimeout(() => setScreen('resultados'), 8000)
+        }
       } catch (err) {
         console.error('Auto-step error:', err)
-      } finally {
         stepInProgressRef.current = false
       }
     })()
@@ -606,8 +557,7 @@ export default function App() {
   }, [opsState, opsEnvios, opsReporte])
 
   async function handleReset() {
-    prefetchFiredRef.current = false
-    nextDayStateRef.current = null
+    stepInProgressRef.current = false
     colapsoPuntoAlertedRef.current = false
     stopPolling()
     pollingErrorsRef.current = 0
@@ -618,8 +568,7 @@ export default function App() {
   }
 
   async function handleStop() {
-    prefetchFiredRef.current = false
-    nextDayStateRef.current = null
+    stepInProgressRef.current = false
     try {
       const state = await api.stopSimulation()
       if (state) setBackendState(state)
@@ -634,8 +583,7 @@ export default function App() {
 
   async function handleRestart() {
     if (!backendState) return
-    prefetchFiredRef.current = false
-    nextDayStateRef.current = null
+    stepInProgressRef.current = false
     stopPolling()
     setAutoStep(false)
     clearInterval(autoStepRef.current)

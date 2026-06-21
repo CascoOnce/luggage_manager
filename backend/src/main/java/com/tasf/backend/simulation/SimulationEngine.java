@@ -41,6 +41,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -86,6 +90,16 @@ public class SimulationEngine {
     // Allows /state polling to return immediately without contending on the synchronized lock.
     private volatile SimulationStateDTO cachedState;
     private volatile boolean initialized = false;
+
+    // Background planning: avanzarDia() submits next-day batch planning here so the
+    // HTTP response returns fast. Each batch acquires the instance lock independently,
+    // so polling (cachedState read) and the next step (wait then lock) are not blocked.
+    private final ExecutorService planningExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "bg-planner");
+        t.setDaemon(true);
+        return t;
+    });
+    private volatile Future<?> backgroundPlanningFuture;
 
     public SimulationEngine(DataLoaderService dataLoaderService, PlanningService planningService, SimulationPersistenceService persistenceService) {
         this.dataLoaderService = dataLoaderService;
@@ -172,7 +186,21 @@ public class SimulationEngine {
         this.cachedState = getEstado();
     }
 
-    public synchronized SimulationStateDTO avanzarDia() {
+    public SimulationStateDTO avanzarDia() {
+        // Wait for background planning from the previous step BEFORE locking.
+        // This avoids deadlock (we don't hold the lock while waiting).
+        Future<?> pending = backgroundPlanningFuture;
+        if (pending != null && !pending.isDone()) {
+            try {
+                pending.get(5, TimeUnit.MINUTES);
+            } catch (Exception e) {
+                log.warn("Waited for background planning: {}", e.getMessage());
+            }
+        }
+        return doAvanzarDia();
+    }
+
+    private synchronized SimulationStateDTO doAvanzarDia() {
         if (!enEjecucion || params == null) {
             return getEstado();
         }
@@ -271,25 +299,42 @@ public class SimulationEngine {
             return this.cachedState = getEstado();
         }
 
-        // Advance to the next simulated day, then plan that day's batches (look-ahead) so the
-        // returned state carries the upcoming day's flights for the frontend to animate. The
-        // returned diaActual is the day the frontend will show next — keeping the visual day
-        // counter aligned 1:1 with the backend (init=day 1, step1=day 2, step2=day 3, ...).
+        // Advance to next simulated day. Background thread plans that day's batches
+        // so this method returns fast and the frontend isn't frozen waiting for planning.
         diaActual++;
         this.fechaSimulada = this.fechaSimulada.plusDays(1);
 
-        LocalDateTime endOfDay = params.getFechaInicio().plusDays(diaActual).atStartOfDay();
-        while (horizonPointer != null && horizonPointer.isBefore(endOfDay)) {
-            PlanningResult batchResult = planificarSiguienteBloque();
-            aplicarResultadoPlanificacion(batchResult);
-            addOperationLog("Rolling plan: batch up to " + horizonPointer + " — " + batchResult.getPlanes().size() + " new plans");
-            this.cachedState = getEstado();
+        final LocalDateTime endOfDay = params.getFechaInicio().plusDays(diaActual).atStartOfDay();
+        SimulationStateDTO snap = this.cachedState = getEstado();
+
+        // Submit background planning — each batch acquires the instance lock independently,
+        // so polling (cachedState volatile read) can interleave between batches.
+        backgroundPlanningFuture = planningExecutor.submit(() -> {
+            try {
+                boolean more = true;
+                while (more) {
+                    more = planNextBatch(endOfDay);
+                }
+            } catch (Exception e) {
+                log.error("Background planning error: {}", e.getMessage(), e);
+            }
+        });
+
+        return snap;
+    }
+
+    /** Plans one batch for the given day-end boundary. Acquires + releases the instance
+     *  lock per call so polling and step can interleave between batches. */
+    private synchronized boolean planNextBatch(LocalDateTime endOfDay) {
+        if (horizonPointer == null || !horizonPointer.isBefore(endOfDay)) {
+            return false;
         }
-
-        // Recompute so upcoming-day bags (fechaIngreso == new today) are visible.
+        PlanningResult batchResult = planificarSiguienteBloque();
+        aplicarResultadoPlanificacion(batchResult);
+        addOperationLog("Rolling plan: batch up to " + horizonPointer + " — " + batchResult.getPlanes().size() + " new plans");
         updateWarehouseOccupation();
-
-        return this.cachedState = getEstado();
+        this.cachedState = getEstado();
+        return horizonPointer != null && horizonPointer.isBefore(endOfDay);
     }
 
     public synchronized SimulationStateDTO reiniciar() {
