@@ -1414,8 +1414,11 @@ public class SimulationEngine {
         }
         LocalDateTime deadline = envio.getFechaHoraIngreso().plusDays(envio.getSla());
 
+        // escalasResumen is heavy (one list per envio × ~21k envios = the bulk of the
+        // /state payload). Only the per-envio detail fetch needs it; the polled live
+        // state omits it. EnviosScreen falls back to the backend estado when absent.
         List<EscalaResumenDTO> escalasResumen = List.of();
-        if (plan != null && plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
+        if (includePlanDetail && plan != null && plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
             List<Escala> escalas = plan.getEscalas();
             int last = escalas.size() - 1;
             escalasResumen = new java.util.ArrayList<>();

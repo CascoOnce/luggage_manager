@@ -189,11 +189,11 @@ export const api = {
   startSimulation,
 
   getState: async () => withHandling('getState', async () => {
-    return request('/simulation/state')
+    return request('/simulation/state', {}, 30000)  // VM uplink lenta: estado puede tardar >10s
   }),
 
   stepSimulation: async () => withHandling('stepSimulation', async () => {
-    return request('/simulation/step', { method: 'POST' }, 60000)  // 1 min — día completo
+    return request('/simulation/step', { method: 'POST' }, 180000)  // 3 min — día 3 (más maletas) planifica pesado
   }),
 
   stopSimulation: async () => withHandling('stopSimulation', async () => {

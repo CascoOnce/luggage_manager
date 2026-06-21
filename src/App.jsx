@@ -43,6 +43,7 @@ export default function App() {
   const pollingRef = useRef(null)
   const autoStepRef = useRef(null)
   const pollingErrorsRef = useRef(0)
+  const pollInFlightRef = useRef(false)
   const stepInProgressRef = useRef(false)
   const nextDayStateRef = useRef(null)
   const prefetchFiredRef = useRef(false)
@@ -129,6 +130,10 @@ export default function App() {
     pollingErrorsRef.current = 0
     setPollingError(null)
     pollingRef.current = setInterval(async () => {
+      // Skip if a previous poll is still in flight — prevents request pileup/cancel
+      // when the state download is slower than the 2s interval (slow VM uplink).
+      if (pollInFlightRef.current) return
+      pollInFlightRef.current = true
       try {
         const state = await api.getState()
         pollingErrorsRef.current = 0
@@ -148,6 +153,8 @@ export default function App() {
           setPollingError('No se puede contactar el servidor')
         }
         console.error('Polling error:', err)
+      } finally {
+        pollInFlightRef.current = false
       }
     }, 2000)
   }, [stopPolling])
