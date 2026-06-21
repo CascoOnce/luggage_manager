@@ -258,8 +258,9 @@ export default function App() {
     if (stepInProgressRef.current) return  // already fired this midnight
 
     stepInProgressRef.current = true
-    // Reset clock immediately — don't wait for /step response
-    setSimClockMinutes(simStartMinuteRef.current)
+    // Reset clock immediately — don't wait for /step response.
+    // Day 2+ always start at midnight (0); only day 1 uses horaInicio.
+    setSimClockMinutes(0)
     let cancelled = false
     ;(async () => {
       try {
@@ -400,7 +401,7 @@ export default function App() {
   const activeVuelosWithTimes = useMemo(() => {
     if (!backendState?.vuelos) return []
     return backendState.vuelos
-      .filter((v) => v.estado === 'activo' && v.enUso)
+      .filter((v) => v.estado === 'activo' && v.enUso && (v.maletasAsignadas ?? 0) > 0)
       .map((v) => ({
         id: v.codigoVuelo,
         origin: v.origen,

@@ -195,9 +195,9 @@ public class SimulationEngine {
         Future<?> pending = backgroundPlanningFuture;
         if (pending != null && !pending.isDone()) {
             try {
-                pending.get(5, TimeUnit.MINUTES);
+                pending.get(10, TimeUnit.SECONDS);
             } catch (Exception e) {
-                log.warn("Waited for background planning: {}", e.getMessage());
+                log.warn("Background planning not yet complete, proceeding with available plans: {}", e.getMessage());
             }
         }
         return doAvanzarDia();
@@ -305,7 +305,8 @@ public class SimulationEngine {
         // Advance to next simulated day. Background thread plans that day's batches
         // so this method returns fast and the frontend isn't frozen waiting for planning.
         diaActual++;
-        this.fechaSimulada = this.fechaSimulada.plusDays(1);
+        // Day 2+ always start at midnight — only day 1 uses horaInicio.
+        this.fechaSimulada = params.getFechaInicio().plusDays(diaActual - 1).atStartOfDay();
 
         final LocalDateTime endOfDay = params.getFechaInicio().plusDays(diaActual).atStartOfDay();
         SimulationStateDTO snap = this.cachedState = getEstado();
