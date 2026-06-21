@@ -85,6 +85,7 @@ public class SimulationEngine {
     // Non-blocking cache: updated at end of each avanzarDia/inicializar/detener/reiniciar.
     // Allows /state polling to return immediately without contending on the synchronized lock.
     private volatile SimulationStateDTO cachedState;
+    private volatile boolean initialized = false;
 
     public SimulationEngine(DataLoaderService dataLoaderService, PlanningService planningService, SimulationPersistenceService persistenceService) {
         this.dataLoaderService = dataLoaderService;
@@ -95,6 +96,7 @@ public class SimulationEngine {
     public synchronized void inicializar(ParametrosSimulacion params, List<Envio> todosLosEnvios) {
         reset();
         this.params = params;
+        this.initialized = true;
         this.aeropuertos = deepCopyAeropuertos(dataLoaderService.getAeropuertos());
         this.vuelos = deepCopyVuelos(dataLoaderService.getVuelos());
 
@@ -612,6 +614,7 @@ public class SimulationEngine {
 
     public synchronized void reset() {
         this.params = null;
+        this.initialized = false;
         this.aeropuertos = new ArrayList<>();
         this.vuelos = new ArrayList<>();
         this.envios = new ArrayList<>();
@@ -633,8 +636,8 @@ public class SimulationEngine {
         this.horizonPointer = null;
     }
 
-    public synchronized boolean estaInicializada() {
-        return params != null;
+    public boolean estaInicializada() {
+        return initialized;
     }
 
     public synchronized ParametrosSimulacion getParams() {
