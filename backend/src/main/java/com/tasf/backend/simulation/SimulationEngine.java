@@ -1432,11 +1432,24 @@ public class SimulationEngine {
         List<PlanDeViaje> relatedPlans = plansByFlight.getOrDefault(vuelo.getCodigoVuelo(), List.of());
         boolean usedByAnyPlan = !relatedPlans.isEmpty();
         
-        int maletasAsignadas = relatedPlans.stream()
-            .map(p -> envioById.get(p.getIdEnvio()))
-            .filter(e -> e != null && e.getEstado() != EstadoEnvio.ENTREGADO && e.getEstado() != EstadoEnvio.CANCELADO)
-            .mapToInt(Envio::getCantidadMaletas)
-            .sum();
+        LocalDate currentSimDate = this.fechaSimulada != null ? this.fechaSimulada.toLocalDate() : LocalDate.now();
+        int maletasAsignadas = 0;
+        boolean enUsoHoy = false;
+
+        for (PlanDeViaje p : relatedPlans) {
+            Envio e = envioById.get(p.getIdEnvio());
+            if (e != null && e.getEstado() != EstadoEnvio.ENTREGADO && e.getEstado() != EstadoEnvio.CANCELADO) {
+                boolean fliesToday = p.getEscalas().stream()
+                    .anyMatch(esc -> vuelo.getCodigoVuelo().equals(esc.getCodigoVuelo()) &&
+                                     esc.getHoraSalidaEst() != null &&
+                                     (esc.getHoraSalidaEst().toLocalDate().equals(currentSimDate) ||
+                                      (esc.getHoraLlegadaEst() != null && esc.getHoraLlegadaEst().toLocalDate().equals(currentSimDate))));
+                if (fliesToday) {
+                    maletasAsignadas += e.getCantidadMaletas();
+                    enUsoHoy = true;
+                }
+            }
+        }
 
         return VueloDTO.builder()
             .codigoVuelo(vuelo.getCodigoVuelo())
@@ -1450,7 +1463,7 @@ public class SimulationEngine {
             .fraction(resolveFraction(vuelo, relatedPlans))
             .horaSalida(vuelo.getHoraSalida().toString())
             .horaLlegada(vuelo.getHoraLlegada().toString())
-            .enUso(usedByAnyPlan)
+            .enUso(enUsoHoy)
             .build();
     }
 

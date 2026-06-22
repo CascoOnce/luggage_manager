@@ -88,11 +88,16 @@ export default function App() {
     return hh * 60 + mm
   }
 
-  function isActiveAtMinute(nowMin, depMin, arrMin) {
+  function isActiveAtMinute(nowMin, depMin, arrMin, day) {
     if (depMin == null || arrMin == null) return false
     const m = nowMin >= 1440 ? 1439 : nowMin
     if (arrMin > depMin) {
       return m >= depMin && m < arrMin
+    }
+    // For overnight flights (arrMin < depMin), m < arrMin means the flight
+    // departed yesterday and is arriving today. On Day 1, there was no yesterday!
+    if (day <= 1 && m < arrMin) {
+      return m >= depMin
     }
     return m >= depMin || m < arrMin
   }
@@ -258,29 +263,22 @@ export default function App() {
     if (stepInProgressRef.current) return  // already fired this midnight
 
     stepInProgressRef.current = true
-    // Reset clock immediately — don't wait for /step response.
-    // Day 2+ always start at midnight (0); only day 1 uses horaInicio.
-    setSimClockMinutes(0)
-    let cancelled = false
-    ;(async () => {
-      try {
-        const newState = await api.stepSimulation()
-        if (cancelled || !newState) return
-        stepInProgressRef.current = false
-        setBackendState(newState)
-        if (newState.finalizada) {
-          setAutoStep(false)
-          clearInterval(autoStepRef.current)
-          stopPolling()
-          setTimeout(() => setScreen('resultados'), 8000)
-        }
-      } catch (err) {
-        console.error('Auto-step error:', err)
-        stepInProgressRef.current = false
+    api.stepSimulation().then((newState) => {
+      if (!newState) return
+      stepInProgressRef.current = false
+      setBackendState(newState)
+      // Reset clock to midnight simultaneously with new day data
+      setSimClockMinutes(0)
+      if (newState.finalizada) {
+        setAutoStep(false)
+        clearInterval(autoStepRef.current)
+        stopPolling()
+        setTimeout(() => setScreen('resultados'), 8000)
       }
-    })()
-
-    return () => { cancelled = true }
+    }).catch((err) => {
+      console.error('Auto-step error:', err)
+      stepInProgressRef.current = false
+    })
   }, [simClockMinutes, autoStep])
 
   useEffect(() => {
@@ -418,18 +416,19 @@ export default function App() {
   }, [backendState?.vuelos])
 
   // Light work: apply clock position. Reruns every second but only on pre-filtered list.
-  const backendFlights = useMemo(() =>
-    activeVuelosWithTimes
+  const backendFlights = useMemo(() => {
+    const day = backendState?.diaActual || 1
+    return activeVuelosWithTimes
       .filter((v) =>
-        isActiveAtMinute(simClockMinutes, v.depMin, v.arrMin) &&
+        isActiveAtMinute(simClockMinutes, v.depMin, v.arrMin, day) &&
         (!originSet || originSet.has(v.origin)) &&
         (!destSet || destSet.has(v.destination))
       )
       .map((v) => ({
         ...v,
         fraction: flightFractionAtMinute(simClockMinutes, v.depMin, v.arrMin),
-      })),
-  [activeVuelosWithTimes, simClockMinutes, originSet, destSet])
+      }))
+  }, [activeVuelosWithTimes, simClockMinutes, originSet, destSet, backendState?.diaActual])
 
   const fechaSimuladaDisplay = useMemo(() => {
     if (!backendState?.fechaSimulada) return null
