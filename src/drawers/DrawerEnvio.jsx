@@ -216,7 +216,7 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
             {/* Ruta Asignada — timeline */}
             {escalas.length > 0 && (
               <div style={{ ...s.section, flex: 1 }}>
-                <span style={s.sectionTitle}>Ruta asignada</span>
+                <span style={s.sectionTitle}>Ruta asignada (UTC)</span>
                 <div>
                   {escalas.map((escala, idx) => {
                     const dotColor = escalaDotColor(escala)
@@ -236,7 +236,7 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
                               {escala.codigoVuelo || '—'} — {escala.codigoAeropuerto || '?'}
                             </div>
                             <div style={s.tlMeta}>
-                              Salida {escala.horaSalidaEst || '—'} · Llegada {escala.horaLlegadaEst || '—'}
+                              Salida UTC {escala.horaSalidaEst || '—'} · Llegada UTC {escala.horaLlegadaEst || '—'}
                             </div>
                           </div>
                         </div>

@@ -501,7 +501,7 @@ export default function EnviosScreen({ simState, onShowInMap, onCancelFlight, si
           <section style={{ overflowY: 'auto', minHeight: 0 }}>
             <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--panel)', borderBottom: '1px solid var(--border)', padding: '8px 14px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 0.8fr 0.7fr 0.7fr 0.7fr 0.8fr 80px', gap: 10, fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--muted)' }}>
-                <span>Vuelo</span><span>Origen</span><span>Destino</span><span>Salida</span><span>Llegada</span><span style={{ textAlign: 'right' }}>Carga</span><span>Estado</span><span />
+                <span>Vuelo</span><span>Origen</span><span>Destino</span><span>Salida local</span><span>Llegada local</span><span style={{ textAlign: 'right' }}>Carga</span><span>Estado</span><span />
               </div>
             </div>
             {visibleVuelos.length === 0 ? (

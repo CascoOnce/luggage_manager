@@ -156,7 +156,8 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
 
   // Local timezone conversion (only when huso known)
   const salidaLocal  = toLocalTime(salida, husOrigen)
-  const llegadaLocal = toLocalTime(llegada, husOrigen)
+  const husDestino = vuelo.husDestino ?? null
+  const llegadaLocal = toLocalTime(llegada, husDestino)
 
   // Load data — null means live mode (no simulation running)
   const hasLoadData = vuelo.currentLoad !== null || vuelo.cargaActual != null
@@ -217,14 +218,14 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
             <span style={s.rowLabel}>Hora salida</span>
             <span style={s.rowVal}>
               {salida}
-              {salidaLocal && <span style={{ color: 'var(--muted)', fontSize: 9, marginLeft: 6 }}>({salidaLocal} local)</span>}
+              {salidaLocal && <span style={{ color: 'var(--muted)', fontSize: 9, marginLeft: 6 }}>({salidaLocal} local origen)</span>}
             </span>
           </div>
           <div style={s.row}>
             <span style={s.rowLabel}>Hora llegada</span>
             <span style={s.rowVal}>
               {llegadaLabel}
-              {llegadaLocal && <span style={{ color: 'var(--muted)', fontSize: 9, marginLeft: 6 }}>({llegadaLocal} local)</span>}
+              {llegadaLocal && <span style={{ color: 'var(--muted)', fontSize: 9, marginLeft: 6 }}>({llegadaLocal} local destino)</span>}
             </span>
           </div>
           <div style={s.row}>
@@ -267,7 +268,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
               </div>
               <div style={s.tlContent}>
                 <div style={s.tlLabel}>{origin}</div>
-                <div style={s.tlMeta}>Salida {salida}{salidaLocal ? ` · ${salidaLocal} local` : ''}</div>
+                <div style={s.tlMeta}>Salida {salida}{salidaLocal ? ` · ${salidaLocal} local origen` : ''}</div>
               </div>
             </div>
             {/* En vuelo */}
@@ -290,7 +291,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
               </div>
               <div style={s.tlContent}>
                 <div style={s.tlLabel}>{dest}</div>
-                <div style={s.tlMeta}>Llegada {llegadaLabel}{llegadaLocal ? ` · ${llegadaLocal} local` : ''}</div>
+                <div style={s.tlMeta}>Llegada {llegadaLabel}{llegadaLocal ? ` · ${llegadaLocal} local destino` : ''}</div>
               </div>
             </div>
           </div>
