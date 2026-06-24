@@ -27,6 +27,164 @@ function sectionHeaderStyle() {
   }
 }
 
+function CustomDateInput({ value, onChange, disabled }) {
+  const [day, setDay] = useState('');
+  const [month, setMonth] = useState('');
+  const [year, setYear] = useState('');
+
+  const dayRef = useRef(null);
+  const monthRef = useRef(null);
+  const yearRef = useRef(null);
+
+  useEffect(() => {
+    if (value) {
+      const parts = value.split('-');
+      if (parts.length === 3) {
+        setYear(parts[0]);
+        setMonth(parts[1]);
+        setDay(parts[2]);
+      }
+    }
+  }, [value]);
+
+  const updateValue = (d, m, y) => {
+    if (d.length === 2 && m.length === 2 && y.length === 4) {
+      onChange(`${y}-${m}-${d}`);
+    }
+  };
+
+  const handleDayChange = (e) => {
+    let val = e.target.value.replace(/\D/g, '');
+    if (val.length > 2) val = val.slice(0, 2);
+    setDay(val);
+    if (val.length === 2) {
+      const d = parseInt(val, 10);
+      if (d > 0) {
+        if (d > 31) val = '31';
+        setDay(val);
+        monthRef.current?.focus();
+      }
+    }
+    updateValue(val, month, year);
+  };
+
+  const handleMonthChange = (e) => {
+    let val = e.target.value.replace(/\D/g, '');
+    if (val.length > 2) val = val.slice(0, 2);
+    setMonth(val);
+    if (val.length === 2) {
+      const m = parseInt(val, 10);
+      if (m > 0) {
+        if (m > 12) val = '12';
+        setMonth(val);
+        yearRef.current?.focus();
+      }
+    }
+    updateValue(day, val, year);
+  };
+
+  const handleYearChange = (e) => {
+    let val = e.target.value.replace(/\D/g, '');
+    if (val.length > 4) val = val.slice(0, 4);
+    setYear(val);
+    if (val.length === 4) {
+      const y = parseInt(val, 10);
+      if (y < 2026) val = '2026';
+      setYear(val);
+    }
+    updateValue(day, month, val);
+  };
+
+  const handleBlur = (field) => {
+    if (field === 'day' && day.length > 0) {
+      let val = day;
+      if (val === '0' || val === '00') val = '01';
+      else if (val.length === 1) val = `0${val}`;
+      setDay(val);
+      updateValue(val, month, year);
+    } else if (field === 'month' && month.length > 0) {
+      let val = month;
+      if (val === '0' || val === '00') val = '01';
+      else if (val.length === 1) val = `0${val}`;
+      setMonth(val);
+      updateValue(day, val, year);
+    } else if (field === 'year' && year.length > 0) {
+      let val = year;
+      if (val.length === 2) val = `20${val}`;
+      while (val.length < 4) val += '0';
+      const y = parseInt(val, 10);
+      if (y < 2026) val = '2026';
+      setYear(val);
+      updateValue(day, month, val);
+    }
+  };
+  
+  const inputStyle = {
+    background: 'transparent',
+    border: 'none',
+    color: 'inherit',
+    fontFamily: 'inherit',
+    fontSize: 'inherit',
+    textAlign: 'center',
+    outline: 'none',
+    width: '100%',
+    padding: 0
+  };
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      flex: 2,
+      background: 'rgba(255,255,255,0.04)',
+      border: '1px solid var(--border)',
+      color: 'var(--text)',
+      fontFamily: 'var(--mono)',
+      fontSize: 13,
+      padding: '8px 10px',
+      opacity: disabled ? 0.5 : 1,
+      pointerEvents: disabled ? 'none' : 'auto',
+      boxSizing: 'border-box'
+    }}>
+      <input
+        ref={dayRef}
+        type="text"
+        placeholder="DD"
+        value={day}
+        onChange={handleDayChange}
+        onBlur={() => handleBlur('day')}
+        onFocus={(e) => e.target.select()}
+        disabled={disabled}
+        style={{ ...inputStyle, width: 24 }}
+      />
+      <span style={{ color: 'var(--muted)', margin: '0 4px' }}>/</span>
+      <input
+        ref={monthRef}
+        type="text"
+        placeholder="MM"
+        value={month}
+        onChange={handleMonthChange}
+        onBlur={() => handleBlur('month')}
+        onFocus={(e) => e.target.select()}
+        disabled={disabled}
+        style={{ ...inputStyle, width: 24 }}
+      />
+      <span style={{ color: 'var(--muted)', margin: '0 4px' }}>/</span>
+      <input
+        ref={yearRef}
+        type="text"
+        placeholder="AAAA"
+        value={year}
+        onChange={handleYearChange}
+        onBlur={() => handleBlur('year')}
+        onFocus={(e) => e.target.select()}
+        disabled={disabled}
+        style={{ ...inputStyle, width: 36 }}
+      />
+    </div>
+  );
+}
+
 export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacionesStarted }) {
   const [periodo, setPeriodo] = useState('5')
   const algoritmo = 'SIMULATED_ANNEALING'
@@ -429,12 +587,10 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
               <div style={{ marginTop: 20 }}>
                 <span style={sectionHeaderStyle()}>Fecha y hora de inicio</span>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    type="date"
+                  <CustomDateInput
                     value={fechaInicio}
-                    onChange={(event) => setFechaInicio(event.target.value)}
+                    onChange={setFechaInicio}
                     disabled={loading}
-                    style={{ flex: 2, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '8px 10px' }}
                   />
                   <input
                     type="time"
