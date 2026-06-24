@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MapView from './components/MapView.jsx'
 import RightPanel from './components/RightPanel.jsx'
 import TopBar from './components/TopBar.jsx'
+import FloatingKPIs from './components/FloatingKPIs.jsx'
 import FloatingClocks from './components/FloatingClocks.jsx'
 import { api } from './services/api.js'
 import ConfigScreen from './screens/ConfigScreen.jsx'
@@ -67,8 +68,8 @@ export default function App() {
 
   const [autoStep, setAutoStep] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
-  const [filterOpen, setFilterOpen] = useState(true)
-  const [rightOpen, setRightOpen] = useState(true)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [rightOpen, setRightOpen] = useState(false)
 
   useEffect(() => {
     function onKey(e) {
@@ -865,11 +866,20 @@ export default function App() {
                 {filterOpen ? '‹' : '›'}
               </button>
 
-              <FloatingClocks 
-                backendState={backendState}
-                simClockMinutes={simClockMinutes}
-                realElapsedSeconds={realElapsedSeconds}
-              />
+              <div style={{
+                position: 'absolute', top: 20, left: 60, zIndex: 1000,
+                display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none'
+              }}>
+                <FloatingKPIs 
+                  kpis={activeKpis} 
+                  hasSimulation={Boolean(backendState)} 
+                />
+                <FloatingClocks 
+                  backendState={backendState}
+                  simClockMinutes={simClockMinutes}
+                  realElapsedSeconds={realElapsedSeconds}
+                />
+              </div>
 
               <MapView
                 airports={visibleAirports}

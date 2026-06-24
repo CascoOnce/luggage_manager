@@ -46,13 +46,7 @@ const s = {
     border: 'none',
     outline: 'none',
   },
-  kpi: {
-    display: 'flex', flexDirection: 'column', justifyContent: 'center',
-    padding: '0 12px', borderRight: '1px solid var(--border)', height: '100%',
-    minWidth: 70, overflow: 'hidden',
-  },
-  kpiVal: { fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 500, lineHeight: 1, letterSpacing: -0.3 },
-  kpiLabel: { fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1.4, marginTop: 4, fontWeight: 600 },
+
 
   controls: {
     display: 'flex', alignItems: 'center', gap: 6,
@@ -96,12 +90,7 @@ export default function TopBar({
   const isBackendFinished = backendState?.finalizada === true
   const effectiveRunning = isRunning !== undefined ? isRunning : running
 
-  const kpiCards = [
-    { label: 'En tránsito',    value: hasSimulation ? kpis.bagsInTransit.toLocaleString() : '—', color: hasSimulation ? 'var(--text-bright)' : 'var(--muted)' },
-    { label: 'Cumpl. SLA',     value: hasSimulation ? `${Number(kpis.slaCompliance).toFixed(1)}%` : '—', color: hasSimulation ? (kpis.slaCompliance >= 90 ? 'var(--green)' : kpis.slaCompliance >= 75 ? 'var(--amber)' : 'var(--red)') : 'var(--muted)' },
-    { label: 'Vuelos activos', value: hasSimulation ? String(kpis.activeFlights) : '—', color: hasSimulation ? 'var(--blue-bright)' : 'var(--muted)' },
-    { label: 'SLA vencidos',   value: hasSimulation ? String(kpis.slaViolated) : '—', color: hasSimulation && kpis.slaViolated > 0 ? 'var(--red)' : 'var(--muted)' },
-  ]
+
 
   const tabs = [
     { key: 'main', label: 'OPERACIONES' },
@@ -124,14 +113,7 @@ export default function TopBar({
         <div style={s.logoSub}>OPS DASHBOARD</div>
       </div>
 
-      <div style={s.kpiStrip}>
-        {kpiCards.map((k) => (
-          <div key={k.label} style={s.kpi}>
-            <span style={{ ...s.kpiVal, color: k.color }}>{k.value}</span>
-            <span style={s.kpiLabel}>{k.label}</span>
-          </div>
-        ))}
-      </div>
+
 
       <div style={s.tabStrip}>
         {tabs.map((tab) => {

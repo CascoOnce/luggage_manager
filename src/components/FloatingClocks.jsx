@@ -61,10 +61,6 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
 
   return (
     <div style={{
-      position: 'absolute',
-      top: 20,
-      left: 60, // Left of the zoom controls typically, or just top-left
-      zIndex: 1000,
       backgroundColor: 'rgba(22, 27, 34, 0.85)',
       border: '1px solid rgba(255, 255, 255, 0.1)',
       borderRadius: 6,
