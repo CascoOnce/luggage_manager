@@ -334,8 +334,8 @@ export default function App() {
         currentOccupation: ocupFin,
         ocupacionInicioDia: ocupIni,
         warehouseCapacity: airport.warehouseCapacity ?? airport.capacidadAlmacen ?? 600,
-        vuelosSalientes: vuelosList.filter((v) => (v.origen || v.origin) === iata && v.enUso).length,
-        vuelosLlegando:  vuelosList.filter((v) => (v.destino || v.destination) === iata && v.enUso).length,
+        vuelosSalientes: vuelosList.filter((v) => (v.origen || v.origin) === iata && v.estado === 'activo').length,
+        vuelosLlegando:  vuelosList.filter((v) => (v.destino || v.destination) === iata && v.estado === 'activo').length,
       }
     })
   }, [simState?.aeropuertos, simState?.airports, simState?.vuelos])
@@ -401,7 +401,7 @@ export default function App() {
   const activeVuelosWithTimes = useMemo(() => {
     if (!backendState?.vuelos) return []
     return backendState.vuelos
-      .filter((v) => v.estado === 'activo' && v.enUso && (v.maletasAsignadas ?? 0) > 0)
+      .filter((v) => v.estado === 'activo')
       .map((v) => ({
         id: v.codigoVuelo,
         origin: v.origen,

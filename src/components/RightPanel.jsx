@@ -277,8 +277,8 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
         <div style={s.scrollable}>
           {activeFlights.map((f) => {
             const isSelected = selectedFlight === f.id
-            const loadPct    = Math.round((f.currentLoad / f.capacity) * 100)
-            const color      = loadPct >= 85 ? '#f04b4b' : loadPct >= 60 ? '#f5a623' : '#22d07a'
+            const loadPct    = f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
+            const color      = loadPct === 0 ? '#4d9fff' : loadPct >= 85 ? '#f04b4b' : loadPct >= 60 ? '#f5a623' : '#22d07a'
             return (
               <div key={f.id} style={s.flightItem(isSelected)}
                 onClick={() => { setSelectedFlight(isSelected ? null : f.id); if (onVueloClick) onVueloClick(f) }}>
@@ -290,7 +290,7 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
                     <div style={{ height: '100%', width: `${Math.min(100, loadPct)}%`, background: color, borderRadius: 3, transition: 'width 0.4s ease' }} />
                   </div>
                 </div>
-                <div style={s.badge(color)}>{loadPct}%</div>
+                <div style={s.badge(color)}>{loadPct.toFixed(2)}%</div>
               </div>
             )
           })}
@@ -355,12 +355,12 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
           const color = warehouseColor(ap, threshold)
           const occ   = ap.currentOccupation ?? ap.ocupacionActual ?? 0
           const cap   = ap.warehouseCapacity ?? ap.capacidadAlmacen ?? 600
-          const pct   = Math.round(cap > 0 ? (occ / cap) * 100 : 0)
+          const pct   = cap > 0 ? (occ / cap) * 100 : 0
           return (
             <div key={ap.id} style={s.airportItem}>
               <div style={s.airportHeader}>
                 <span style={s.airportName}>{ap.id} — {ap.name}</span>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color }}>{pct}%</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color }}>{pct.toFixed(2)}%</span>
               </div>
               <div style={s.capBar}>
                 <div style={s.capFill(pct, color)} />

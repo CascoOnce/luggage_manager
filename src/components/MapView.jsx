@@ -110,7 +110,7 @@ const airportIndex = (airports) =>
   Object.fromEntries(airports.map((a) => [a.id, a]))
 
 function occupancyPct(ap) {
-  return Math.round((ap.currentOccupation / ap.warehouseCapacity) * 100)
+  return (ap.currentOccupation / ap.warehouseCapacity) * 100
 }
 
 function trafficLightColor(pct, theme) {
@@ -302,7 +302,7 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
         if (!pos) return null
         const isSelected = selectedFlight === flight.id
         const angle = screenAngle(map, a, b)
-        const flightPct = flight.capacity > 0 ? Math.round((flight.currentLoad / flight.capacity) * 100) : 0
+        const flightPct = flight.capacity > 0 ? (flight.currentLoad / flight.capacity) * 100 : 0
         const flightBucket = flightPct === 0 ? 0 : flightPct >= 85 ? 85 : flightPct >= 60 ? 60 : 1
         const cacheKey = `${isSelected ? 1 : 0}-${Math.round(angle)}-${theme}-${flightBucket}`
         if (!iconCache.current.has(cacheKey)) {
@@ -408,7 +408,7 @@ export default function MapView({
           >
             <Tooltip className="tasf-tooltip" direction="top" offset={[0, -32]}>
               <strong>{ap.id}</strong> — {ap.name}<br />
-              Almacén: <strong>{pct}%</strong> ({ap.currentOccupation} / {ap.warehouseCapacity})<br />
+              Almacén: <strong>{pct.toFixed(2)}%</strong> ({ap.currentOccupation} / {ap.warehouseCapacity})<br />
               {ap.maletasEnAlmacenLocal > 0 && <><span>En espera: <strong>{ap.maletasEnAlmacenLocal}</strong> maletas</span><br /></>}
               {ap.maletasEnTransitoEntrantes > 0 && <><span>Llegando: <strong>{ap.maletasEnTransitoEntrantes}</strong> maletas</span><br /></>}
               {(ap.vuelosSalientes > 0 || ap.vuelosLlegando > 0) && <span>Vuelos: <strong>{ap.vuelosSalientes}</strong> salen · <strong>{ap.vuelosLlegando}</strong> llegan</span>}
