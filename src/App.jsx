@@ -418,10 +418,14 @@ export default function App() {
   }, [backendState?.vuelos])
 
   // Light work: apply clock position. Reruns every second but only on pre-filtered list.
+  // On Day 1, only flights departing at or after horaInicio are visible (no pre-existing
+  // flights that were already in the air before the simulation started).
   const backendFlights = useMemo(() => {
     const day = backendState?.diaActual || 1
+    const startMin = day <= 1 ? simStartMinuteRef.current : 0
     return activeVuelosWithTimes
       .filter((v) =>
+        v.depMin >= startMin &&
         isActiveAtMinute(simClockMinutes, v.depMin, v.arrMin, day) &&
         (!originSet || originSet.has(v.origin)) &&
         (!destSet || destSet.has(v.destination))
