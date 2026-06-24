@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MapView from './components/MapView.jsx'
 import RightPanel from './components/RightPanel.jsx'
 import TopBar from './components/TopBar.jsx'
+import FloatingClocks from './components/FloatingClocks.jsx'
 import { api } from './services/api.js'
 import ConfigScreen from './screens/ConfigScreen.jsx'
 import EnviosScreen from './screens/EnviosScreen.jsx'
@@ -782,11 +783,6 @@ export default function App() {
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
       <TopBar
-        currentDay={backendState?.diaActual ?? 0}
-        totalDays={backendState?.totalDias ?? 0}
-        elapsedSeconds={backendState?.diaActual ? backendState.diaActual * 86400 : 0}
-        fechaSimulada={fechaSimuladaDisplay}
-        realElapsedSeconds={realElapsedSeconds}
         simRateLabel={null}
         kpis={activeKpis}
         isRunning={autoStep}
@@ -868,6 +864,12 @@ export default function App() {
               >
                 {filterOpen ? '‹' : '›'}
               </button>
+
+              <FloatingClocks 
+                backendState={backendState}
+                simClockMinutes={simClockMinutes}
+                realElapsedSeconds={realElapsedSeconds}
+              />
 
               <MapView
                 airports={visibleAirports}

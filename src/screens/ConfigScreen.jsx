@@ -11,9 +11,7 @@ function formatIdPedido(id) {
 }
 
 const PERIOD_OPTIONS = [
-  { key: '3', label: '3 DÍAS', sublabel: 'Simulación corta' },
   { key: '5', label: '5 DÍAS', sublabel: 'Simulación estándar' },
-  { key: '7', label: '7 DÍAS', sublabel: 'Simulación semanal' },
   { key: 'colapso', label: 'COLAPSO', sublabel: 'Sin límite — hasta el colapso' },
 ]
 
@@ -30,7 +28,7 @@ function sectionHeaderStyle() {
 }
 
 export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacionesStarted }) {
-  const [periodo, setPeriodo] = useState('3')
+  const [periodo, setPeriodo] = useState('5')
   const algoritmo = 'SIMULATED_ANNEALING'
   const [fechaInicio, setFechaInicio] = useState('2026-06-01')
   const [horaInicio, setHoraInicio] = useState('00:00')

@@ -53,14 +53,7 @@ const s = {
   },
   kpiVal: { fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 500, lineHeight: 1, letterSpacing: -0.3 },
   kpiLabel: { fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1.4, marginTop: 4, fontWeight: 600 },
-  timeBlock: {
-    display: 'flex', flexDirection: 'column', justifyContent: 'center',
-    padding: '0 10px', borderRight: '1px solid var(--border)', height: '100%', gap: 1,
-    minWidth: 120, overflow: 'hidden',
-  },
-  timeLine: { display: 'flex', alignItems: 'baseline', gap: 4, lineHeight: 1 },
-  timeVal: { fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 500, color: 'var(--amber)' },
-  timeLabel: { fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', letterSpacing: 1 },
+
   controls: {
     display: 'flex', alignItems: 'center', gap: 6,
     padding: '0 10px', height: '100%', flexShrink: 0,
@@ -81,46 +74,9 @@ const s = {
   },
 }
 
-function fmtElapsed(sec) {
-  if (!sec) return '—'
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  return h > 0 ? `${h}h ${m}m` : `${m}m`
-}
 
-function fmtClock(sec) {
-  if (!sec) return '—'
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  const s = sec % 60
-  const hh = String(h).padStart(2, '0')
-  const mm = String(m).padStart(2, '0')
-  const ss = String(s).padStart(2, '0')
-  return `${hh}:${mm}:${ss}`
-}
-
-function fmtWallClock() {
-  const n = new Date()
-  const rawH = n.getHours()
-  const hh = String(rawH % 12 || 12).padStart(2, '0')
-  const mm = String(n.getMinutes()).padStart(2, '0')
-  const ss = String(n.getSeconds()).padStart(2, '0')
-  const ampm = rawH >= 12 ? 'p.m.' : 'a.m.'
-  return `${hh}:${mm}:${ss} ${ampm}`
-}
-
-function useWallClock() {
-  const [clock, setClock] = useState(fmtWallClock)
-  useEffect(() => {
-    const id = setInterval(() => setClock(fmtWallClock()), 1000)
-    return () => clearInterval(id)
-  }, [])
-  return clock
-}
 
 export default function TopBar({
-  currentDay, totalDays, elapsedSeconds, realElapsedSeconds,
-  fechaSimulada,
   simRateLabel,
   kpis,
   isRunning,
@@ -136,7 +92,6 @@ export default function TopBar({
   colapsoPunto,
   liveActive,
 }) {
-  const wallClock = useWallClock()
   const isBackendRunning = backendState?.enEjecucion === true
   const isBackendFinished = backendState?.finalizada === true
   const effectiveRunning = isRunning !== undefined ? isRunning : running
@@ -213,32 +168,7 @@ export default function TopBar({
         })}
       </div>
 
-      {/* Cronómetros REAL + SIM */}
-      <div style={{ display: 'flex', height: '100%', borderLeft: '1px solid var(--border)' }}>
-        {/* Reloj REAL */}
-        <div style={{ ...s.timeBlock, borderRight: '1px solid var(--border)', borderLeft: 'none' }}>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--blue)', marginBottom: 3 }}>REAL</div>
-          <div style={s.timeLine}>
-            <span style={{ ...s.timeVal, fontSize: 14 }}>{wallClock}</span>
-          </div>
-          <div style={s.timeLine}>
-            <span style={{ ...s.timeVal, fontSize: 11, color: 'var(--muted)' }}>{fmtClock(realElapsedSeconds)}</span>
-            <span style={s.timeLabel}>transcurrido</span>
-          </div>
-        </div>
-        {/* Reloj SIM */}
-        <div style={{ ...s.timeBlock, borderLeft: 'none' }}>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--amber)', marginBottom: 3 }}>SIM</div>
-          <div style={s.timeLine}>
-            <span style={{ ...s.timeVal, fontSize: 14 }}>{currentDay > 0 ? `DÍA ${currentDay} / ${totalDays}` : '—'}</span>
-          </div>
-          <div style={s.timeLine}>
-            <span style={{ ...s.timeVal, fontSize: 11, color: 'var(--muted)' }}>
-              {fechaSimulada || fmtElapsed(elapsedSeconds)}
-            </span>
-          </div>
-        </div>
-      </div>
+
 
       <div style={s.controls}>
         <button style={s.btnReset} onClick={onToggleTheme}>{theme === 'dark' ? '☀' : '🌙'}</button>

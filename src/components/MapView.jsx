@@ -359,7 +359,7 @@ export default function MapView({
       </button>
     <MapContainer
       center={[20, 0]} zoom={3} minZoom={1} maxZoom={7}
-      zoomSnap={0.1} zoomDelta={0.5}
+      zoomSnap={0} zoomDelta={0.25} wheelPxPerZoomLevel={120} wheelDebounceTime={10}
       maxBounds={[[-50, -90], [65, 90]]}
       maxBoundsViscosity={1.0}
       style={{ width: '100%', height: '100%', background: '#060606' }}
