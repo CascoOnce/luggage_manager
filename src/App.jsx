@@ -19,7 +19,7 @@ import { getLiveState, getOpsState, getOpsOccupancy, planificarOps, getOpsEnvios
 
 export default function App() {
   const ALGORITHM = 'SIMULATED_ANNEALING'
-  const SIM_MINUTES_PER_REAL_SECOND = 6  // 6 min/tick @ 250ms = ~60s per simulated day
+  const SIM_MINUTES_PER_REAL_SECOND = 1  // 1 min/tick @ 250ms = ~6min per simulated day → 30min for 5 days
   const [realElapsedSeconds, setRealElapsedSeconds] = useState(0)
 
   const [threshold, setThreshold] = useState(80)
