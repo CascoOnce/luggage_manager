@@ -82,6 +82,7 @@ html, body, #root {
   padding: 8px 12px !important;
   border-radius: 6px !important;
   line-height: 1.55 !important;
+  pointer-events: none !important;
 }
 .tasf-tooltip::before { display: none !important; }
 
