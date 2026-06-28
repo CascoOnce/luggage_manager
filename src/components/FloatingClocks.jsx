@@ -52,7 +52,8 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
     const source = new Date(backendState.fechaSimulada)
     if (!Number.isNaN(source.getTime())) {
       source.setHours(0, 0, 0, 0)
-      const current = new Date(source.getTime() + (simClockMinutes || 0) * 60000)
+      const dayOffset = Math.max(0, (backendState.diaActual || 1) - 1) * 24 * 60 * 60 * 1000
+      const current = new Date(source.getTime() + dayOffset + (simClockMinutes || 0) * 60000)
       const dd = String(current.getDate()).padStart(2, '0')
       const mm = String(current.getMonth() + 1).padStart(2, '0')
       const yyyy = current.getFullYear()

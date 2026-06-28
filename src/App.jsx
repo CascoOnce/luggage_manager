@@ -439,7 +439,8 @@ export default function App() {
     if (Number.isNaN(source.getTime())) return backendState.fechaSimulada
 
     source.setHours(0, 0, 0, 0)
-    const current = new Date(source.getTime() + simClockMinutes * 60000)
+    const dayOffset = Math.max(0, (backendState.diaActual || 1) - 1) * 24 * 60 * 60 * 1000
+    const current = new Date(source.getTime() + dayOffset + simClockMinutes * 60000)
     const mm = String(current.getMonth() + 1).padStart(2, '0')
     const dd = String(current.getDate()).padStart(2, '0')
     const rawH = current.getHours()
@@ -448,7 +449,7 @@ export default function App() {
     const ss = String(realElapsedSeconds % 60).padStart(2, '0')
     const ampm = rawH >= 12 ? 'p.m.' : 'a.m.'
     return `${mm}-${dd} ${hh}:${mi}:${ss} ${ampm}`
-  }, [backendState?.fechaSimulada, simClockMinutes, realElapsedSeconds])
+  }, [backendState?.fechaSimulada, backendState?.diaActual, simClockMinutes, realElapsedSeconds])
 
   useEffect(() => {
     if (!selectedFlight) {
