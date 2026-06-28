@@ -73,8 +73,7 @@ const s = {
 export default function TopBar({
   simRateLabel,
   kpis,
-  isRunning,
-  running, onToggleSim, onStop, onRestart, onReset,
+  onCancel, onRestart,
   canRestart,
   useBackend, backendState,
   theme, onToggleTheme,
@@ -88,7 +87,6 @@ export default function TopBar({
 }) {
   const isBackendRunning = backendState?.enEjecucion === true
   const isBackendFinished = backendState?.finalizada === true
-  const effectiveRunning = isRunning !== undefined ? isRunning : running
 
 
 
@@ -166,24 +164,14 @@ export default function TopBar({
           </button>
         )}
 
-        {/* Simulación en curso: Pausar/Reanudar + Stop + Empezar de nuevo */}
+        {/* Simulación en curso: Cancelar */}
         {isBackendRunning && (
-          <>
-            <button style={s.btnStart(effectiveRunning)} onClick={onToggleSim}>
-              {effectiveRunning ? '⏸ PAUSAR' : '▶ REANUDAR'}
-            </button>
-            <button
-              style={{ ...s.btnReset, color: 'var(--red)', borderColor: 'rgba(240,75,75,0.4)' }}
-              onClick={onStop}
-            >
-              ⏹ STOP
-            </button>
-            {canRestart && (
-              <button style={s.btnReset} onClick={onRestart}>
-                ↺ REINICIAR
-              </button>
-            )}
-          </>
+          <button
+            style={{ ...s.btnReset, color: 'var(--red)', borderColor: 'rgba(240,75,75,0.4)' }}
+            onClick={onCancel}
+          >
+            CANCELAR
+          </button>
         )}
 
         {/* Simulación finalizada: Empezar de nuevo + Configurar */}
@@ -199,8 +187,6 @@ export default function TopBar({
             </button>
           </>
         )}
-
-        <button style={s.btnReset} onClick={onReset}>Reset</button>
       </div>
     </div>
   )
