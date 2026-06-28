@@ -20,6 +20,18 @@ function useWallClock() {
   return now
 }
 
+const TARGET_SECONDS = 30 * 60 // 30 min expected for 5-day sim
+
+function fmtElapsed(sec) {
+  if (sec == null || isNaN(sec) || sec < 0) return '00:00'
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = sec % 60
+  const mm = String(m).padStart(2, '0')
+  const ss = String(s).padStart(2, '0')
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
 export default function FloatingClocks({ backendState, simClockMinutes, realElapsedSeconds }) {
   const now = useWallClock()
 
@@ -107,7 +119,40 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
           {fmtClock(simElapsedSeconds)}
         </div>
       </div>
-      
+
+      {/* LÍNEA DIVISORIA */}
+      {backendState?.enEjecucion && (
+        <>
+          <div style={{ width: 1, backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
+
+          {/* CRONÓMETRO REAL */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 110 }}>
+            <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.5, color: '#a78bfa', fontWeight: 700 }}>
+              Cronómetro
+            </div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 22, color: '#a78bfa', fontWeight: 700, letterSpacing: 1, lineHeight: 1 }}>
+              {fmtElapsed(realElapsedSeconds)}
+            </div>
+            <div style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--muted)' }}>
+              meta: 30:00
+            </div>
+            {/* Progress bar toward 30 min */}
+            <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${Math.min(100, ((realElapsedSeconds || 0) / TARGET_SECONDS) * 100).toFixed(1)}%`,
+                background: (realElapsedSeconds || 0) >= TARGET_SECONDS ? '#22d07a' : '#a78bfa',
+                borderRadius: 2,
+                transition: 'width 1s linear',
+              }} />
+            </div>
+            <div style={{ fontSize: 9, fontFamily: 'var(--mono)', color: 'var(--muted)', textAlign: 'right' }}>
+              {Math.min(100, ((realElapsedSeconds || 0) / TARGET_SECONDS * 100)).toFixed(1)}%
+            </div>
+          </div>
+        </>
+      )}
+
     </div>
   )
 }

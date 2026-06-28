@@ -784,6 +784,10 @@ export default function App() {
     const startMin = h * 60 + m
     simStartMinuteRef.current = startMin
     setSimClockMinutes(startMin)
+    // Reset real-elapsed counter for each new simulation
+    realStartRef.current = null
+    accumulatedRealMsRef.current = 0
+    setRealElapsedSeconds(0)
     setScreen('main')
     setActiveSideSection('vuelos')
     startPolling()
