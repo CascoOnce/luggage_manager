@@ -839,74 +839,65 @@ export default function App() {
         {/* ── OPERACIONES (main map view) ─────────────────────────────── */}
         {/* ── OPERACIONES (main map view) ─────────────────────────────── */}
         {(screen === 'main' && !configOpen) && (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: `${activeSideSection ? '372px' : '52px'} 1fr`,
-            height: '100%',
-            overflow: 'hidden',
-            transition: 'grid-template-columns 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-          }}>
-            {/* Side Panel */}
-            <SidePanel
-              activeSection={activeSideSection}
-              onSectionChange={setActiveSideSection}
+          <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
+            {/* Map always fills the full area — never resizes */}
+            <MapView
+              airports={visibleAirports}
               flights={backendFlights}
               selectedFlight={selectedFlight}
               setSelectedFlight={setSelectedFlight}
-              setMapSelectedVuelo={setMapSelectedVuelo}
-              simState={simState}
-              airports={normalizedAirports}
-              threshold={threshold}
-              setThreshold={setThreshold}
-              onSimulationStarted={handleSimulationStarted}
-              originIds={originIds}
-              setOriginIds={setOriginIds}
-              destIds={destIds}
-              setDestIds={setDestIds}
+              selectedFlightData={mapSelectedVuelo}
+              onAirportClick={setMapSelectedAirport}
+              onMapClick={() => { handleCloseVuelo(); setHighlightedRoute(null) }}
               theme={theme}
+              highlightedRoute={highlightedRoute}
             />
 
-            {/* Center Map */}
-            <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
-              <div style={{
-                position: 'absolute', top: 20, left: 20, zIndex: 1000,
-                display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none'
-              }}>
-                <FloatingKPIs
-                  kpis={activeKpis}
-                  hasSimulation={Boolean(backendState)}
-                />
-                <FloatingClocks
-                  backendState={backendState}
-                  simClockMinutes={simClockMinutes}
-                  realElapsedSeconds={realElapsedSeconds}
-                />
-              </div>
-
-              <MapView
-                airports={visibleAirports}
+            {/* Side panel — overlay on top of map */}
+            <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, zIndex: 500, display: 'flex' }}>
+              <SidePanel
+                activeSection={activeSideSection}
+                onSectionChange={setActiveSideSection}
                 flights={backendFlights}
                 selectedFlight={selectedFlight}
                 setSelectedFlight={setSelectedFlight}
-                selectedFlightData={mapSelectedVuelo}
-                onAirportClick={setMapSelectedAirport}
-                onMapClick={() => { handleCloseVuelo(); setHighlightedRoute(null) }}
+                setMapSelectedVuelo={setMapSelectedVuelo}
+                simState={simState}
+                airports={normalizedAirports}
+                threshold={threshold}
+                setThreshold={setThreshold}
+                onSimulationStarted={handleSimulationStarted}
+                originIds={originIds}
+                setOriginIds={setOriginIds}
+                destIds={destIds}
+                setDestIds={setDestIds}
                 theme={theme}
-                highlightedRoute={highlightedRoute}
-              />
-
-              <DrawerAeropuerto
-                airport={mapSelectedAirport}
-                vuelos={backendState?.vuelos || []}
-                onClose={handleCloseAirport}
-                fetchInventory={isOpsActive ? api.getOpsAirportInventory : api.getAirportInventory}
-              />
-              <DrawerVuelo
-                vuelo={mapSelectedVuelo}
-                onClose={handleCloseVuelo}
-                onCancelFlight={null}
               />
             </div>
+
+            {/* KPIs / clocks — shift right when panel open */}
+            <div style={{
+              position: 'absolute', top: 20,
+              left: activeSideSection ? 392 : 72,
+              zIndex: 600,
+              display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none',
+              transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            }}>
+              <FloatingKPIs kpis={activeKpis} hasSimulation={Boolean(backendState)} />
+              <FloatingClocks backendState={backendState} simClockMinutes={simClockMinutes} realElapsedSeconds={realElapsedSeconds} />
+            </div>
+
+            <DrawerAeropuerto
+              airport={mapSelectedAirport}
+              vuelos={backendState?.vuelos || []}
+              onClose={handleCloseAirport}
+              fetchInventory={isOpsActive ? api.getOpsAirportInventory : api.getAirportInventory}
+            />
+            <DrawerVuelo
+              vuelo={mapSelectedVuelo}
+              onClose={handleCloseVuelo}
+              onCancelFlight={null}
+            />
           </div>
         )}
 
