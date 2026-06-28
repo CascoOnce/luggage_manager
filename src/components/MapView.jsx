@@ -406,7 +406,7 @@ export default function MapView({
             icon={makeAirportIcon(pct, theme)}
             eventHandlers={{ click: () => onAirportClick && onAirportClick(ap) }}
           >
-            <Tooltip className="tasf-tooltip" direction="top" offset={[0, -32]}>
+            <Tooltip className="tasf-tooltip" direction="auto" offset={[0, -10]}>
               <strong>{ap.id}</strong> — {ap.name}<br />
               Almacén: <strong>{pct.toFixed(2)}%</strong> ({ap.currentOccupation} / {ap.warehouseCapacity})<br />
               {ap.maletasEnAlmacenLocal > 0 && <><span>En espera: <strong>{ap.maletasEnAlmacenLocal}</strong> maletas</span><br /></>}
