@@ -102,7 +102,7 @@ export default function TopBar({
 
   function isActiveTab(key) {
     if (key === 'main') return screen === 'main' || screen === 'ops'
-    if (key === 'resultados') return screen === 'resultados' || screen === 'config'
+    if (key === 'resultados') return screen === 'resultados'
     return screen === key
   }
 
