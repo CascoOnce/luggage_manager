@@ -238,16 +238,22 @@ export default function App() {
     }
   }, [backendState?.colapsoPunto])
 
+  const lastTickMsRef = useRef(null)
+
   useEffect(() => {
     if (autoStep) {
-      autoStepRef.current = setInterval(async () => {
-        setSimClockMinutes((current) => {
-          const next = current + SIM_MINUTES_PER_REAL_SECOND
-          return Math.min(next, 1440)
-        })
+      lastTickMsRef.current = Date.now()
+      autoStepRef.current = setInterval(() => {
+        const now = Date.now()
+        // Use actual elapsed time so background-tab throttling doesn't slow the sim clock
+        const dtSec = Math.min((now - (lastTickMsRef.current ?? now)) / 1000, 2)
+        lastTickMsRef.current = now
+        const dtMin = dtSec * SIM_MINUTES_PER_REAL_SECOND * 4 // 4 ticks/sec at normal rate
+        setSimClockMinutes((current) => Math.min(current + dtMin, 1440))
       }, 250)
     } else {
       clearInterval(autoStepRef.current)
+      lastTickMsRef.current = null
     }
     return () => clearInterval(autoStepRef.current)
   }, [autoStep])
@@ -265,6 +271,7 @@ export default function App() {
     api.stepSimulation().then((newState) => {
       if (!newState) return
       stepInProgressRef.current = false
+      lastTickMsRef.current = Date.now()
       setBackendState(newState)
       // Reset clock to midnight simultaneously with new day data
       setSimClockMinutes(0)
