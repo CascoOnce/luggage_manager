@@ -229,7 +229,7 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
         <Polyline
           key={`route-${selectedFlightData.id}-trav`}
           positions={[[a.lat, a.lng], [b.lat, b.lng]]}
-          pathOptions={{ color: travColor, weight: 2, opacity: 0.6 }}
+          pathOptions={{ color: travColor, weight: 2, opacity: 0.1 }}
         />
       )
     }
@@ -241,7 +241,7 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
         <Polyline
           key={`route-${selectedFlightData.id}-trav`}
           positions={[[a.lat, a.lng], mid]}
-          pathOptions={{ color: travColor, weight: 2, opacity: 0.6 }}
+          pathOptions={{ color: travColor, weight: 2, opacity: 0.1 }}
         />
         <Polyline
           key={`route-${selectedFlightData.id}-rem`}
@@ -272,22 +272,12 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
           )
         }
         if (fraction >= 1) {
-          return (
-            <Polyline
-              key={`bg-route-${flight.id}-trav`}
-              positions={[[a.lat, a.lng], [b.lat, b.lng]]}
-              pathOptions={{ color: travColor, weight: 1.5, opacity: bgOpacity }}
-            />
-          )
+          return null
         }
         const mid = mercatorLerp(map, a, b, fraction)
         if (!mid) return null
         return (
           <React.Fragment key={`bg-route-${flight.id}`}>
-            <Polyline
-              positions={[[a.lat, a.lng], mid]}
-              pathOptions={{ color: travColor, weight: 1.5, opacity: bgOpacity }}
-            />
             <Polyline
               positions={[mid, [b.lat, b.lng]]}
               pathOptions={{ color: '#60a5fa', weight: 1.5, dashArray: '4 6', opacity: bgOpacity }}
