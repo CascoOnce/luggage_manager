@@ -4,7 +4,7 @@ function fmtClock(sec) {
   if (sec == null || isNaN(sec)) return '—'
   const h = Math.floor(sec / 3600)
   const m = Math.floor((sec % 3600) / 60)
-  const s = sec % 60
+  const s = Math.floor(sec % 60)
   const hh = String(h).padStart(2, '0')
   const mm = String(m).padStart(2, '0')
   const ss = String(s).padStart(2, '0')
@@ -35,7 +35,9 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
   // -- SIM CLOCK --
   let simDate = '—'
   let simTime = '—'
-  
+  const diaActual = backendState?.diaActual || backendState?.currentDay || 1
+  const totalDias = backendState?.totalDias || backendState?.totalDays || 5
+
   if (backendState?.fechaSimulada) {
     const source = new Date(backendState.fechaSimulada)
     if (!Number.isNaN(source.getTime())) {
@@ -54,9 +56,9 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
     }
   }
 
-  // Elapsed SIM time
-  const simElapsedSeconds = backendState?.diaActual 
-    ? ((backendState.diaActual - 1) * 86400) + ((simClockMinutes || 0) * 60)
+  // Elapsed SIM time — floor to avoid float display artifacts
+  const simElapsedSeconds = diaActual > 1 || simClockMinutes > 0
+    ? ((diaActual - 1) * 86400) + Math.floor((simClockMinutes || 0) * 60)
     : 0
 
   return (
@@ -94,8 +96,15 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
 
       {/* SECCIÓN SIMULACIÓN */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--amber)', fontWeight: 700 }}>
-          Simulación
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--amber)', fontWeight: 700 }}>
+            Simulación
+          </div>
+          {backendState && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--amber)', background: 'rgba(251,191,36,0.15)', padding: '1px 5px', borderRadius: 3 }}>
+              Día {diaActual}/{totalDias}
+            </div>
+          )}
         </div>
         <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)' }}>
           {simDate}
@@ -107,7 +116,8 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
           {fmtClock(simElapsedSeconds)}
         </div>
       </div>
-      
+
+
     </div>
   )
 }

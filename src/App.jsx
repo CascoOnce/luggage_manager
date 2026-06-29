@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MapView from './components/MapView.jsx'
-import RightPanel from './components/RightPanel.jsx'
+import SidePanel from './components/SidePanel.jsx'
 import TopBar from './components/TopBar.jsx'
 import FloatingKPIs from './components/FloatingKPIs.jsx'
 import FloatingClocks from './components/FloatingClocks.jsx'
@@ -14,12 +14,11 @@ import LiveScreen from './screens/LiveScreen.jsx'
 import OpsScreen from './screens/OpsScreen.jsx'
 import DrawerAeropuerto from './drawers/DrawerAeropuerto.jsx'
 import DrawerVuelo from './drawers/DrawerVuelo.jsx'
-import AirportFilterPanel from './components/AirportFilterPanel.jsx'
 import { getLiveState, getOpsState, getOpsOccupancy, planificarOps, getOpsEnvios, getOpsReporte } from './services/api.js'
 
 export default function App() {
   const ALGORITHM = 'SIMULATED_ANNEALING'
-  const SIM_MINUTES_PER_REAL_SECOND = 6  // 6 min/tick @ 250ms = ~60s per simulated day
+  const SIM_MINUTES_PER_REAL_SECOND = 1  // 1 min/tick @ 250ms = ~6min per simulated day → 30min for 5 days
   const [realElapsedSeconds, setRealElapsedSeconds] = useState(0)
 
   const [threshold, setThreshold] = useState(80)
@@ -68,8 +67,7 @@ export default function App() {
 
   const [autoStep, setAutoStep] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
-  const [filterOpen, setFilterOpen] = useState(false)
-  const [rightOpen, setRightOpen] = useState(false)
+  const [activeSideSection, setActiveSideSection] = useState(null)
 
   useEffect(() => {
     function onKey(e) {
@@ -165,8 +163,7 @@ export default function App() {
 
   function onIniciar() {
     if (!backendState) {
-      setScreen('config')
-      setConfigOpen(true)
+      setActiveSideSection('config')
       return
     }
     if (autoStep) {
@@ -239,17 +236,41 @@ export default function App() {
   }, [backendState?.colapsoPunto])
 
   useEffect(() => {
-    if (autoStep) {
-      autoStepRef.current = setInterval(async () => {
-        setSimClockMinutes((current) => {
-          const next = current + SIM_MINUTES_PER_REAL_SECOND
-          return Math.min(next, 1440)
-        })
-      }, 250)
-    } else {
+    if (!autoStep) {
       clearInterval(autoStepRef.current)
+      return
     }
-    return () => clearInterval(autoStepRef.current)
+
+    function startTick() {
+      autoStepRef.current = setInterval(() => {
+        setSimClockMinutes((current) => Math.min(current + SIM_MINUTES_PER_REAL_SECOND, 1440))
+      }, 250)
+    }
+
+    startTick()
+
+    // When tab goes to background, browsers throttle setInterval to ~1 Hz (4x slower).
+    // Solution: pause the interval on hide, then on return advance the clock by the
+    // full expected sim time that should have elapsed while hidden.
+    let hiddenAt = null
+    function onVisibilityChange() {
+      if (document.hidden) {
+        clearInterval(autoStepRef.current)
+        hiddenAt = Date.now()
+      } else if (hiddenAt !== null) {
+        const hiddenSec = (Date.now() - hiddenAt) / 1000
+        hiddenAt = null
+        const missedMin = hiddenSec * SIM_MINUTES_PER_REAL_SECOND * 4
+        setSimClockMinutes((current) => Math.min(current + missedMin, 1440))
+        startTick()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    return () => {
+      clearInterval(autoStepRef.current)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [autoStep])
 
   // At midnight: reset clock immediately (no freeze) and fire /step in background.
@@ -418,7 +439,7 @@ export default function App() {
   // On Day 1, only flights departing at or after horaInicio are visible (no pre-existing
   // flights that were already in the air before the simulation started).
   const backendFlights = useMemo(() => {
-    const day = backendState?.diaActual || 1
+    const day = backendState?.diaActual || backendState?.currentDay || 1
     const startMin = day <= 1 ? simStartMinuteRef.current : 0
     return activeVuelosWithTimes
       .filter((v) =>
@@ -439,7 +460,8 @@ export default function App() {
     if (Number.isNaN(source.getTime())) return backendState.fechaSimulada
 
     source.setHours(0, 0, 0, 0)
-    const current = new Date(source.getTime() + simClockMinutes * 60000)
+    const dayOffset = Math.max(0, ((backendState.diaActual || backendState.currentDay || 1) - 1)) * 24 * 60 * 60 * 1000
+    const current = new Date(source.getTime() + dayOffset + simClockMinutes * 60000)
     const mm = String(current.getMonth() + 1).padStart(2, '0')
     const dd = String(current.getDate()).padStart(2, '0')
     const rawH = current.getHours()
@@ -448,7 +470,7 @@ export default function App() {
     const ss = String(realElapsedSeconds % 60).padStart(2, '0')
     const ampm = rawH >= 12 ? 'p.m.' : 'a.m.'
     return `${mm}-${dd} ${hh}:${mi}:${ss} ${ampm}`
-  }, [backendState?.fechaSimulada, simClockMinutes, realElapsedSeconds])
+  }, [backendState?.fechaSimulada, backendState?.diaActual, backendState?.currentDay, simClockMinutes, realElapsedSeconds])
 
   useEffect(() => {
     if (!selectedFlight) {
@@ -702,9 +724,16 @@ export default function App() {
       setScreen('ops')
       if (!isOpsActive) startOps()
     } else if (isOpsActive && (next === 'envios' || next === 'dashboard' || next === 'resultados')) {
-      // Stay in ops mode (keep polling), just switch view and refresh data
       refreshOpsViewData()
       setScreen(next)
+    } else if (!isOpsActive && next === 'envios') {
+      if (screen === 'live') stopLive()
+      setScreen('main')
+      setActiveSideSection('envios')
+    } else if (next === 'config') {
+      if (screen === 'live') stopLive()
+      setScreen('main')
+      setActiveSideSection('config')
     } else {
       if (screen === 'live') stopLive()
       if (screen === 'ops') stopOps()
@@ -763,7 +792,12 @@ export default function App() {
     const startMin = h * 60 + m
     simStartMinuteRef.current = startMin
     setSimClockMinutes(startMin)
+    // Reset real-elapsed counter for each new simulation
+    realStartRef.current = null
+    accumulatedRealMsRef.current = 0
+    setRealElapsedSeconds(0)
     setScreen('main')
+    setActiveSideSection('vuelos')
     startPolling()
   }, [startPolling])
 
@@ -814,109 +848,65 @@ export default function App() {
         {/* ── OPERACIONES (main map view) ─────────────────────────────── */}
         {/* ── OPERACIONES (main map view) ─────────────────────────────── */}
         {(screen === 'main' && !configOpen) && (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: `${filterOpen ? '232px' : '0px'} 1fr ${rightOpen ? '300px' : '0px'}`,
-            height: '100%',
-            overflow: 'hidden',
-            transition: 'grid-template-columns 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
-          }}>
-            {/* Filter Panel Container */}
-            <div style={{ overflow: 'hidden', height: '100%', borderRight: filterOpen ? '1px solid var(--border)' : 'none', background: 'var(--panel)' }}>
-              <AirportFilterPanel
+          <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
+            {/* Map always fills the full area — never resizes */}
+            <MapView
+              airports={visibleAirports}
+              flights={backendFlights}
+              selectedFlight={selectedFlight}
+              setSelectedFlight={setSelectedFlight}
+              selectedFlightData={mapSelectedVuelo}
+              onAirportClick={setMapSelectedAirport}
+              onMapClick={() => { handleCloseVuelo(); setHighlightedRoute(null) }}
+              theme={theme}
+              highlightedRoute={highlightedRoute}
+            />
+
+            {/* Side panel — overlay on top of map */}
+            <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, zIndex: 500, display: 'flex' }}>
+              <SidePanel
+                activeSection={activeSideSection}
+                onSectionChange={setActiveSideSection}
+                flights={backendFlights}
+                selectedFlight={selectedFlight}
+                setSelectedFlight={setSelectedFlight}
+                setMapSelectedVuelo={setMapSelectedVuelo}
+                simState={simState}
                 airports={normalizedAirports}
+                threshold={threshold}
+                setThreshold={setThreshold}
+                onSimulationStarted={handleSimulationStarted}
                 originIds={originIds}
                 setOriginIds={setOriginIds}
                 destIds={destIds}
                 setDestIds={setDestIds}
-                threshold={threshold}
-                setThreshold={setThreshold}
-              />
-            </div>
-
-            {/* Center Map Container */}
-            <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
-              {/* Filter toggle */}
-              <button
-                onClick={() => setFilterOpen(!filterOpen)}
-                style={{
-                  position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
-                  zIndex: 1000, width: 24, height: 48, background: 'rgba(13, 17, 23, 0.85)',
-                  border: '1px solid var(--border)', borderLeft: 'none', borderRadius: '0 8px 8px 0',
-                  color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 11,
-                }}
-              >
-                {filterOpen ? '‹' : '›'}
-              </button>
-
-              <div style={{
-                position: 'absolute', top: 20, left: 60, zIndex: 1000,
-                display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none'
-              }}>
-                <FloatingKPIs 
-                  kpis={activeKpis} 
-                  hasSimulation={Boolean(backendState)} 
-                />
-                <FloatingClocks 
-                  backendState={backendState}
-                  simClockMinutes={simClockMinutes}
-                  realElapsedSeconds={realElapsedSeconds}
-                />
-              </div>
-
-              <MapView
-                airports={visibleAirports}
-                flights={backendFlights}
-                selectedFlight={selectedFlight}
-                setSelectedFlight={setSelectedFlight}
-                selectedFlightData={mapSelectedVuelo}
-                onAirportClick={setMapSelectedAirport}
-                onMapClick={() => { handleCloseVuelo(); setHighlightedRoute(null) }}
-                theme={theme}
-                highlightedRoute={highlightedRoute}
-              />
-
-              {!mapSelectedVuelo && !mapSelectedAirport && (
-                <button
-                  onClick={() => setRightOpen(!rightOpen)}
-                  style={{
-                    position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
-                    zIndex: 1000, width: 24, height: 48, background: 'rgba(13, 17, 23, 0.85)',
-                    border: '1px solid var(--border)', borderRight: 'none', borderRadius: '8px 0 0 8px',
-                    color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
-                  }}
-                >
-                  {rightOpen ? '›' : '‹'}
-                </button>
-              )}
-
-              {/* Detail Drawers */}
-              <DrawerAeropuerto
-                airport={mapSelectedAirport}
-                vuelos={backendState?.vuelos || []}
-                onClose={handleCloseAirport}
-                fetchInventory={isOpsActive ? api.getOpsAirportInventory : api.getAirportInventory}
-              />
-              <DrawerVuelo
-                vuelo={mapSelectedVuelo}
-                onClose={handleCloseVuelo}
-                onCancelFlight={null}
-              />
-            </div>
-
-            {/* Right Panel Container */}
-            <div style={{ overflow: 'hidden', height: '100%', borderLeft: rightOpen ? '1px solid var(--border)' : 'none', background: 'var(--panel)' }}>
-              <RightPanel
-                flights={backendFlights}
-                airports={visibleAirports}
-                threshold={threshold}
-                selectedFlight={selectedFlight}
-                setSelectedFlight={setSelectedFlight}
-                onVueloClick={setMapSelectedVuelo}
                 theme={theme}
               />
             </div>
+
+            {/* KPIs / clocks — shift right when panel open */}
+            <div style={{
+              position: 'absolute', top: 20,
+              left: activeSideSection ? 392 : 72,
+              zIndex: 600,
+              display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none',
+              transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            }}>
+              <FloatingKPIs kpis={activeKpis} hasSimulation={Boolean(backendState)} />
+              <FloatingClocks backendState={backendState} simClockMinutes={simClockMinutes} realElapsedSeconds={realElapsedSeconds} />
+            </div>
+
+            <DrawerAeropuerto
+              airport={mapSelectedAirport}
+              vuelos={backendState?.vuelos || []}
+              onClose={handleCloseAirport}
+              fetchInventory={isOpsActive ? api.getOpsAirportInventory : api.getAirportInventory}
+            />
+            <DrawerVuelo
+              vuelo={mapSelectedVuelo}
+              onClose={handleCloseVuelo}
+              onCancelFlight={null}
+            />
           </div>
         )}
 
@@ -943,20 +933,20 @@ export default function App() {
           </div>
         )}
 
-        {/* ── OVERLAY SCREENS (replace the map entirely, no z-index fighting) ── */}
-        {(screen !== 'main' || configOpen) && screen !== 'live' && screen !== 'ops' && (
+        {/* ── OVERLAY SCREENS ── */}
+        {screen !== 'main' && screen !== 'live' && screen !== 'ops' && (
           <div style={{ height: '100%', overflow: 'auto', background: 'var(--bg)' }}>
-            {screen === 'envios' && (
+            {screen === 'envios' && isOpsActive && (
               <EnviosScreen
-                simState={isOpsActive ? opsAsSimState : simState}
+                simState={opsAsSimState}
                 theme={theme}
                 onBack={handleBackToMain}
-                onShowInMap={isOpsActive ? null : handleShowEnvioRoute}
-                onCancelFlight={isOpsActive ? null : handleCancelFlight}
-                simClockMinutes={isOpsActive ? opsNowMinutes : simClockMinutes}
-                flights={isOpsActive ? opsActiveFlights : activeVuelosWithTimes}
-                opsMode={isOpsActive}
-                fetchEnvio={isOpsActive ? api.getOpsEnvioById : api.getEnvioById}
+                onShowInMap={null}
+                onCancelFlight={null}
+                simClockMinutes={opsNowMinutes}
+                flights={opsActiveFlights}
+                opsMode={true}
+                fetchEnvio={api.getOpsEnvioById}
               />
             )}
             {screen === 'dashboard' && (
@@ -974,13 +964,6 @@ export default function App() {
                 theme={theme}
                 onBack={handleBackToMain}
                 opsMode={isOpsActive}
-              />
-            )}
-            {screen === 'config' && (
-              <ConfigScreen
-                onCancel={handleCancelConfig}
-                onSimulationStarted={handleSimulationStarted}
-                onOperacionesStarted={() => { planificarOps().catch(console.error); handleNavigate('ops') }}
               />
             )}
             {screen === 'colapso' && (
