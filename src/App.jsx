@@ -238,24 +238,42 @@ export default function App() {
     }
   }, [backendState?.colapsoPunto])
 
-  const lastTickMsRef = useRef(null)
-
   useEffect(() => {
-    if (autoStep) {
-      lastTickMsRef.current = Date.now()
-      autoStepRef.current = setInterval(() => {
-        const now = Date.now()
-        // Use actual elapsed time so background-tab throttling doesn't slow the sim clock
-        const dtSec = Math.min((now - (lastTickMsRef.current ?? now)) / 1000, 2)
-        lastTickMsRef.current = now
-        const dtMin = dtSec * SIM_MINUTES_PER_REAL_SECOND * 4 // 4 ticks/sec at normal rate
-        setSimClockMinutes((current) => Math.min(current + dtMin, 1440))
-      }, 250)
-    } else {
+    if (!autoStep) {
       clearInterval(autoStepRef.current)
-      lastTickMsRef.current = null
+      return
     }
-    return () => clearInterval(autoStepRef.current)
+
+    function startTick() {
+      autoStepRef.current = setInterval(() => {
+        setSimClockMinutes((current) => Math.min(current + SIM_MINUTES_PER_REAL_SECOND, 1440))
+      }, 250)
+    }
+
+    startTick()
+
+    // When tab goes to background, browsers throttle setInterval to ~1 Hz (4x slower).
+    // Solution: pause the interval on hide, then on return advance the clock by the
+    // full expected sim time that should have elapsed while hidden.
+    let hiddenAt = null
+    function onVisibilityChange() {
+      if (document.hidden) {
+        clearInterval(autoStepRef.current)
+        hiddenAt = Date.now()
+      } else if (hiddenAt !== null) {
+        const hiddenSec = (Date.now() - hiddenAt) / 1000
+        hiddenAt = null
+        const missedMin = hiddenSec * SIM_MINUTES_PER_REAL_SECOND * 4
+        setSimClockMinutes((current) => Math.min(current + missedMin, 1440))
+        startTick()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    return () => {
+      clearInterval(autoStepRef.current)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [autoStep])
 
   // At midnight: reset clock immediately (no freeze) and fire /step in background.
@@ -271,7 +289,6 @@ export default function App() {
     api.stepSimulation().then((newState) => {
       if (!newState) return
       stepInProgressRef.current = false
-      lastTickMsRef.current = Date.now()
       setBackendState(newState)
       // Reset clock to midnight simultaneously with new day data
       setSimClockMinutes(0)
