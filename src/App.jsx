@@ -418,7 +418,7 @@ export default function App() {
   // On Day 1, only flights departing at or after horaInicio are visible (no pre-existing
   // flights that were already in the air before the simulation started).
   const backendFlights = useMemo(() => {
-    const day = backendState?.diaActual || 1
+    const day = backendState?.diaActual || backendState?.currentDay || 1
     const startMin = day <= 1 ? simStartMinuteRef.current : 0
     return activeVuelosWithTimes
       .filter((v) =>
@@ -439,7 +439,7 @@ export default function App() {
     if (Number.isNaN(source.getTime())) return backendState.fechaSimulada
 
     source.setHours(0, 0, 0, 0)
-    const dayOffset = Math.max(0, (backendState.diaActual || 1) - 1) * 24 * 60 * 60 * 1000
+    const dayOffset = Math.max(0, ((backendState.diaActual || backendState.currentDay || 1) - 1)) * 24 * 60 * 60 * 1000
     const current = new Date(source.getTime() + dayOffset + simClockMinutes * 60000)
     const mm = String(current.getMonth() + 1).padStart(2, '0')
     const dd = String(current.getDate()).padStart(2, '0')
@@ -449,7 +449,7 @@ export default function App() {
     const ss = String(realElapsedSeconds % 60).padStart(2, '0')
     const ampm = rawH >= 12 ? 'p.m.' : 'a.m.'
     return `${mm}-${dd} ${hh}:${mi}:${ss} ${ampm}`
-  }, [backendState?.fechaSimulada, backendState?.diaActual, simClockMinutes, realElapsedSeconds])
+  }, [backendState?.fechaSimulada, backendState?.diaActual, backendState?.currentDay, simClockMinutes, realElapsedSeconds])
 
   useEffect(() => {
     if (!selectedFlight) {

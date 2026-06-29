@@ -47,13 +47,14 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
   // -- SIM CLOCK --
   let simDate = '—'
   let simTime = '—'
-  
+  const diaActual = backendState?.diaActual || backendState?.currentDay || 1
+  const totalDias = backendState?.totalDias || backendState?.totalDays || 5
+
   if (backendState?.fechaSimulada) {
     const source = new Date(backendState.fechaSimulada)
     if (!Number.isNaN(source.getTime())) {
       source.setHours(0, 0, 0, 0)
-      const dayOffset = Math.max(0, (backendState.diaActual || 1) - 1) * 24 * 60 * 60 * 1000
-      const current = new Date(source.getTime() + dayOffset + (simClockMinutes || 0) * 60000)
+      const current = new Date(source.getTime() + (simClockMinutes || 0) * 60000)
       const dd = String(current.getDate()).padStart(2, '0')
       const mm = String(current.getMonth() + 1).padStart(2, '0')
       const yyyy = current.getFullYear()
@@ -68,8 +69,8 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
   }
 
   // Elapsed SIM time
-  const simElapsedSeconds = backendState?.diaActual 
-    ? ((backendState.diaActual - 1) * 86400) + ((simClockMinutes || 0) * 60)
+  const simElapsedSeconds = diaActual > 1 || simClockMinutes > 0
+    ? ((diaActual - 1) * 86400) + ((simClockMinutes || 0) * 60)
     : 0
 
   return (
@@ -107,8 +108,15 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
 
       {/* SECCIÓN SIMULACIÓN */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--amber)', fontWeight: 700 }}>
-          Simulación
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--amber)', fontWeight: 700 }}>
+            Simulación
+          </div>
+          {backendState && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--amber)', background: 'rgba(251,191,36,0.15)', padding: '1px 5px', borderRadius: 3 }}>
+              Día {diaActual}/{totalDias}
+            </div>
+          )}
         </div>
         <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)' }}>
           {simDate}
