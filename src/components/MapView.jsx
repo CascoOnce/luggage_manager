@@ -229,7 +229,7 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
         <Polyline
           key={`route-${selectedFlightData.id}-trav`}
           positions={[[a.lat, a.lng], [b.lat, b.lng]]}
-          pathOptions={{ color: travColor, weight: 2, opacity: 0.6 }}
+          pathOptions={{ color: travColor, weight: 2, opacity: 0.1 }}
         />
       )
     }
@@ -241,7 +241,7 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
         <Polyline
           key={`route-${selectedFlightData.id}-trav`}
           positions={[[a.lat, a.lng], mid]}
-          pathOptions={{ color: travColor, weight: 2, opacity: 0.6 }}
+          pathOptions={{ color: travColor, weight: 2, opacity: 0.1 }}
         />
         <Polyline
           key={`route-${selectedFlightData.id}-rem`}
@@ -272,22 +272,12 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
           )
         }
         if (fraction >= 1) {
-          return (
-            <Polyline
-              key={`bg-route-${flight.id}-trav`}
-              positions={[[a.lat, a.lng], [b.lat, b.lng]]}
-              pathOptions={{ color: travColor, weight: 1.5, opacity: bgOpacity }}
-            />
-          )
+          return null
         }
         const mid = mercatorLerp(map, a, b, fraction)
         if (!mid) return null
         return (
           <React.Fragment key={`bg-route-${flight.id}`}>
-            <Polyline
-              positions={[[a.lat, a.lng], mid]}
-              pathOptions={{ color: travColor, weight: 1.5, opacity: bgOpacity }}
-            />
             <Polyline
               positions={[mid, [b.lat, b.lng]]}
               pathOptions={{ color: '#60a5fa', weight: 1.5, dashArray: '4 6', opacity: bgOpacity }}
@@ -322,6 +312,53 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
   )
 }
 
+function AirportMarkers({ airports, theme, hoveredAirport, setHoveredAirport, onAirportClick }) {
+  const map = useMap()
+  
+  return airports.map((ap) => {
+    const pct = occupancyPct(ap)
+    let direction = 'top'
+    let offset = [0, -10] // Default (top)
+
+    // Calculate position dynamically if the map is ready
+    if (map) {
+      const pt = map.latLngToContainerPoint([ap.lat, ap.lng])
+      const mapHeight = map.getSize().y
+      // If it's in the top 40% of the screen, show it at the bottom to avoid cutting it off
+      if (pt.y < mapHeight * 0.4) {
+        direction = 'bottom'
+        offset = [15, 15] // Bottom right offset to avoid covering the marker completely
+      } else {
+        direction = 'top'
+        offset = [0, -25] // Top offset
+      }
+    }
+
+    return (
+      <Marker
+        key={ap.id}
+        position={[ap.lat, ap.lng]}
+        icon={makeAirportIcon(pct, theme)}
+        eventHandlers={{
+          click: () => onAirportClick && onAirportClick(ap),
+          mouseover: () => setHoveredAirport(ap.id),
+          mouseout: () => setHoveredAirport(null)
+        }}
+      >
+        {hoveredAirport === ap.id && (
+          <Tooltip permanent className="tasf-tooltip" direction={direction} offset={offset}>
+            <strong>{ap.id}</strong> — {ap.name}<br />
+            Almacén: <strong>{pct.toFixed(2)}%</strong> ({ap.currentOccupation} / {ap.warehouseCapacity})<br />
+            {ap.maletasEnAlmacenLocal > 0 && <><span>En espera: <strong>{ap.maletasEnAlmacenLocal}</strong> maletas</span><br /></>}
+            {ap.maletasEnTransitoEntrantes > 0 && <><span>Llegando: <strong>{ap.maletasEnTransitoEntrantes}</strong> maletas</span><br /></>}
+            {(ap.vuelosSalientes > 0 || ap.vuelosLlegando > 0) && <span>Vuelos: <strong>{ap.vuelosSalientes}</strong> salen · <strong>{ap.vuelosLlegando}</strong> llegan</span>}
+          </Tooltip>
+        )}
+      </Marker>
+    )
+  })
+}
+
 export default function MapView({
   airports, flights,
   selectedFlight, setSelectedFlight,
@@ -332,6 +369,7 @@ export default function MapView({
   highlightedRoute = null,
 }) {
   const [showRoutes, setShowRoutes] = useState(true)
+  const [hoveredAirport, setHoveredAirport] = useState(null)
   const airportList = airports || []
   const flightList = flights || []
 
@@ -397,25 +435,13 @@ export default function MapView({
       ))}
 
       {/* ── AIRPORT NODES ─────────────────────────────────────────────────── */}
-      {airportList.map((ap) => {
-        const pct = occupancyPct(ap)
-        return (
-          <Marker
-            key={ap.id}
-            position={[ap.lat, ap.lng]}
-            icon={makeAirportIcon(pct, theme)}
-            eventHandlers={{ click: () => onAirportClick && onAirportClick(ap) }}
-          >
-            <Tooltip className="tasf-tooltip" direction="top" offset={[0, -32]}>
-              <strong>{ap.id}</strong> — {ap.name}<br />
-              Almacén: <strong>{pct.toFixed(2)}%</strong> ({ap.currentOccupation} / {ap.warehouseCapacity})<br />
-              {ap.maletasEnAlmacenLocal > 0 && <><span>En espera: <strong>{ap.maletasEnAlmacenLocal}</strong> maletas</span><br /></>}
-              {ap.maletasEnTransitoEntrantes > 0 && <><span>Llegando: <strong>{ap.maletasEnTransitoEntrantes}</strong> maletas</span><br /></>}
-              {(ap.vuelosSalientes > 0 || ap.vuelosLlegando > 0) && <span>Vuelos: <strong>{ap.vuelosSalientes}</strong> salen · <strong>{ap.vuelosLlegando}</strong> llegan</span>}
-            </Tooltip>
-          </Marker>
-        )
-      })}
+      <AirportMarkers
+        airports={airportList}
+        theme={theme}
+        hoveredAirport={hoveredAirport}
+        setHoveredAirport={setHoveredAirport}
+        onAirportClick={onAirportClick}
+      />
     </MapContainer>
     </div>
   )

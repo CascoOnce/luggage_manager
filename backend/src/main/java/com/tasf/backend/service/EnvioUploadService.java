@@ -84,7 +84,22 @@ public class EnvioUploadService {
 
         // Notificar al motor si está en ejecución
         if (simulationEngine.estaInicializada()) {
-            simulationEngine.agregarNuevosEnvios(newDomainEnvios);
+            Map<String, Integer> husoByAirport = aeropuertoRepository.findAll().stream()
+                .collect(Collectors.toMap(e -> e.getCodigoIata(), e -> e.getHuso()));
+            List<Envio> utcEnvios = newDomainEnvios.stream().map(e -> {
+                int husoOrigen = husoByAirport.getOrDefault(e.getAeropuertoOrigen(), 0);
+                return Envio.builder()
+                    .idEnvio(e.getIdEnvio())
+                    .codigoAerolinea(e.getCodigoAerolinea())
+                    .aeropuertoOrigen(e.getAeropuertoOrigen())
+                    .aeropuertoDestino(e.getAeropuertoDestino())
+                    .fechaHoraIngreso(e.getFechaHoraIngreso().minusHours(husoOrigen))
+                    .cantidadMaletas(e.getCantidadMaletas())
+                    .sla(e.getSla())
+                    .estado(e.getEstado())
+                    .build();
+            }).toList();
+            simulationEngine.agregarNuevosEnvios(utcEnvios);
         }
 
         return newDomainEnvios;

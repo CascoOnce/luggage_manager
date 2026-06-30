@@ -109,9 +109,6 @@ export default function App() {
     return Math.max(0, Math.min(1, elapsed / total))
   }
 
-  function onToggleSim() {
-    setAutoStep((prev) => !prev)
-  }
 
   function onReset() {
     setAutoStep(false)
@@ -170,7 +167,7 @@ export default function App() {
       return
     }
     if (autoStep) {
-      onToggleSim()
+      setAutoStep(false)
     }
   }
 
@@ -597,20 +594,6 @@ export default function App() {
     api.resetSimulation().catch((err) => console.error('Reset backend error:', err))
   }
 
-  async function handleStop() {
-    stepInProgressRef.current = false
-    try {
-      const state = await api.stopSimulation()
-      if (state) setBackendState(state)
-    } catch (err) {
-      console.error('Stop backend error:', err)
-    }
-    stopPolling()
-    setAutoStep(false)
-    clearInterval(autoStepRef.current)
-    setScreen('resultados')
-  }
-
   async function handleRestart() {
     if (!backendState) return
     stepInProgressRef.current = false
@@ -824,12 +807,9 @@ export default function App() {
       <TopBar
         simRateLabel={null}
         kpis={activeKpis}
-        isRunning={autoStep}
         backendState={backendState}
-        onToggleSim={onToggleSim}
-        onStop={handleStop}
+        onCancel={handleReset}
         onRestart={handleRestart}
-        onReset={handleReset}
         canRestart={Boolean(backendState)}
         theme={theme}
         onToggleTheme={onToggleTheme}

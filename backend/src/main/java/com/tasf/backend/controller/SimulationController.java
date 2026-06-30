@@ -54,17 +54,23 @@ public class SimulationController {
         java.time.LocalDateTime fin = inicio.plusDays(params.getDias());
         
         log.info("Querying envios from {} to {}", inicio, fin);
+        Map<String, Integer> husoByAirport = dataLoaderService.getAeropuertos().stream()
+            .collect(java.util.stream.Collectors.toMap(com.tasf.backend.domain.Aeropuerto::getCodigoIATA, com.tasf.backend.domain.Aeropuerto::getHuso));
+
         List<Envio> enviosSimulacion = envioRepository.findByFechaHoraIngresoBetween(inicio, fin).stream()
-            .map(e -> Envio.builder()
-                .idEnvio(e.getIdPedido())
-                .codigoAerolinea(e.getCodigoAerolinea())
-                .aeropuertoOrigen(e.getIataOrigen())
-                .aeropuertoDestino(e.getIataDestino())
-                .fechaHoraIngreso(e.getFechaHoraIngreso())
-                .cantidadMaletas(e.getCantidadMaletas())
-                .sla(e.getSla())
-                .estado(com.tasf.backend.domain.EstadoEnvio.valueOf(e.getEstado()))
-                .build())
+            .map(e -> {
+                int husoOrigen = husoByAirport.getOrDefault(e.getIataOrigen(), 0);
+                return Envio.builder()
+                    .idEnvio(e.getIdPedido())
+                    .codigoAerolinea(e.getCodigoAerolinea())
+                    .aeropuertoOrigen(e.getIataOrigen())
+                    .aeropuertoDestino(e.getIataDestino())
+                    .fechaHoraIngreso(e.getFechaHoraIngreso().minusHours(husoOrigen))
+                    .cantidadMaletas(e.getCantidadMaletas())
+                    .sla(e.getSla())
+                    .estado(com.tasf.backend.domain.EstadoEnvio.valueOf(e.getEstado()))
+                    .build();
+            })
             .toList();
             
         log.info("Found {} envios for simulation period", enviosSimulacion.size());

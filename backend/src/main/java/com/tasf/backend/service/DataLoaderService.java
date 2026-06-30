@@ -166,16 +166,23 @@ public class DataLoaderService {
                 .build())
             .toList();
 
+        Map<String, Integer> husoByAirport = this.aeropuertos.stream()
+            .collect(Collectors.toMap(Aeropuerto::getCodigoIATA, Aeropuerto::getHuso));
+
         this.vuelos = vueloRepository.findAll().stream()
-            .map(e -> Vuelo.builder()
-                .codigoVuelo(e.getCodigoVuelo())
-                .origen(e.getIataOrigen())
-                .destino(e.getIataDestino())
-                .horaSalida(e.getHoraSalida())
-                .horaLlegada(e.getHoraLlegada())
-                .capacidadTotal(e.getCapacidadTotal())
-                .tipo(e.getTipo())
-                .build())
+            .map(e -> {
+                int husoOrigen = husoByAirport.getOrDefault(e.getIataOrigen(), 0);
+                int husoDestino = husoByAirport.getOrDefault(e.getIataDestino(), 0);
+                return Vuelo.builder()
+                    .codigoVuelo(e.getCodigoVuelo())
+                    .origen(e.getIataOrigen())
+                    .destino(e.getIataDestino())
+                    .horaSalida(e.getHoraSalida().minusHours(husoOrigen))
+                    .horaLlegada(e.getHoraLlegada().minusHours(husoDestino))
+                    .capacidadTotal(e.getCapacidadTotal())
+                    .tipo(e.getTipo())
+                    .build();
+            })
             .toList();
 
         log.info("Loaded {} airports and {} flights from DB", this.aeropuertos.size(), this.vuelos.size());
