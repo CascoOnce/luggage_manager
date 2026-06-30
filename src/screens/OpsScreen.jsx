@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import MapView from '../components/MapView'
-import RightPanel from '../components/RightPanel'
-import AirportFilterPanel from '../components/AirportFilterPanel'
-import OpsEnviosIngress from '../components/OpsEnviosIngress'
+import SidePanel from '../components/SidePanel'
 import DrawerVuelo from '../drawers/DrawerVuelo'
 import DrawerAeropuerto from '../drawers/DrawerAeropuerto'
 import { api } from '../services/api.js'
@@ -44,8 +42,7 @@ function mod1440(m) {
   return ((m % 1440) + 1440) % 1440
 }
 
-export default function OpsScreen({ opsState, theme, onBack, onRefreshOps }) {
-  const [leftTab, setLeftTab] = useState('filtros') // 'filtros' | 'envios'
+export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onRefreshOps }) {
   const [selectedFlight, setSelectedFlight] = useState(null)
   const [selectedVueloData, setSelectedVueloData] = useState(null)
   function fmtClock12h() {
@@ -62,8 +59,7 @@ export default function OpsScreen({ opsState, theme, onBack, onRefreshOps }) {
   const [destIds, setDestIds] = useState(null)
   const [selectedAirport, setSelectedAirport] = useState(null)
   const [threshold, setThreshold] = useState(80)
-  const [filterOpen, setFilterOpen] = useState(true)
-  const [rightOpen, setRightOpen] = useState(true)
+  const [activeSideSection, setActiveSideSection] = useState(null)
   const [ingressAirports, setIngressAirports] = useState([])
 
   useEffect(() => {
@@ -116,7 +112,7 @@ export default function OpsScreen({ opsState, theme, onBack, onRefreshOps }) {
           destination: v.destino,
           type: v.tipo,
           status: 'active',
-          currentLoad: null,
+          currentLoad: v.cargaActual ?? 0,
           capacity: v.capacidadTotal,
           hour: parseInt(v.horaSalida.split(':')[0], 10),
           horaSalida: v.horaSalida,
@@ -157,11 +153,6 @@ export default function OpsScreen({ opsState, theme, onBack, onRefreshOps }) {
     [visibleFlights, selectedFlight]
   )
 
-  function handleVueloClick(f) {
-    setSelectedFlight(f.id)
-    setSelectedVueloData(f)
-  }
-
   function handleCloseVuelo() {
     setSelectedFlight(null)
     setSelectedVueloData(null)
@@ -170,6 +161,17 @@ export default function OpsScreen({ opsState, theme, onBack, onRefreshOps }) {
   useEffect(() => {
     setSelectedVueloData(selectedFlightData)
   }, [selectedFlightData])
+
+  const opsSideState = useMemo(() => ({
+    envios: (opsEnvios || []).map((e) => ({
+      idEnvio: e.idPedido,
+      aeropuertoOrigen: e.iataOrigen,
+      aeropuertoDestino: e.iataDestino,
+      estado: e.estado,
+      cantidadMaletas: e.cantidadMaletas,
+      sla: e.sla,
+    })),
+  }), [opsEnvios])
 
   if (!opsState) {
     return (
@@ -197,84 +199,15 @@ export default function OpsScreen({ opsState, theme, onBack, onRefreshOps }) {
         <span style={{ marginLeft: 'auto', fontSize: '13px', color: 'var(--text-secondary, #888)', fontVariantNumeric: 'tabular-nums' }}>{wallClock}</span>
       </div>
 
-      {/* 3-column grid: left panel | map | right panel */}
-      <div style={{
-        flex: 1,
-        display: 'grid',
-        gridTemplateColumns: `${filterOpen ? '260px' : '0px'} 1fr ${rightOpen ? '300px' : '0px'}`,
-        overflow: 'hidden',
-        minHeight: 0,
-        transition: 'grid-template-columns 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-      }}>
-        {/* Left panel with tabs */}
-        <div style={{ overflow: 'hidden', height: '100%', borderRight: filterOpen ? '1px solid var(--border)' : 'none', background: 'var(--panel)', display: 'flex', flexDirection: 'column' }}>
-          {/* Tabs */}
-          <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-            {[
-              { key: 'filtros', label: 'Filtros' },
-              { key: 'envios', label: '+ Envíos' },
-            ].map(tab => (
-              <button key={tab.key} onClick={() => setLeftTab(tab.key)}
-                style={{
-                  flex: 1, padding: '8px 4px',
-                  fontFamily: 'var(--mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1,
-                  background: leftTab === tab.key ? 'rgba(34,197,94,0.08)' : 'transparent',
-                  border: 'none',
-                  borderBottom: leftTab === tab.key ? '2px solid #22c55e' : '2px solid transparent',
-                  color: leftTab === tab.key ? '#22c55e' : 'var(--muted)',
-                  cursor: 'pointer',
-                }}>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Tab content — both panels stay mounted; CSS toggle avoids slow remount */}
-          <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-            <div style={{ display: leftTab === 'filtros' ? 'block' : 'none', height: '100%', overflow: 'hidden' }}>
-              <AirportFilterPanel
-                airports={airports}
-                originIds={originIds}
-                setOriginIds={setOriginIds}
-                destIds={destIds}
-                setDestIds={setDestIds}
-                threshold={threshold}
-                setThreshold={setThreshold}
-              />
-            </div>
-            <div style={{ display: leftTab === 'envios' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              <OpsEnviosIngress airports={ingressAirports} onEnviosChanged={onRefreshOps || (() => {})} />
-            </div>
-          </div>
-        </div>
-
-        {/* Map */}
-        <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
-          <button
-            onClick={() => setFilterOpen(!filterOpen)}
-            style={{
-              position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
-              zIndex: 1000, width: 24, height: 48, background: 'rgba(13,17,23,0.85)',
-              border: '1px solid var(--border)', borderLeft: 'none', borderRadius: '0 8px 8px 0',
-              color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11,
-            }}
-          >
-            {filterOpen ? '‹' : '›'}
-          </button>
-          {!selectedAirport && (
-            <button
-              onClick={() => setRightOpen(!rightOpen)}
-              style={{
-                position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
-                zIndex: 1000, width: 24, height: 48, background: 'rgba(13,17,23,0.85)',
-                border: '1px solid var(--border)', borderRight: 'none', borderRadius: '8px 0 0 8px',
-                color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11,
-              }}
-            >
-              {rightOpen ? '›' : '‹'}
-            </button>
-          )}
-
+      <div style={{ flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: activeSideSection ? 372 : 52,
+          transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        }}>
           <MapView
             airports={visibleAirports}
             flights={visibleFlights}
@@ -285,6 +218,30 @@ export default function OpsScreen({ opsState, theme, onBack, onRefreshOps }) {
             onMapClick={handleCloseVuelo}
             theme={theme}
           />
+        </div>
+
+          <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, zIndex: 500, display: 'flex' }}>
+            <SidePanel
+              mode="ops"
+              activeSection={activeSideSection}
+              onSectionChange={setActiveSideSection}
+              flights={visibleFlights}
+              selectedFlight={selectedFlight}
+              setSelectedFlight={setSelectedFlight}
+              setMapSelectedVuelo={setSelectedVueloData}
+              simState={opsSideState}
+              airports={airports}
+              threshold={threshold}
+              setThreshold={setThreshold}
+              originIds={originIds}
+              setOriginIds={setOriginIds}
+              destIds={destIds}
+              setDestIds={setDestIds}
+              theme={theme}
+              opsIngressAirports={ingressAirports}
+              onOpsEnviosChanged={onRefreshOps || (() => {})}
+            />
+          </div>
 
           <DrawerVuelo
             vuelo={selectedVueloData}
@@ -297,20 +254,6 @@ export default function OpsScreen({ opsState, theme, onBack, onRefreshOps }) {
             onClose={() => setSelectedAirport(null)}
             fetchInventory={api.getOpsAirportInventory}
           />
-        </div>
-
-        {/* Right panel */}
-        <div style={{ borderLeft: rightOpen ? '1px solid var(--border, #333)' : 'none', background: 'var(--panel, #1a1a1a)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <RightPanel
-            flights={visibleFlights}
-            airports={visibleAirports}
-            threshold={threshold}
-            selectedFlight={selectedFlight}
-            setSelectedFlight={setSelectedFlight}
-            onVueloClick={handleVueloClick}
-            showAllAirports
-          />
-        </div>
       </div>
     </div>
   )

@@ -626,6 +626,8 @@ public class SimulationEngine {
             }
         }
         Map<String, Envio> envioById = envios.stream().collect(Collectors.toMap(Envio::getIdEnvio, e -> e, (a, b) -> a));
+        Map<String, Integer> husoByAirport = aeropuertos.stream()
+            .collect(Collectors.toMap(Aeropuerto::getCodigoIATA, Aeropuerto::getHuso, (a, b) -> a));
 
         Map<String, Long> maletasPorAlmacen = maletas.stream()
             .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN && m.getUbicacionActual() != null)
@@ -652,7 +654,7 @@ public class SimulationEngine {
             .enEjecucion(enEjecucion)
             .finalizada(finalizada)
             .aeropuertos(aeropuertos.stream().map(a -> toAeropuertoDto(a, maletasPorAlmacen, maletasPorDestino)).toList())
-            .vuelos(vuelos.stream().map(v -> toVueloDto(v, plansByFlight, envioById)).toList())
+            .vuelos(vuelos.stream().map(v -> toVueloDto(v, plansByFlight, envioById, husoByAirport)).toList())
             .envios(envios.stream().map(e -> toEnvioDto(e, false, latestPlanByEnvio.get(e.getIdEnvio()))).toList())
             .kpis(buildKpis())
             .throughputHistorial(List.copyOf(throughputHistorial))
@@ -734,7 +736,9 @@ public class SimulationEngine {
             }
         }
         Map<String, Envio> envioById = envios.stream().collect(Collectors.toMap(Envio::getIdEnvio, e -> e, (a, b) -> a));
-        return vuelos.stream().map(v -> toVueloDto(v, plansByFlight, envioById)).toList();
+        Map<String, Integer> husoByAirport = aeropuertos.stream()
+            .collect(Collectors.toMap(Aeropuerto::getCodigoIATA, Aeropuerto::getHuso, (a, b) -> a));
+        return vuelos.stream().map(v -> toVueloDto(v, plansByFlight, envioById, husoByAirport)).toList();
     }
 
     public synchronized List<EnvioDTO> getEnviosEstado() {
@@ -1428,7 +1432,7 @@ public class SimulationEngine {
             .build();
     }
 
-    private VueloDTO toVueloDto(Vuelo vuelo, Map<String, List<PlanDeViaje>> plansByFlight, Map<String, Envio> envioById) {
+    private VueloDTO toVueloDto(Vuelo vuelo, Map<String, List<PlanDeViaje>> plansByFlight, Map<String, Envio> envioById, Map<String, Integer> husoByAirport) {
         List<PlanDeViaje> relatedPlans = plansByFlight.getOrDefault(vuelo.getCodigoVuelo(), List.of());
         boolean usedByAnyPlan = !relatedPlans.isEmpty();
         
@@ -1463,6 +1467,8 @@ public class SimulationEngine {
             .fraction(resolveFraction(vuelo, relatedPlans))
             .horaSalida(vuelo.getHoraSalida().toString())
             .horaLlegada(vuelo.getHoraLlegada().toString())
+            .husOrigen(husoByAirport.get(vuelo.getOrigen()))
+            .husDestino(husoByAirport.get(vuelo.getDestino()))
             .enUso(enUsoHoy)
             .build();
     }

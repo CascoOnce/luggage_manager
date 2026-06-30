@@ -116,6 +116,9 @@ export default function App() {
     accumulatedRealMsRef.current = 0
     setRealElapsedSeconds(0)
     setSelectedFlight(null)
+    setMapSelectedAirport(null)
+    setMapSelectedVuelo(null)
+    setHighlightedRoute(null)
     setConfigOpen(false)
     setScreen('main')
   }
@@ -430,6 +433,8 @@ export default function App() {
         status: 'active',
         horaSalida: v.horaSalida,
         horaLlegada: v.horaLlegada,
+        husOrigen: v.husOrigen ?? null,
+        husDestino: v.husDestino ?? null,
         depMin: parseTimeToMinutes(v.horaSalida),
         arrMin: parseTimeToMinutes(v.horaLlegada),
       }))
@@ -695,6 +700,7 @@ export default function App() {
   function startOps() {
     stopOps()
     refreshOps()
+    refreshOpsViewData()
     refreshOccupancy()
     opsPollingRef.current = setInterval(refreshOps, OPS_POLL_MS)
     opsOccRef.current = setInterval(refreshOccupancy, OPS_OCC_POLL_MS)
@@ -731,6 +737,12 @@ export default function App() {
       setScreen('main')
       setActiveSideSection('envios')
     } else if (next === 'config') {
+      if (backendState) {
+        if (screen === 'live') stopLive()
+        void handleReset()
+        setActiveSideSection('config')
+        return
+      }
       if (screen === 'live') stopLive()
       setScreen('main')
       setActiveSideSection('config')
@@ -783,6 +795,11 @@ export default function App() {
     setScreen('main')
     setConfigOpen(false)
   }, [])
+
+  const handleOpenOps = useCallback(() => {
+    setActiveSideSection(null)
+    handleNavigate('ops')
+  }, [handleNavigate])
 
   const handleSimulationStarted = useCallback((state, params) => {
     setConfigOpen(false)
@@ -849,21 +866,30 @@ export default function App() {
         {/* ── OPERACIONES (main map view) ─────────────────────────────── */}
         {(screen === 'main' && !configOpen) && (
           <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
-            {/* Map always fills the full area — never resizes */}
-            <MapView
-              airports={visibleAirports}
-              flights={backendFlights}
-              selectedFlight={selectedFlight}
-              setSelectedFlight={setSelectedFlight}
-              selectedFlightData={mapSelectedVuelo}
-              onAirportClick={setMapSelectedAirport}
-              onMapClick={() => { handleCloseVuelo(); setHighlightedRoute(null) }}
-              theme={theme}
-              highlightedRoute={highlightedRoute}
-            />
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: activeSideSection ? 372 : 52,
+              zIndex: 0,
+              transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            }}>
+              <MapView
+                airports={visibleAirports}
+                flights={backendFlights}
+                selectedFlight={selectedFlight}
+                setSelectedFlight={setSelectedFlight}
+                selectedFlightData={mapSelectedVuelo}
+                onAirportClick={setMapSelectedAirport}
+                onMapClick={() => { handleCloseVuelo(); setHighlightedRoute(null) }}
+                theme={theme}
+                highlightedRoute={highlightedRoute}
+              />
+            </div>
 
             {/* Side panel — overlay on top of map */}
-            <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, zIndex: 500, display: 'flex' }}>
+            <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, zIndex: 700, display: 'flex' }}>
               <SidePanel
                 activeSection={activeSideSection}
                 onSectionChange={setActiveSideSection}
@@ -871,6 +897,7 @@ export default function App() {
                 selectedFlight={selectedFlight}
                 setSelectedFlight={setSelectedFlight}
                 setMapSelectedVuelo={setMapSelectedVuelo}
+                setMapSelectedAirport={setMapSelectedAirport}
                 simState={simState}
                 airports={normalizedAirports}
                 threshold={threshold}
@@ -881,6 +908,7 @@ export default function App() {
                 destIds={destIds}
                 setDestIds={setDestIds}
                 theme={theme}
+                onOpenOps={handleOpenOps}
               />
             </div>
 
@@ -926,9 +954,10 @@ export default function App() {
           <div style={{ height: '100%', overflow: 'hidden' }}>
             <OpsScreen
               opsState={opsState}
+              opsEnvios={opsEnvios}
               theme={theme}
               onBack={() => { stopOps(); handleNavigate('config') }}
-              onRefreshOps={refreshOps}
+              onRefreshOps={() => { refreshOps(); refreshOpsViewData() }}
             />
           </div>
         )}
