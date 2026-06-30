@@ -280,29 +280,36 @@ export default function App() {
   // Animation resumes for the next day while /step processes. When response arrives,
   // setBackendState swaps in new day data. Brief window (~1-4s) of prior-day flight
   // data is acceptable and masked by fine-grained ticks.
+  // On the last day the animation ends at horaInicio (not midnight) so the simulation
+  // window is symmetric: [horaInicio Day1 → horaInicio DayN].
   useEffect(() => {
     if (!autoStep) return
-    if (simClockMinutes < 1440) return
-    if (stepInProgressRef.current) return  // already fired this midnight
+    const currentDay = backendState?.diaActual ?? 0
+    const totalDias  = backendState?.totalDias  ?? 0
+    const isLastDay  = totalDias > 0 && currentDay >= totalDias
+    const dayEndMin  = isLastDay ? simStartMinuteRef.current : 1440
+    if (simClockMinutes < dayEndMin) return
+    if (stepInProgressRef.current) return  // already fired this step
 
     stepInProgressRef.current = true
     api.stepSimulation().then((newState) => {
       if (!newState) return
       stepInProgressRef.current = false
       setBackendState(newState)
-      // Reset clock to midnight simultaneously with new day data
-      setSimClockMinutes(0)
       if (newState.finalizada) {
         setAutoStep(false)
         clearInterval(autoStepRef.current)
         stopPolling()
-        setTimeout(() => setScreen('resultados'), 8000)
+        setTimeout(() => setScreen('resultados'), 3000)
+      } else {
+        // Reset clock to midnight simultaneously with new day data ONLY if continuing
+        setSimClockMinutes(0)
       }
     }).catch((err) => {
       console.error('Auto-step error:', err)
       stepInProgressRef.current = false
     })
-  }, [simClockMinutes, autoStep])
+  }, [simClockMinutes, autoStep, backendState?.diaActual, backendState?.totalDias])
 
   useEffect(() => {
     if (autoStep && realStartRef.current === null) {
@@ -901,6 +908,7 @@ export default function App() {
                 onAirportClick={setMapSelectedAirport}
                 onMapClick={() => { handleCloseVuelo(); setHighlightedRoute(null) }}
                 theme={theme}
+                threshold={threshold}
                 highlightedRoute={highlightedRoute}
               />
             </div>

@@ -179,8 +179,12 @@ public class SimulationEngine {
         this.diaActual = 1;
         this.enEjecucion = true;
         this.finalizada = false;
-        updateWarehouseOccupation();
-        aeropuertos.forEach(a -> a.setOcupacionInicioDia(a.getOcupacionActual()));
+        // Day 1 warehouses START empty: envíos arrive throughout the day, so 0% at t=0 is correct.
+        aeropuertos.forEach(a -> a.setOcupacionInicioDia(0));
+        // Set the end-of-day interpolation endpoint to the full planned volume so the
+        // frontend animation shows the warehouse gradually filling up during the day.
+        // Using endOfDay1 counts all Day-1 maletas regardless of their fechaHoraIngreso time.
+        updateWarehouseOccupation(endOfDay1);
 
         String algoritmoInicial = params.getAlgoritmo() != null ? params.getAlgoritmo() : "N/A";
         addOperationLog("Simulation initialized - Day 1 - " + this.envios.size()
@@ -336,7 +340,9 @@ public class SimulationEngine {
         PlanningResult batchResult = planificarSiguienteBloque();
         aplicarResultadoPlanificacion(batchResult);
         addOperationLog("Rolling plan: batch up to " + horizonPointer + " — " + batchResult.getPlanes().size() + " new plans");
-        updateWarehouseOccupation();
+        // Use endOfDay as ref so that new-day bags (fechaHoraIngreso > midnight) are counted.
+        // Without this, currentOccupation == ocupacionInicioDia and the frontend interpolation is flat.
+        updateWarehouseOccupation(endOfDay);
         this.cachedState = getEstado();
         return horizonPointer != null && horizonPointer.isBefore(endOfDay);
     }
@@ -379,8 +385,10 @@ public class SimulationEngine {
         this.enEjecucion = true;
         this.finalizada = false;
 
-        updateWarehouseOccupation();
-        aeropuertos.forEach(a -> a.setOcupacionInicioDia(a.getOcupacionActual()));
+        // Same fix as inicializar(): Day 1 starts empty, interpolation endpoint = planned volume.
+        aeropuertos.forEach(a -> a.setOcupacionInicioDia(0));
+        LocalDateTime endOfDay1Restart = params.getFechaInicio().plusDays(1).atStartOfDay();
+        updateWarehouseOccupation(endOfDay1Restart);
         addOperationLog("Simulation restarted - Day 1 - reusing previous plans");
         return this.cachedState = getEstado();
     }
@@ -771,9 +779,12 @@ public class SimulationEngine {
         Map<String, Envio> envioById = envios.stream()
             .collect(Collectors.toMap(Envio::getIdEnvio, e -> e, (a, b) -> a));
 
-        // Envíos actualmente en almacén — same temporal filter as updateWarehouseOccupation
-        // so that inventory count is consistent with the occupancy percentage shown in the UI.
-        LocalDateTime simRef = fechaSimulada;
+        // Envíos actualmente en almacén — use end-of-current-day as ref so that bags registered
+        // throughout the day (fechaHoraIngreso > horaInicio) appear in the inventory.
+        // This is consistent with updateWarehouseOccupation(endOfDay) used in inicializar().
+        LocalDateTime simRef = fechaSimulada != null
+            ? fechaSimulada.toLocalDate().plusDays(1).atStartOfDay()
+            : null;
         Set<String> idsEnAlmacen = maletas.stream()
             .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN && iata.equals(m.getUbicacionActual()))
             .filter(m -> simRef == null || m.getFechaHoraLlegadaUbicacion() == null
@@ -786,6 +797,12 @@ public class SimulationEngine {
                 || !m.getFechaHoraLlegadaUbicacion().isAfter(simRef))
             .collect(Collectors.groupingBy(com.tasf.backend.domain.Maleta::getIdEnvio, Collectors.counting()));
 
+        // Determine which envíos have an active plan so the UI can show "Con ruta" vs "Sin ruta".
+        Set<String> conRuta = planes.stream()
+            .filter(PlanDeViaje::isEsActivo)
+            .map(PlanDeViaje::getIdEnvio)
+            .collect(Collectors.toSet());
+
         List<com.tasf.backend.dto.EnvioSummaryDTO> enAlmacen = idsEnAlmacen.stream()
             .map(id -> {
                 Envio e = envioById.get(id);
@@ -796,6 +813,7 @@ public class SimulationEngine {
                     .aeropuertoDestino(e.getAeropuertoDestino())
                     .cantidadMaletas(maletasPorEnvio.getOrDefault(id, 0L).intValue())
                     .estado(e.getEstado().name())
+                    .planificado(conRuta.contains(id))
                     .build();
             })
             .filter(java.util.Objects::nonNull)
