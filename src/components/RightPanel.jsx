@@ -302,11 +302,11 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
         </div>
       </div>
 
-      {/* ── WAREHOUSE PER AIRPORT ─────────────────────────────────────── */}
+      {/* ── ALMACÉN POR AEROPUERTO ────────────────────────────────────── */}
       <div style={{ ...s.sectionPad, flex: '0 0 50%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderTop: '1px solid var(--border)' }}>
         <div style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ ...s.title, marginBottom: 0 }}>Warehouse por aeropuerto</span>
+            <span style={{ ...s.title, marginBottom: 0 }}>Almacén por aeropuerto</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
             <div>

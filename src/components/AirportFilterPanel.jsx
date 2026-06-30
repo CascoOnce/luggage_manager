@@ -314,7 +314,7 @@ export default function AirportFilterPanel({
         <>
           <div style={s.divider} />
           <div style={{ padding: '10px 12px', flexShrink: 0 }}>
-            <span style={{ fontFamily: 'var(--sans)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--blue)', fontWeight: 700, display: 'block', marginBottom: 8 }}>Alerta Warehouse</span>
+            <span style={{ fontFamily: 'var(--sans)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--blue)', fontWeight: 700, display: 'block', marginBottom: 8 }}>Alerta Almacén</span>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <span style={{ fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--text)', fontWeight: 500 }}>Umbral crítico</span>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--amber)', fontWeight: 500 }}>{threshold}%</span>
@@ -336,9 +336,9 @@ export default function AirportFilterPanel({
             <span style={{ fontFamily: 'var(--sans)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--blue)', fontWeight: 700, display: 'block', marginBottom: 8 }}>Semáforo</span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               {[
-                { color: '#22d07a', label: 'OK / dentro de SLA' },
-                { color: '#f5a623', label: 'Alerta / warehouse alto' },
-                { color: '#f04b4b', label: 'Crítico / SLA vencido' },
+                { color: '#22d07a', label: 'Operativo' },
+                { color: '#f5a623', label: 'Alerta / almacén alto' },
+                { color: '#f04b4b', label: 'Colapsado (≥100%)' },
               ].map(({ color, label }) => (
                 <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: color, boxShadow: `0 0 5px ${color}90` }} />

@@ -93,7 +93,7 @@ export default function TopBar({
   const tabs = [
     { key: 'main', label: 'OPERACIONES' },
     { key: 'envios', label: 'ENVÍOS' },
-    { key: 'dashboard', label: 'DASHBOARD' },
+    { key: 'dashboard', label: 'PANEL' },
     { key: 'resultados', label: 'RESULTADOS' },
     ...(colapsoPunto ? [{ key: 'colapso', label: '⚠ COLAPSO', alert: true }] : []),
   ]
@@ -108,7 +108,7 @@ export default function TopBar({
     <div style={s.bar}>
       <div style={s.logoWrap}>
         <div style={s.logo}>TASF<span style={{ color: 'var(--muted)' }}>.</span>B2B</div>
-        <div style={s.logoSub}>OPS DASHBOARD (UTC)</div>
+        <div style={s.logoSub}>PANEL DE OPERACIONES (UTC)</div>
       </div>
 
 

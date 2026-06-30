@@ -55,14 +55,15 @@ function warehouseColor(ap, threshold, theme) {
 }
 
 // ── SECTION: VUELOS ──────────────────────────────────────────────────────────
-function VuelosSection({ flights, selectedFlight, setSelectedFlight, setMapSelectedVuelo, theme }) {
+function VuelosSection({ flights, plannedFlights, selectedFlight, setSelectedFlight, setMapSelectedVuelo, theme }) {
+  const [tab,          setTab]          = useState('activos')
   const [query,        setQuery]        = useState('')
   const [sortField,    setSortField]    = useState('occupancy')
   const [sortDir,      setSortDir]      = useState('desc')
   const [filterOrigin, setFilterOrigin] = useState('')
   const [filterDest,   setFilterDest]   = useState('')
 
-  const list = flights || []
+  const list = tab === 'activos' ? (flights || []) : (plannedFlights || [])
 
   const originOptions = useMemo(() =>
     [...new Set(list.map(f => f.origin).filter(Boolean))].sort().filter(x => !filterDest || x !== filterDest)
@@ -102,6 +103,14 @@ function VuelosSection({ flights, selectedFlight, setSelectedFlight, setMapSelec
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px 12px', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', marginBottom: 10, background: 'rgba(255,255,255,0.04)', borderRadius: 4, padding: 2 }}>
+        <button onClick={() => setTab('activos')} style={{ flex: 1, padding: '4px 0', border: 'none', background: tab === 'activos' ? 'rgba(61,139,255,0.15)' : 'transparent', color: tab === 'activos' ? 'var(--blue)' : 'var(--muted)', borderRadius: 3, fontFamily: 'var(--mono)', fontSize: 10, cursor: 'pointer', transition: 'all 0.15s' }}>
+          ACTIVOS
+        </button>
+        <button onClick={() => setTab('planificados')} style={{ flex: 1, padding: '4px 0', border: 'none', background: tab === 'planificados' ? 'rgba(61,139,255,0.15)' : 'transparent', color: tab === 'planificados' ? 'var(--blue)' : 'var(--muted)', borderRadius: 3, fontFamily: 'var(--mono)', fontSize: 10, cursor: 'pointer', transition: 'all 0.15s' }}>
+          PLANIFICADOS
+        </button>
+      </div>
       <input
         value={query} onChange={e => setQuery(e.target.value)}
         placeholder="Buscar vuelo, origen, destino…"
@@ -155,7 +164,7 @@ function VuelosSection({ flights, selectedFlight, setSelectedFlight, setMapSelec
           )
         })}
         {shown.length === 0 && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', padding: '16px 12px' }}>Sin vuelos activos</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', padding: '16px 12px' }}>Sin vuelos {tab === 'activos' ? 'activos' : 'planificados'}</div>
         )}
       </div>
     </div>
@@ -618,6 +627,7 @@ export default function SidePanel({
   onSectionChange,
   // Vuelos
   flights,
+  plannedFlights,
   selectedFlight,
   setSelectedFlight,
   setMapSelectedVuelo,
@@ -685,7 +695,7 @@ export default function SidePanel({
           </div>
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {activeSection === 'vuelos'  && <VuelosSection  flights={flights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} />}
+            {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} />}
             {activeSection === 'envios'  && <EnviosSection  simState={simState} />}
             {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} />}
             {activeSection === 'config'  && <ConfigSection  onSimulationStarted={onSimulationStarted} onClose={() => onSectionChange(null)} theme={theme} />}

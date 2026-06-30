@@ -169,7 +169,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
   const isCancelado = estado === 'cancelled' || estado === 'cancelado'
   const isCompleted = simClockMinutes !== null && depMin !== null && arrMin !== null
     && (arrMin >= depMin ? simClockMinutes >= arrMin : simClockMinutes >= arrMin && simClockMinutes < depMin)
-  const canCancel = !isCancelado && !isCompleted && !!onCancelFlight
+  const canCancel = !isActivo && !isCancelado && !isCompleted && !!onCancelFlight
 
   return (
     <div style={s.overlay}>
@@ -180,7 +180,13 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
         <div style={s.header}>
           <span style={s.code}>{code}</span>
           <span style={s.route}>{origin} → {dest}</span>
-          <span style={s.pill(eColor)}>{estado.toUpperCase()}</span>
+          <span style={s.pill(eColor)}>
+            {estado === 'active' ? 'ACTIVO'
+              : estado === 'planned' ? 'PLANIFICADO'
+              : estado === 'cancelled' ? 'CANCELADO'
+              : estado === 'completed' ? 'COMPLETADO'
+              : estado.toUpperCase()}
+          </span>
           <button style={s.closeBtn} onClick={onClose} aria-label="Cerrar">✕</button>
         </div>
 

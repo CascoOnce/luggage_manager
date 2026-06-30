@@ -42,7 +42,7 @@ function mod1440(m) {
   return ((m % 1440) + 1440) % 1440
 }
 
-export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onRefreshOps }) {
+export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onRefreshOps, onCancelFlight }) {
   const [selectedFlight, setSelectedFlight] = useState(null)
   const [selectedVueloData, setSelectedVueloData] = useState(null)
   function fmtClock12h() {
@@ -128,6 +128,36 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
       .filter((v) => isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
   }, [opsState?.vuelos, liveNowMinutes])
 
+  const plannedFlights = useMemo(() => {
+    if (!opsState?.vuelos) return []
+    return opsState.vuelos
+      .map((v) => {
+        const depLocal = parseTimeToMinutes(v.horaSalida)
+        const arrLocal = parseTimeToMinutes(v.horaLlegada)
+        const depMin = depLocal != null ? mod1440(depLocal - (v.husOrigen ?? 0) * 60) : null
+        const arrMin = arrLocal != null ? mod1440(arrLocal - (v.husDestino ?? 0) * 60) : null
+        return {
+          id: v.codigoVuelo,
+          origin: v.origen,
+          destination: v.destino,
+          type: v.tipo,
+          status: 'planned',
+          currentLoad: v.cargaActual ?? 0,
+          capacity: v.capacidadTotal,
+          hour: parseInt(v.horaSalida.split(':')[0], 10),
+          horaSalida: v.horaSalida,
+          horaLlegada: v.horaLlegada,
+          husOrigen: v.husOrigen ?? null,
+          husDestino: v.husDestino ?? null,
+          depMin,
+          arrMin,
+          fraction: 0,
+          enUso: v.enUso ?? false,
+        }
+      })
+      .filter((v) => !isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
+  }, [opsState?.vuelos, liveNowMinutes])
+
   const originSet = useMemo(() => originIds ? new Set(originIds) : null, [originIds])
   const destSet = useMemo(() => destIds ? new Set(destIds) : null, [destIds])
 
@@ -148,10 +178,18 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
     ),
   [flights, originSet, destSet])
 
-  const selectedFlightData = useMemo(
-    () => visibleFlights.find((f) => f.id === selectedFlight) ?? null,
-    [visibleFlights, selectedFlight]
-  )
+  const visiblePlannedFlights = useMemo(() =>
+    plannedFlights.filter((f) =>
+      (!originSet || originSet.has(f.origin)) &&
+      (!destSet || destSet.has(f.destination))
+    ),
+  [plannedFlights, originSet, destSet])
+
+  const selectedFlightData = useMemo(() => {
+    const foundActive = visibleFlights.find((f) => f.id === selectedFlight)
+    if (foundActive) return foundActive
+    return visiblePlannedFlights.find((f) => f.id === selectedFlight) ?? null
+  }, [visibleFlights, visiblePlannedFlights, selectedFlight])
 
   function handleCloseVuelo() {
     setSelectedFlight(null)
@@ -226,6 +264,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
               activeSection={activeSideSection}
               onSectionChange={setActiveSideSection}
               flights={visibleFlights}
+              plannedFlights={visiblePlannedFlights}
               selectedFlight={selectedFlight}
               setSelectedFlight={setSelectedFlight}
               setMapSelectedVuelo={setSelectedVueloData}
@@ -246,7 +285,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
           <DrawerVuelo
             vuelo={selectedVueloData}
             onClose={handleCloseVuelo}
-            onCancelFlight={null}
+            onCancelFlight={onCancelFlight}
           />
           <DrawerAeropuerto
             airport={selectedAirport}

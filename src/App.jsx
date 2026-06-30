@@ -459,6 +459,23 @@ export default function App() {
       }))
   }, [activeVuelosWithTimes, simClockMinutes, originSet, destSet, backendState?.diaActual])
 
+  const backendPlannedFlights = useMemo(() => {
+    const day = backendState?.diaActual || backendState?.currentDay || 1
+    const startMin = day <= 1 ? simStartMinuteRef.current : 0
+    return activeVuelosWithTimes
+      .filter((v) =>
+        v.depMin >= startMin &&
+        !isActiveAtMinute(simClockMinutes, v.depMin, v.arrMin, day) &&
+        (!originSet || originSet.has(v.origin)) &&
+        (!destSet || destSet.has(v.destination))
+      )
+      .map((v) => ({
+        ...v,
+        status: 'planned',
+        fraction: 0,
+      }))
+  }, [activeVuelosWithTimes, simClockMinutes, originSet, destSet, backendState?.diaActual])
+
   const fechaSimuladaDisplay = useMemo(() => {
     if (!backendState?.fechaSimulada) return null
     const source = new Date(backendState.fechaSimulada)
@@ -528,7 +545,7 @@ export default function App() {
         currentLoad: v.cargaActual,
         capacity: v.capacidadTotal,
         type: v.tipo === 'continental' ? 'continental' : 'intercontinental',
-        status: v.enUso ? 'active' : 'inactive',
+        status: v.enUso ? 'activo' : 'planificado',
         horaSalida: v.horaSalida,
         horaLlegada: v.horaLlegada,
         depMin: parseTimeToMinutes(v.horaSalida),
@@ -894,6 +911,7 @@ export default function App() {
                 activeSection={activeSideSection}
                 onSectionChange={setActiveSideSection}
                 flights={backendFlights}
+                plannedFlights={backendPlannedFlights}
                 selectedFlight={selectedFlight}
                 setSelectedFlight={setSelectedFlight}
                 setMapSelectedVuelo={setMapSelectedVuelo}
@@ -933,7 +951,7 @@ export default function App() {
             <DrawerVuelo
               vuelo={mapSelectedVuelo}
               onClose={handleCloseVuelo}
-              onCancelFlight={null}
+              onCancelFlight={handleCancelFlight}
             />
           </div>
         )}
@@ -958,6 +976,7 @@ export default function App() {
               theme={theme}
               onBack={() => { stopOps(); handleNavigate('config') }}
               onRefreshOps={() => { refreshOps(); refreshOpsViewData() }}
+              onCancelFlight={handleCancelFlight}
             />
           </div>
         )}

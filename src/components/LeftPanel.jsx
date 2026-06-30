@@ -101,33 +101,35 @@ export default function LeftPanel({ filters, setFilters, threshold, setThreshold
       </div>
 
       {/* WAREHOUSE THRESHOLD */}
-      <div style={s.section}>
-        <span style={s.title}>Alerta Warehouse</span>
-        <div style={s.sliderWrap}>
-          <div style={s.sliderRow}>
-            <span style={s.sliderKey}>Umbral crítico</span>
-            <span style={s.sliderVal}>{threshold}%</span>
-          </div>
-          <input
-            type="range" min={50} max={99} step={1}
-            value={threshold} style={s.slider}
-            onChange={(e) => setThreshold(+e.target.value)}
-          />
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--muted)' }}>50%</span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--muted)' }}>99%</span>
+      {threshold !== null && (
+        <div style={s.section}>
+          <span style={s.title}>Alerta Almacén</span>
+          <div style={s.sliderWrap}>
+            <div style={s.sliderRow}>
+              <span style={s.sliderKey}>Umbral crítico</span>
+              <span style={s.sliderVal}>{threshold}%</span>
+            </div>
+            <input
+              type="range" min={50} max={99} step={1}
+              value={threshold} style={s.slider}
+              onChange={(e) => setThreshold(+e.target.value)}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--muted)' }}>50%</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--muted)' }}>99%</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* SEMAPHORE LEGEND */}
       <div style={{ ...s.section, borderBottom: 'none', marginTop: 'auto' }}>
         <span style={s.title}>Semáforo</span>
         <div style={s.legendRow}>
           {[
-            { color: '#22d07a', label: 'OK / dentro de SLA',     type: 'dot'  },
-            { color: '#f5a623', label: 'Alerta / warehouse alto', type: 'dot'  },
-            { color: '#f04b4b', label: 'Crítico / SLA vencido',   type: 'dot'  },
+            { color: '#22d07a', label: 'OK / operativo', type: 'dot' },
+            { color: '#f5a623', label: 'Alerta / almacén alto', type: 'dot'  },
+            { color: '#f04b4b', label: 'Crítico / Colapsado', type: 'dot'  },
             //{ color: '#f5a623', label: 'Ruta replanificada',      type: 'dash' },
           ].map(({ color, label, type }) => (
             <div key={label} style={s.legendItem}>
