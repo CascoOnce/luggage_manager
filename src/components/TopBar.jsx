@@ -108,7 +108,7 @@ export default function TopBar({
     <div style={s.bar}>
       <div style={s.logoWrap}>
         <div style={s.logo}>TASF<span style={{ color: 'var(--muted)' }}>.</span>B2B</div>
-        <div style={s.logoSub}>OPS DASHBOARD</div>
+        <div style={s.logoSub}>OPS DASHBOARD (UTC)</div>
       </div>
 
 

@@ -445,9 +445,9 @@ function ConfigSection({ onSimulationStarted, onClose, theme }) {
         </div>
 
         {/* Fecha y hora */}
-        <div>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Fecha y hora de inicio</span>
-          <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ marginBottom: 20 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Fecha y hora de inicio (UTC)</span>
+          <div style={{ display: 'flex', gap: 10 }}>
             <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} disabled={loading}
               colorScheme={theme !== 'light' ? 'dark' : 'light'}
               style={{ flex: 2, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', colorScheme: theme !== 'light' ? 'dark' : 'light', boxSizing: 'border-box' }} />
