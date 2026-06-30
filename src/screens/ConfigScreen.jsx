@@ -550,7 +550,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', visibility: loading ? 'hidden' : 'visible' }}>
         {/* Mode selector tabs */}
         <div style={{ display: 'flex', gap: 8, padding: '10px 20px', background: 'var(--bg)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           {[

@@ -21,5 +21,7 @@ public class VueloDTO {
     private double fraction;
     private String horaSalida;
     private String horaLlegada;
+    private Integer husOrigen;
+    private Integer husDestino;
     private boolean enUso;
 }

@@ -108,13 +108,12 @@ function minutesToHHMM(totalMin) {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 }
 
-function toLocalTime(storedHHMM, huso) {
-  if (!storedHHMM || huso == null) return null
-  const storedMin = parseTimeStr(storedHHMM)
-  if (storedMin == null) return null
-  // stored time is local at origin airport (UTC+huso) → convert to browser local
-  const utcMin = storedMin - huso * 60
-  const localMin = utcMin - new Date().getTimezoneOffset()
+function toLocalTime(utcHHMM, huso) {
+  if (!utcHHMM || huso == null) return null
+  const utcMin = parseTimeStr(utcHHMM)
+  if (utcMin == null) return null
+  // Stored times are UTC internally. Local airport time = UTC + huso offset.
+  const localMin = utcMin + huso * 60
   return minutesToHHMM(localMin)
 }
 
@@ -217,15 +216,15 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
           <div style={s.row}>
             <span style={s.rowLabel}>Hora salida</span>
             <span style={s.rowVal}>
-              {salida}
-              {salidaLocal && <span style={{ color: 'var(--muted)', fontSize: 9, marginLeft: 6 }}>({salidaLocal} local origen)</span>}
+              {salidaLocal ?? salida}
+              {salidaLocal && <span style={{ color: 'var(--muted)', fontSize: 9, marginLeft: 6 }}>(UTC {salida})</span>}
             </span>
           </div>
           <div style={s.row}>
             <span style={s.rowLabel}>Hora llegada</span>
             <span style={s.rowVal}>
-              {llegadaLabel}
-              {llegadaLocal && <span style={{ color: 'var(--muted)', fontSize: 9, marginLeft: 6 }}>({llegadaLocal} local destino)</span>}
+              {llegadaLocal ? (isOvernight ? `${llegadaLocal} (+1d)` : llegadaLocal) : llegadaLabel}
+              {llegadaLocal && <span style={{ color: 'var(--muted)', fontSize: 9, marginLeft: 6 }}>(UTC {llegada})</span>}
             </span>
           </div>
           <div style={s.row}>
@@ -268,7 +267,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
               </div>
               <div style={s.tlContent}>
                 <div style={s.tlLabel}>{origin}</div>
-                <div style={s.tlMeta}>Salida {salida}{salidaLocal ? ` · ${salidaLocal} local origen` : ''}</div>
+                <div style={s.tlMeta}>Salida {salidaLocal ?? salida}{salidaLocal ? ` (UTC ${salida})` : ''}</div>
               </div>
             </div>
             {/* En vuelo */}
@@ -291,7 +290,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
               </div>
               <div style={s.tlContent}>
                 <div style={s.tlLabel}>{dest}</div>
-                <div style={s.tlMeta}>Llegada {llegadaLabel}{llegadaLocal ? ` · ${llegadaLocal} local destino` : ''}</div>
+                <div style={s.tlMeta}>Llegada {llegadaLocal ? (isOvernight ? `${llegadaLocal} (+1d)` : llegadaLocal) : llegadaLabel}{llegadaLocal ? ` (UTC ${llegada})` : ''}</div>
               </div>
             </div>
           </div>

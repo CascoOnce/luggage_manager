@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react'
 import { api, startSimulation } from '../services/api.js'
 import AirportFilterPanel from './AirportFilterPanel.jsx'
+import OpsEnviosIngress from './OpsEnviosIngress.jsx'
 
 const FILE_PATTERN = /_envios_[A-Za-z]{4}_\.txt$/i
 
@@ -23,8 +24,10 @@ const EnviosIcon  = () => <Ic><path d="M16.5 9.4l-9-5.19M21 16V8a2 2 0 00-1-1.73
 const AlmacenIcon = () => <Ic><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></Ic>
 const ConfigIcon  = () => <Ic><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></Ic>
 const FiltrosIcon = () => <Ic><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></Ic>
+const OpsDiaIcon  = () => <Ic><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 15h3M13 15h3M8 18h3"/></Ic>
 
-const SECTIONS = [
+const SIM_SECTIONS = [
+  { id: 'ops-dia', Icon: OpsDiaIcon,  label: 'OPERACIONES DÍA A DÍA', action: 'ops' },
   { id: 'vuelos',  Icon: VuelosIcon,  label: 'VUELOS'        },
   { id: 'envios',  Icon: EnviosIcon,  label: 'ENVÍOS'        },
   { id: 'almacen', Icon: AlmacenIcon, label: 'ALMACÉN'       },
@@ -32,11 +35,20 @@ const SECTIONS = [
   { id: 'filtros', Icon: FiltrosIcon, label: 'FILTROS'       },
 ]
 
+const OPS_SECTIONS = [
+  { id: 'vuelos',      Icon: VuelosIcon,  label: 'VUELOS'          },
+  { id: 'envios',      Icon: EnviosIcon,  label: 'ENVÍOS'          },
+  { id: 'almacen',     Icon: AlmacenIcon, label: 'ALMACÉN'         },
+  { id: 'ops-ingress', Icon: OpsDiaIcon,  label: 'INGRESO ENVÍOS'  },
+  { id: 'filtros',     Icon: FiltrosIcon, label: 'FILTROS'         },
+]
+
 // ── helpers ──────────────────────────────────────────────────────────────────
-function warehouseColor(ap, threshold) {
+function warehouseColor(ap, threshold, theme) {
   const occ = ap.currentOccupation ?? ap.ocupacionActual ?? 0
   const cap = ap.warehouseCapacity ?? ap.capacidadAlmacen ?? 600
   const pct = cap > 0 ? (occ / cap) * 100 : 0
+  if (pct === 0)             return theme === 'light' ? '#1a6fd4' : '#4d9fff'
   if (pct >= threshold)      return '#f04b4b'
   if (pct >= threshold - 20) return '#f5a623'
   return '#22d07a'
@@ -228,7 +240,7 @@ function EnviosSection({ simState }) {
 }
 
 // ── SECTION: ALMACÉN ─────────────────────────────────────────────────────────
-function AlmacenSection({ airports, threshold, theme }) {
+function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport }) {
   const [pattern,   setPattern]   = useState('')
   const [continent, setContinent] = useState('')
   const [sortField, setSortField] = useState('occupation')
@@ -261,7 +273,7 @@ function AlmacenSection({ airports, threshold, theme }) {
       const bCap = b.warehouseCapacity ?? b.capacidadAlmacen ?? 600
       const diff = (bOcc / bCap) - (aOcc / aCap)
       return sortDir === 'desc' ? diff : -diff
-    }).filter(ap => (ap.currentOccupation ?? ap.ocupacionActual ?? 0) > 0)
+    })
   }, [list, pattern, continent, sortField, sortDir])
 
   return (
@@ -284,12 +296,12 @@ function AlmacenSection({ airports, threshold, theme }) {
       </div>
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {shown.map(ap => {
-          const color = warehouseColor(ap, threshold)
+          const color = warehouseColor(ap, threshold, theme)
           const occ   = ap.currentOccupation ?? ap.ocupacionActual ?? 0
           const cap   = ap.warehouseCapacity  ?? ap.capacidadAlmacen ?? 600
           const pct   = cap > 0 ? (occ / cap) * 100 : 0
           return (
-            <div key={ap.id} style={{ marginBottom: 10 }}>
+            <div key={ap.id} style={{ marginBottom: 10, cursor: 'pointer' }} onClick={() => setMapSelectedAirport?.(ap)}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)' }}>{ap.id} — {ap.name}</span>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color }}>{pct.toFixed(1)}%</span>
@@ -591,8 +603,17 @@ function FiltrosSection({ airports, originIds, setOriginIds, destIds, setDestIds
   )
 }
 
+function OpsIngressSection({ airports, onEnviosChanged }) {
+  return (
+    <div style={{ height: '100%', overflowY: 'auto' }}>
+      <OpsEnviosIngress airports={airports} onEnviosChanged={onEnviosChanged || (() => {})} />
+    </div>
+  )
+}
+
 // ── MAIN EXPORT ───────────────────────────────────────────────────────────────
 export default function SidePanel({
+  mode = 'simulacion',
   activeSection,
   onSectionChange,
   // Vuelos
@@ -600,6 +621,7 @@ export default function SidePanel({
   selectedFlight,
   setSelectedFlight,
   setMapSelectedVuelo,
+  setMapSelectedAirport,
   // Envíos
   simState,
   // Almacén
@@ -614,22 +636,33 @@ export default function SidePanel({
   destIds,
   setDestIds,
   theme,
+  onOpenOps,
+  opsIngressAirports = [],
+  onOpsEnviosChanged,
 }) {
+  const sections = mode === 'ops' ? OPS_SECTIONS : SIM_SECTIONS
+
   return (
     <div style={{ display: 'flex', height: '100%', background: 'var(--panel)', borderRight: '1px solid var(--border)' }}>
       {/* Icon strip */}
       <div style={{ width: 52, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, flexShrink: 0, borderRight: activeSection ? '1px solid var(--border)' : 'none' }}>
-        {SECTIONS.map(({ id, Icon, label }) => (
+        {sections.map(({ id, Icon, label, action }) => (
           <button
             key={id}
-            onClick={() => onSectionChange(activeSection === id ? null : id)}
+            onClick={() => {
+              if (action === 'ops') {
+                onOpenOps?.()
+                return
+              }
+              onSectionChange(activeSection === id ? null : id)
+            }}
             title={label}
             style={{
               width: 40, height: 40,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: activeSection === id ? 'rgba(88,166,255,0.14)' : 'transparent',
+              background: activeSection === id ? 'rgba(88,166,255,0.14)' : action === 'ops' ? 'rgba(34,197,94,0.08)' : 'transparent',
               border: 'none', borderRadius: 8, cursor: 'pointer',
-              color: activeSection === id ? 'var(--blue)' : 'var(--muted)',
+              color: activeSection === id ? 'var(--blue)' : action === 'ops' ? '#22c55e' : 'var(--muted)',
               transition: 'color 0.15s, background 0.15s',
             }}
           >
@@ -643,7 +676,7 @@ export default function SidePanel({
         <div style={{ width: 320, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
             <span style={{ fontFamily: 'var(--mono)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--blue)', fontWeight: 700 }}>
-              {SECTIONS.find(s => s.id === activeSection)?.label}
+              {sections.find(s => s.id === activeSection)?.label}
             </span>
             <button onClick={() => onSectionChange(null)}
               style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 0 }}>
@@ -654,9 +687,10 @@ export default function SidePanel({
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {activeSection === 'vuelos'  && <VuelosSection  flights={flights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} />}
             {activeSection === 'envios'  && <EnviosSection  simState={simState} />}
-            {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} />}
+            {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} />}
             {activeSection === 'config'  && <ConfigSection  onSimulationStarted={onSimulationStarted} onClose={() => onSectionChange(null)} theme={theme} />}
             {activeSection === 'filtros' && <FiltrosSection airports={airports} originIds={originIds} setOriginIds={setOriginIds} destIds={destIds} setDestIds={setDestIds} threshold={threshold} setThreshold={setThreshold} />}
+            {activeSection === 'ops-ingress' && <OpsIngressSection airports={opsIngressAirports} onEnviosChanged={onOpsEnviosChanged} />}
           </div>
         </div>
       )}

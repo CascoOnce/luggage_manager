@@ -11,27 +11,33 @@ const SNAP_THRESHOLD_PX = 200
 // Keeps the airport bounding box always filling the container.
 // On each resize: invalidate size, recalculate the minimum zoom so the
 // bounds fit exactly, then clamp current zoom if needed.
-function FitAirportBounds() {
+function FitAirportBounds({ paddingLeft = 0 }) {
   const map = useMap()
   useEffect(() => {
     const container = map.getContainer()
 
-    const fit = () => {
+    const fit = (force = false, animate = false) => {
       map.invalidateSize()
       if (container.clientWidth === 0 || container.clientHeight === 0) return
-      const minZ = map.getBoundsZoom(AIRPORT_BOUNDS, false)
+      const leftPadding = Math.max(0, Math.min(paddingLeft, container.clientWidth * 0.45))
+      const minZ = map.getBoundsZoom(AIRPORT_BOUNDS, false, L.point(leftPadding, 0))
       if (!isFinite(minZ) || minZ <= 0) return
       map.setMinZoom(Math.min(minZ, map.getMaxZoom()))
-      if (map.getZoom() < minZ) {
-        map.fitBounds(AIRPORT_BOUNDS, { animate: false })
+      if (force || map.getZoom() < minZ) {
+        map.fitBounds(AIRPORT_BOUNDS, {
+          animate,
+          duration: animate ? 0.35 : 0,
+          paddingTopLeft: [leftPadding, 0],
+          paddingBottomRight: [0, 0],
+        })
       }
     }
 
-    const t = setTimeout(fit, 0)
-    const observer = new ResizeObserver(fit)
+    const t = setTimeout(() => fit(true, paddingLeft > 0), 0)
+    const observer = new ResizeObserver(() => fit(false, false))
     observer.observe(container)
     return () => { clearTimeout(t); observer.disconnect() }
-  }, [map])
+  }, [map, paddingLeft])
   return null
 }
 
@@ -367,8 +373,10 @@ export default function MapView({
   onMapClick,
   theme = 'dark',
   highlightedRoute = null,
+  viewportPaddingLeft = 0,
 }) {
   const [showRoutes, setShowRoutes] = useState(true)
+  const [showEmptyFlights, setShowEmptyFlights] = useState(true)
   const [hoveredAirport, setHoveredAirport] = useState(null)
   const airportList = airports || []
   const flightList = flights || []
@@ -376,25 +384,42 @@ export default function MapView({
   const apIdx = useMemo(() => airportIndex(airportList), [airportList])
 
   // Only show active (non-cancelled) flights on map
-  const activeFlights = flightList.filter((f) => f.status === 'active')
+  const activeFlights = flightList.filter((f) => 
+    f.status === 'active' && (showEmptyFlights || (f.currentLoad ?? 0) > 0)
+  )
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <button
-        onClick={() => setShowRoutes(v => !v)}
-        style={{
-          position: 'absolute', bottom: 16, left: 32, zIndex: 1000,
-          background: showRoutes ? 'rgba(61,139,255,0.15)' : 'rgba(255,255,255,0.05)',
-          border: `1px solid ${showRoutes ? '#3d8bff55' : 'rgba(255,255,255,0.1)'}`,
-          color: showRoutes ? '#60a5fa' : 'rgba(255,255,255,0.3)',
-          fontFamily: 'var(--mono)', fontSize: 10, padding: '5px 10px',
-          borderRadius: 4, cursor: 'pointer', letterSpacing: 0.8,
-          textTransform: 'uppercase', backdropFilter: 'blur(4px)',
-          transition: 'all 0.2s ease',
-        }}
-      >
-        {showRoutes ? '— rutas' : '+ rutas'}
-      </button>
+      <div style={{ position: 'absolute', bottom: 16, left: 32, zIndex: 500, display: 'flex', gap: 8, flexDirection: 'row' }}>
+        <button
+          onClick={() => setShowRoutes(v => !v)}
+          style={{
+            background: showRoutes ? 'rgba(61,139,255,0.15)' : 'rgba(255,255,255,0.05)',
+            border: `1px solid ${showRoutes ? '#3d8bff55' : 'rgba(255,255,255,0.1)'}`,
+            color: showRoutes ? '#60a5fa' : 'rgba(255,255,255,0.3)',
+            fontFamily: 'var(--mono)', fontSize: 10, padding: '5px 10px',
+            borderRadius: 4, cursor: 'pointer', letterSpacing: 0.8,
+            textTransform: 'uppercase', backdropFilter: 'blur(4px)',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          {showRoutes ? '— rutas' : '+ rutas'}
+        </button>
+        <button
+          onClick={() => setShowEmptyFlights(v => !v)}
+          style={{
+            background: showEmptyFlights ? 'rgba(61,139,255,0.15)' : 'rgba(255,255,255,0.05)',
+            border: `1px solid ${showEmptyFlights ? '#3d8bff55' : 'rgba(255,255,255,0.1)'}`,
+            color: showEmptyFlights ? '#60a5fa' : 'rgba(255,255,255,0.3)',
+            fontFamily: 'var(--mono)', fontSize: 10, padding: '5px 10px',
+            borderRadius: 4, cursor: 'pointer', letterSpacing: 0.8,
+            textTransform: 'uppercase', backdropFilter: 'blur(4px)',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          {showEmptyFlights ? '— vacíos' : '+ vacíos'}
+        </button>
+      </div>
     <MapContainer
       center={[20, 0]} zoom={3} minZoom={1} maxZoom={7}
       zoomSnap={0} zoomDelta={0.25} wheelPxPerZoomLevel={120} wheelDebounceTime={10}
@@ -403,7 +428,7 @@ export default function MapView({
       style={{ width: '100%', height: '100%', background: '#060606' }}
       zoomControl={false} attributionControl={false}
     >
-      <FitAirportBounds />
+      <FitAirportBounds paddingLeft={viewportPaddingLeft} />
       <MapResizer />
       <IconScaler />
       <ZoomSnapper airportList={airportList} />
