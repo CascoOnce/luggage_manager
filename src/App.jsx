@@ -537,9 +537,12 @@ export default function App() {
       return
     }
     const vuelo = backendFlights.find((f) => f.id === selectedFlight)
+      || backendPlannedFlights.find((f) => f.id === selectedFlight)
+      || backendCancelledFlights.find((f) => f.id === selectedFlight)
+      
     if (vuelo) setMapSelectedVuelo(vuelo)
     // If vuelo not found in current frame, keep the previous drawer content open.
-  }, [selectedFlight, backendState, backendFlights])
+  }, [selectedFlight, backendState, backendFlights, backendPlannedFlights, backendCancelledFlights])
 
   const activeKpis = useMemo(() => {
     const base = backendState?.kpis

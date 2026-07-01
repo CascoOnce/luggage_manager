@@ -119,6 +119,7 @@ function toLocalTime(utcHHMM, huso) {
 
 export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMinutes = null }) {
   const [enviosAsignados, setEnviosAsignados] = useState([])
+  const [showConfirmCancel, setShowConfirmCancel] = useState(false)
 
   useEffect(() => {
     if (!vuelo) return
@@ -305,11 +306,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
         {canCancel && (
           <div style={{ padding: '14px 16px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
             <button
-              onClick={() => {
-                if (window.confirm(`¿Cancelar vuelo ${code} (${origin} → ${dest})?`)) {
-                  onCancelFlight(code)
-                }
-              }}
+              onClick={() => setShowConfirmCancel(true)}
               style={{
                 width: '100%',
                 padding: '8px 12px',
@@ -325,6 +322,59 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
             >
               Cancelar vuelo
             </button>
+          </div>
+        )}
+        {showConfirmCancel && (
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.85)', zIndex: 10,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            backdropFilter: 'blur(4px)', padding: 24,
+          }}>
+            <div style={{
+              background: 'var(--panel)', border: '1px solid var(--border)',
+              borderRadius: 8, padding: 20, width: '100%',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+              display: 'flex', flexDirection: 'column', gap: 16
+            }}>
+              <div>
+                <div style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 600, color: 'var(--text-bright)', marginBottom: 8 }}>
+                  Cancelar Vuelo
+                </div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  ¿Estás seguro que deseas cancelar el vuelo <span style={{ color: 'var(--red)', fontWeight: 600 }}>{code}</span> ({origin} → {dest})?
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                <button
+                  onClick={() => setShowConfirmCancel(false)}
+                  style={{
+                    flex: 1, padding: '8px 12px', background: 'transparent',
+                    border: '1px solid var(--border)', color: 'var(--muted)',
+                    fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 600,
+                    borderRadius: 4, cursor: 'pointer', textTransform: 'uppercase',
+                    letterSpacing: 1
+                  }}
+                >
+                  Volver
+                </button>
+                <button
+                  onClick={() => {
+                    setShowConfirmCancel(false)
+                    onCancelFlight(code)
+                  }}
+                  style={{
+                    flex: 1, padding: '8px 12px', background: 'rgba(240,75,75,0.1)',
+                    border: '1px solid rgba(240,75,75,0.4)', color: 'var(--red)',
+                    fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 600,
+                    borderRadius: 4, cursor: 'pointer', textTransform: 'uppercase',
+                    letterSpacing: 1
+                  }}
+                >
+                  Sí, Cancelar
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

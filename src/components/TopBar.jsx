@@ -153,8 +153,8 @@ export default function TopBar({
 
       <div style={s.controls}>
         {onShowWidgets && (
-          <button style={s.btnReset} onClick={onShowWidgets} title="Mostrar / Restaurar KPIs y Reloj">
-            RESTAURAR WIDGETS
+          <button style={s.btnReset} onClick={onShowWidgets} title="Mostrar / Restaurar Paneles">
+            RESTAURAR PANELES
           </button>
         )}
         <button style={s.btnReset} onClick={onToggleTheme}>{theme === 'dark' ? '☀' : '🌙'}</button>

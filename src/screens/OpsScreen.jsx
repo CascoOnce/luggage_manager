@@ -262,8 +262,10 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
   const selectedFlightData = useMemo(() => {
     const foundActive = visibleFlights.find((f) => f.id === selectedFlight)
     if (foundActive) return foundActive
-    return visiblePlannedFlights.find((f) => f.id === selectedFlight) ?? null
-  }, [visibleFlights, visiblePlannedFlights, selectedFlight])
+    const foundPlanned = visiblePlannedFlights.find((f) => f.id === selectedFlight)
+    if (foundPlanned) return foundPlanned
+    return visibleCancelledFlights.find((f) => f.id === selectedFlight) ?? null
+  }, [visibleFlights, visiblePlannedFlights, visibleCancelledFlights, selectedFlight])
 
   function handleCloseVuelo() {
     setSelectedFlight(null)
