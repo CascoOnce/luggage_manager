@@ -84,6 +84,7 @@ export default function TopBar({
   isOpsActive,
   colapsoPunto,
   liveActive,
+  onShowWidgets,
 }) {
   const isBackendRunning = backendState?.enEjecucion === true
   const isBackendFinished = backendState?.finalizada === true
@@ -151,6 +152,11 @@ export default function TopBar({
 
 
       <div style={s.controls}>
+        {onShowWidgets && (
+          <button style={s.btnReset} onClick={onShowWidgets} title="Mostrar / Restaurar KPIs y Reloj">
+            RESTAURAR WIDGETS
+          </button>
+        )}
         <button style={s.btnReset} onClick={onToggleTheme}>{theme === 'dark' ? '☀' : '🌙'}</button>
 
         {/* Sin simulación: solo CONFIGURAR */}

@@ -43,7 +43,7 @@ const TIME_INPUT_STYLE = `
 }
 `
 
-export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
+export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBase }) {
   // ── file upload state ──────────────────────────────────────────────
   const fileInputRef = useRef(null)
   const [uploadFiles, setUploadFiles] = useState([])
@@ -52,7 +52,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
   const [uploadError, setUploadError] = useState(null)
 
   // ── manual form state ──────────────────────────────────────────────
-  const [origen, setOrigen] = useState('')
+  const [origen, setOrigen] = useState(opsBase || '')
   const [destino, setDestino] = useState('')
   const [cantidad, setCantidad] = useState(1)
   const [hora, setHora] = useState(getNowHHMM)
@@ -237,14 +237,28 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
 
   // ── auto-update hora when origen changes (mirror ConfigScreen behaviour) ──
   useEffect(() => {
+    // If opsBase changed or became available, ensure origen matches
+    if (opsBase && opsBase !== origen) {
+      setOrigen(opsBase)
+    }
+  }, [opsBase, origen])
+
+  useEffect(() => {
     if (!origen) return
-    const ap = airports.find(a => a.id === origen)
-    const off = ap?.huso ?? null
-    if (off === null) return
-    const now = new Date()
-    const localMs = now.getTime() + off * 3600 * 1000
-    const local = new Date(localMs)
-    setHora(`${String(local.getUTCHours()).padStart(2, '0')}:${String(local.getUTCMinutes()).padStart(2, '0')}`)
+    
+    const updateTime = () => {
+      const ap = airports.find(a => a.id === origen)
+      const off = ap?.huso ?? null
+      if (off === null) return
+      const now = new Date()
+      const localMs = now.getTime() + off * 3600 * 1000
+      const local = new Date(localMs)
+      setHora(`${String(local.getUTCHours()).padStart(2, '0')}:${String(local.getUTCMinutes()).padStart(2, '0')}`)
+    }
+    
+    updateTime()
+    const id = setInterval(updateTime, 10000) // update every 10 seconds
+    return () => clearInterval(id)
   }, [origen, airports])
 
   // ── derived ────────────────────────────────────────────────────────
@@ -427,17 +441,24 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
           <form onSubmit={handleAddEnvio} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div>
               <label style={labelStyle}>Origen</label>
-              <select
-                value={origen}
-                onChange={e => { setOrigen(e.target.value); setDestino('') }}
-                style={{ ...inputStyle, appearance: 'none', WebkitAppearance: 'none' }}
-                required
-              >
-                <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Origen</option>
-                {airports.map(a => (
-                  <option key={a.id} value={a.id} style={{ background: '#161b22', color: 'var(--text)' }}>{a.id} — {a.name}</option>
-                ))}
-              </select>
+              {opsBase ? (
+                <div style={{ ...inputStyle, background: 'rgba(255,255,255,0.03)', color: 'var(--muted)', display: 'flex', alignItems: 'center' }}>
+                  <span style={{ color: '#22c55e', fontWeight: 700, marginRight: 8 }}>{origenAirport?.id}</span>
+                  {origenAirport?.name}
+                </div>
+              ) : (
+                <select
+                  value={origen}
+                  onChange={e => { setOrigen(e.target.value); setDestino('') }}
+                  style={{ ...inputStyle, appearance: 'none', WebkitAppearance: 'none' }}
+                  required
+                >
+                  <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Origen</option>
+                  {airports.map(a => (
+                    <option key={a.id} value={a.id} style={{ background: '#161b22', color: 'var(--text)' }}>{a.id} — {a.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div>
@@ -469,13 +490,14 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged }) {
             </div>
 
             <div>
-              <label style={labelStyle}>Hora de ingreso</label>
+              <label style={labelStyle}>Hora de ingreso (Local)</label>
               <input
                 type="time"
                 className="ops-time-input"
                 value={hora}
                 onChange={e => setHora(e.target.value)}
-                style={inputStyle}
+                style={{ ...inputStyle, opacity: 0.6, cursor: 'not-allowed' }}
+                disabled
                 required
               />
               {localTimeHint && (

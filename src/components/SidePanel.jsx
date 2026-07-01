@@ -55,7 +55,7 @@ function warehouseColor(ap, threshold, theme) {
 }
 
 // ── SECTION: VUELOS ──────────────────────────────────────────────────────────
-function VuelosSection({ flights, plannedFlights, selectedFlight, setSelectedFlight, setMapSelectedVuelo, theme }) {
+function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlight, setSelectedFlight, setMapSelectedVuelo, theme }) {
   const [tab,          setTab]          = useState('activos')
   const [query,        setQuery]        = useState('')
   const [sortField,    setSortField]    = useState('occupancy')
@@ -63,7 +63,7 @@ function VuelosSection({ flights, plannedFlights, selectedFlight, setSelectedFli
   const [filterOrigin, setFilterOrigin] = useState('')
   const [filterDest,   setFilterDest]   = useState('')
 
-  const list = tab === 'activos' ? (flights || []) : (plannedFlights || [])
+  const list = tab === 'activos' ? (flights || []) : tab === 'planificados' ? (plannedFlights || []) : (cancelledFlights || [])
 
   const originOptions = useMemo(() =>
     [...new Set(list.map(f => f.origin).filter(Boolean))].sort().filter(x => !filterDest || x !== filterDest)
@@ -110,6 +110,9 @@ function VuelosSection({ flights, plannedFlights, selectedFlight, setSelectedFli
         <button onClick={() => setTab('planificados')} style={{ flex: 1, padding: '4px 0', border: 'none', background: tab === 'planificados' ? 'rgba(61,139,255,0.15)' : 'transparent', color: tab === 'planificados' ? 'var(--blue)' : 'var(--muted)', borderRadius: 3, fontFamily: 'var(--mono)', fontSize: 10, cursor: 'pointer', transition: 'all 0.15s' }}>
           PLANIFICADOS
         </button>
+        <button onClick={() => setTab('cancelados')} style={{ flex: 1, padding: '4px 0', border: 'none', background: tab === 'cancelados' ? 'rgba(240,75,75,0.15)' : 'transparent', color: tab === 'cancelados' ? 'var(--red)' : 'var(--muted)', borderRadius: 3, fontFamily: 'var(--mono)', fontSize: 10, cursor: 'pointer', transition: 'all 0.15s' }}>
+          CANCELADOS
+        </button>
       </div>
       <input
         value={query} onChange={e => setQuery(e.target.value)}
@@ -145,6 +148,26 @@ function VuelosSection({ flights, plannedFlights, selectedFlight, setSelectedFli
           const pct   = f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
           const color = pct === 0 ? '#4d9fff' : pct >= 85 ? '#f04b4b' : pct >= 60 ? '#f5a623' : '#22d07a'
           const sel   = selectedFlight === f.id
+          if (f.isCancelled) {
+            const sel   = selectedFlight === f.id
+            return (
+              <div key={f.uid || `${f.id}-${f.fecha}`}
+                onClick={() => { setSelectedFlight(sel ? null : f.id); if (setMapSelectedVuelo) setMapSelectedVuelo(f) }}
+                style={{ padding: '8px 12px', borderBottom: '1px solid rgba(240,75,75,0.1)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', background: sel ? 'rgba(240,75,75,0.09)' : 'transparent', borderLeft: `2px solid ${sel ? 'var(--red)' : 'transparent'}`, transition: 'background 0.15s', userSelect: 'none' }}>
+                <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: 'var(--red)', boxShadow: `0 0 5px var(--red)` }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--red)', fontWeight: 500 }}>{f.origin} → {f.destination} ({f.id})</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                    Día: {f.fecha} · {f.hora}
+                  </div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{f.motivo}</div>
+                </div>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, padding: '2px 6px', borderRadius: 3, background: `rgba(240,75,75,0.1)`, color: 'var(--red)', border: `1px solid rgba(240,75,75,0.4)`, flexShrink: 0 }}>
+                  {f.currentLoad} 🧳
+                </span>
+              </div>
+            )
+          }
           return (
             <div key={f.id}
               onClick={() => { setSelectedFlight(sel ? null : f.id); if (setMapSelectedVuelo) setMapSelectedVuelo(f) }}
@@ -164,7 +187,7 @@ function VuelosSection({ flights, plannedFlights, selectedFlight, setSelectedFli
           )
         })}
         {shown.length === 0 && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', padding: '16px 12px' }}>Sin vuelos {tab === 'activos' ? 'activos' : 'planificados'}</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', padding: '16px 12px' }}>Sin vuelos {tab === 'activos' ? 'activos' : tab === 'planificados' ? 'planificados' : 'cancelados'}</div>
         )}
       </div>
     </div>
@@ -612,10 +635,10 @@ function FiltrosSection({ airports, originIds, setOriginIds, destIds, setDestIds
   )
 }
 
-function OpsIngressSection({ airports, onEnviosChanged }) {
+function OpsIngressSection({ airports, onEnviosChanged, opsBase }) {
   return (
     <div style={{ height: '100%', overflowY: 'auto' }}>
-      <OpsEnviosIngress airports={airports} onEnviosChanged={onEnviosChanged || (() => {})} />
+      <OpsEnviosIngress airports={airports} onEnviosChanged={onEnviosChanged || (() => {})} opsBase={opsBase} />
     </div>
   )
 }
@@ -628,6 +651,7 @@ export default function SidePanel({
   // Vuelos
   flights,
   plannedFlights,
+  cancelledFlights,
   selectedFlight,
   setSelectedFlight,
   setMapSelectedVuelo,
@@ -649,6 +673,7 @@ export default function SidePanel({
   onOpenOps,
   opsIngressAirports = [],
   onOpsEnviosChanged,
+  opsBase,
 }) {
   const sections = mode === 'ops' ? OPS_SECTIONS : SIM_SECTIONS
 
@@ -695,12 +720,12 @@ export default function SidePanel({
           </div>
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} />}
+            {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} cancelledFlights={cancelledFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} />}
             {activeSection === 'envios'  && <EnviosSection  simState={simState} />}
             {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} />}
             {activeSection === 'config'  && <ConfigSection  onSimulationStarted={onSimulationStarted} onClose={() => onSectionChange(null)} theme={theme} />}
             {activeSection === 'filtros' && <FiltrosSection airports={airports} originIds={originIds} setOriginIds={setOriginIds} destIds={destIds} setDestIds={setDestIds} threshold={threshold} setThreshold={setThreshold} />}
-            {activeSection === 'ops-ingress' && <OpsIngressSection airports={opsIngressAirports} onEnviosChanged={onOpsEnviosChanged} />}
+            {activeSection === 'ops-ingress' && <OpsIngressSection airports={opsIngressAirports} onEnviosChanged={onOpsEnviosChanged} opsBase={opsBase} />}
           </div>
         </div>
       )}

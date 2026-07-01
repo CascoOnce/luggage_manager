@@ -4,6 +4,7 @@ import SidePanel from './components/SidePanel.jsx'
 import TopBar from './components/TopBar.jsx'
 import FloatingKPIs from './components/FloatingKPIs.jsx'
 import FloatingClocks from './components/FloatingClocks.jsx'
+import DraggableWidget from './components/DraggableWidget.jsx'
 import { api } from './services/api.js'
 import ConfigScreen from './screens/ConfigScreen.jsx'
 import EnviosScreen from './screens/EnviosScreen.jsx'
@@ -483,6 +484,35 @@ export default function App() {
       }))
   }, [activeVuelosWithTimes, simClockMinutes, originSet, destSet, backendState?.diaActual])
 
+  const backendCancelledFlights = useMemo(() => {
+    if (!backendState?.cancelaciones) return []
+    const vuelosMap = new Map((backendState?.vuelos || []).map(v => [v.codigoVuelo, v]))
+    return backendState.cancelaciones
+      .filter((c) => {
+        const v = vuelosMap.get(c.codigoVuelo)
+        return (!originSet || originSet.has(v?.origen)) && (!destSet || destSet.has(v?.destino))
+      })
+      .map(c => {
+        const v = vuelosMap.get(c.codigoVuelo)
+        return {
+          id: c.codigoVuelo,
+          uid: c.id,
+          origin: v?.origen || '?',
+          destination: v?.destino || '?',
+          type: v?.tipo,
+          status: 'cancelled',
+          capacity: v?.capacidadTotal ?? 0,
+          currentLoad: c.maletasAfectadas ?? 0,
+          fecha: c.fecha,
+          hora: c.hora,
+          horaSalida: v?.horaSalida,
+          horaLlegada: v?.horaLlegada,
+          motivo: c.motivo,
+          isCancelled: true
+        }
+      }).reverse()
+  }, [backendState?.cancelaciones, backendState?.vuelos, originSet, destSet])
+
   const fechaSimuladaDisplay = useMemo(() => {
     if (!backendState?.fechaSimulada) return null
     const source = new Date(backendState.fechaSimulada)
@@ -545,6 +575,7 @@ export default function App() {
   const opsActiveFlights = useMemo(() => {
     if (!opsState?.vuelos) return []
     return opsState.vuelos
+      .filter((v) => v.estado !== 'cancelado')
       .map((v) => ({
         id: v.codigoVuelo,
         origin: v.origen,
@@ -572,7 +603,9 @@ export default function App() {
       escalas: [],
       planResumen: e.estado !== 'PENDIENTE' ? `${e.iataOrigen} → ${e.iataDestino}` : null,
     }))
-    const vuelos = (opsState.vuelos || []).map((v) => ({
+    const vuelos = (opsState.vuelos || [])
+      .filter((v) => v.estado !== 'cancelado')
+      .map((v) => ({
       codigoVuelo: v.codigoVuelo,
       origen: v.origen,
       destino: v.destino,
@@ -802,10 +835,11 @@ export default function App() {
   }, [clockedAirports])
   const handleCancelFlight = useCallback(async (codigoVuelo) => {
     try {
-      await api.cancelFlight(codigoVuelo)
+      // cancelFlight returns the fresh SimulationStateDTO with cancelaciones already included.
+      // We use that response directly to avoid stale cachedState from getState().
+      const newState = await api.cancelFlight(codigoVuelo)
       setMapSelectedVuelo(null)
       setSelectedFlight(null)
-      const newState = await api.getState()
       if (newState && (newState.enEjecucion || newState.finalizada)) {
         setBackendState(newState)
       }
@@ -842,6 +876,21 @@ export default function App() {
     startPolling()
   }, [startPolling])
 
+  const mapContainerRef = useRef(null)
+  const kpiWidgetRef = useRef(null)
+  const clockWidgetRef = useRef(null)
+
+  const handleShowWidgets = () => {
+    if (kpiWidgetRef.current) {
+      kpiWidgetRef.current.setVisibility(true)
+      kpiWidgetRef.current.resetPosition()
+    }
+    if (clockWidgetRef.current) {
+      clockWidgetRef.current.setVisibility(true)
+      clockWidgetRef.current.resetPosition()
+    }
+  }
+
   return (
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
@@ -861,6 +910,7 @@ export default function App() {
         isOpsActive={isOpsActive}
         colapsoPunto={backendState?.colapsoPunto ?? null}
         liveActive={screen === 'live'}
+        onShowWidgets={handleShowWidgets}
       />
       {backendState?.colapsoPunto && (
         <div style={{
@@ -890,7 +940,7 @@ export default function App() {
         {/* ── OPERACIONES (main map view) ─────────────────────────────── */}
         {(screen === 'main' && !configOpen) && (
           <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
-            <div style={{
+            <div ref={mapContainerRef} style={{
               position: 'absolute',
               top: 0,
               right: 0,
@@ -920,6 +970,7 @@ export default function App() {
                 onSectionChange={setActiveSideSection}
                 flights={backendFlights}
                 plannedFlights={backendPlannedFlights}
+                cancelledFlights={backendCancelledFlights}
                 selectedFlight={selectedFlight}
                 setSelectedFlight={setSelectedFlight}
                 setMapSelectedVuelo={setMapSelectedVuelo}
@@ -946,8 +997,12 @@ export default function App() {
               display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none',
               transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             }}>
-              <FloatingKPIs kpis={activeKpis} hasSimulation={Boolean(backendState)} />
-              <FloatingClocks backendState={backendState} simClockMinutes={simClockMinutes} realElapsedSeconds={realElapsedSeconds} />
+              <DraggableWidget ref={kpiWidgetRef} containerRef={mapContainerRef}>
+                <FloatingKPIs kpis={activeKpis} hasSimulation={Boolean(backendState)} />
+              </DraggableWidget>
+              <DraggableWidget ref={clockWidgetRef} containerRef={mapContainerRef}>
+                <FloatingClocks backendState={backendState} simClockMinutes={simClockMinutes} realElapsedSeconds={realElapsedSeconds} />
+              </DraggableWidget>
             </div>
 
             <DrawerAeropuerto

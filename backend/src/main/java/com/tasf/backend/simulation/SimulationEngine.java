@@ -1121,24 +1121,12 @@ public class SimulationEngine {
 
         LocalDate today = fechaSimulada.toLocalDate();
 
-        // Reject if the flight has already landed today: no bags EN_VUELO for it
-        // and at least one escala for today existed in any plan (meaning it was scheduled).
-        boolean scheduledToday = planes.stream()
-            .flatMap(p -> p.getEscalas().stream())
-            .anyMatch(e -> vuelo.getCodigoVuelo().equals(e.getCodigoVuelo())
-                && e.getHoraSalidaEst() != null
-                && e.getHoraSalidaEst().toLocalDate().equals(today));
+        // Reject if the flight is currently airborne
         boolean stillAirborne = maletaVueloActual.values().stream()
             .anyMatch(code -> vuelo.getCodigoVuelo().equals(code));
-        if (scheduledToday && !stillAirborne) {
-            boolean hasPendingBags = maletas.stream()
-                .anyMatch(m -> m.getUbicacionActual() != null
-                    && m.getUbicacionActual().equals(vuelo.getOrigen())
-                    && (m.getEstado() == EstadoMaleta.EN_ALMACEN || m.getEstado() == EstadoMaleta.RETRASADA));
-            if (!hasPendingBags) {
-                addOperationLog("[ADVERTENCIA] Vuelo " + codigoVuelo + " ya completó su trayecto hoy. Cancelación ignorada.");
-                return;
-            }
+        if (stillAirborne) {
+            addOperationLog("[ADVERTENCIA] Vuelo " + codigoVuelo + " está en vuelo. Cancelación ignorada.");
+            return;
         }
 
         vuelo.setCancelado(true);
@@ -1164,6 +1152,9 @@ public class SimulationEngine {
             .enviosSinRuta(sinRuta)
             .resultado(resultado)
             .build());
+
+        // Refresh the cache so subsequent polls reflect the cancellation immediately.
+        this.cachedState = getEstado();
     }
 
     public synchronized void cancelarEnvioManualmente(String idEnvio) {
