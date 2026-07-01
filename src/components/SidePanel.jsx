@@ -181,7 +181,7 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
                 </div>
               </div>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 10, padding: '2px 6px', borderRadius: 3, background: `${color}18`, color, border: `1px solid ${color}40`, flexShrink: 0 }}>
-                {pct.toFixed(1)}%
+                {pct.toFixed(2)}%
               </span>
             </div>
           )
@@ -336,7 +336,7 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport }) {
             <div key={ap.id} style={{ marginBottom: 10, cursor: 'pointer' }} onClick={() => setMapSelectedAirport?.(ap)}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)' }}>{ap.id} — {ap.name}</span>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color }}>{pct.toFixed(1)}%</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color }}>{pct.toFixed(2)}%</span>
               </div>
               <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 3, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: color, borderRadius: 3, transition: 'width 0.4s' }} />
@@ -719,7 +719,7 @@ export default function SidePanel({
 
       {/* Content panel */}
       {activeSection && (
-        <div style={{ width: 320, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        <div style={{ width: 340, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
             <span style={{ fontFamily: 'var(--mono)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--blue)', fontWeight: 700 }}>
               {sections.find(s => s.id === activeSection)?.label}

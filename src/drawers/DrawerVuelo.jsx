@@ -163,7 +163,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
   const hasLoadData = vuelo.currentLoad !== null || vuelo.cargaActual != null
   const load    = hasLoadData ? (vuelo.currentLoad ?? vuelo.cargaActual ?? 0) : 0
   const cap     = vuelo.capacity ?? vuelo.capacidadTotal ?? 300
-  const pct     = cap > 0 ? Math.round((load / cap) * 100) : 0
+  const pct     = cap > 0 ? (load / cap) * 100 : 0
   const color   = loadColor(pct)
   const eColor  = estadoColor(estado)
   const isActivo = estado === 'active' || estado === 'activo'
@@ -203,7 +203,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
                 <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 9 }}>
                   {load} / {cap} maletas
                 </span>
-                <span style={{ color, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700 }}>{pct}%</span>
+                <span style={{ color, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700 }}>{pct.toFixed(2)}%</span>
               </div>
             </>
           ) : (
@@ -287,7 +287,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
                 <div style={{ ...s.tlLabel, color: isActivo ? color : 'var(--muted)' }}>
                   {isActivo ? 'En vuelo' : 'En espera'}
                 </div>
-                <div style={s.tlMeta}>{hasLoadData ? `${load} / ${cap} maletas · ${pct}% carga` : '—'}</div>
+                <div style={s.tlMeta}>{hasLoadData ? `${load} / ${cap} maletas · ${pct.toFixed(2)}% carga` : '—'}</div>
               </div>
             </div>
             {/* Destino */}

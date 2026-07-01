@@ -174,10 +174,9 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
 
   const occ = airport.currentOccupation ?? airport.ocupacionActual ?? 0
   const cap = airport.warehouseCapacity ?? airport.capacidadAlmacen ?? 600
-  const pctRaw = cap > 0 ? (occ / cap) * 100 : 0
-  const pct = Math.round(pctRaw)
-  // Show "<1%" when there are bags but rounding drops it to 0, so 1/410 isn't shown as 0%.
-  const pctLabel = pctRaw > 0 && pct === 0 ? '<1%' : `${pct}%`
+  const pct = cap > 0 ? (occ / cap) * 100 : 0
+  // Show "<0.01%" when there are bags but rounding drops it to 0
+  const pctLabel = pct > 0 && pct < 0.01 ? '<0.01%' : `${pct.toFixed(2)}%`
   const color = semaforoColor(pct)
 
   const iata = airport.id
@@ -313,7 +312,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
                   <div style={s.dot(c)} />
                   <span style={s.flightCode}>{code}</span>
                   <span style={s.flightMeta}>→ {dest}</span>
-                  <span style={{ ...s.flightMeta, color: c }}>{Math.round((load / vcap) * 100)}%</span>
+                  <span style={{ ...s.flightMeta, color: c }}>{((load / vcap) * 100).toFixed(2)}%</span>
                 </div>
               )
             })}
@@ -335,7 +334,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
                   <div style={s.dot(c)} />
                   <span style={s.flightCode}>{code}</span>
                   <span style={s.flightMeta}>{origin} →</span>
-                  <span style={{ ...s.flightMeta, color: c }}>{Math.round((load / vcap) * 100)}%</span>
+                  <span style={{ ...s.flightMeta, color: c }}>{((load / vcap) * 100).toFixed(2)}%</span>
                 </div>
               )
             })}
