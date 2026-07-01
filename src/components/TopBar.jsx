@@ -85,6 +85,7 @@ export default function TopBar({
   colapsoPunto,
   liveActive,
   onShowWidgets,
+  isOwner,
 }) {
   const isBackendRunning = backendState?.enEjecucion === true
   const isBackendFinished = backendState?.finalizada === true
@@ -159,10 +160,14 @@ export default function TopBar({
         )}
         <button style={s.btnReset} onClick={onToggleTheme}>{theme === 'dark' ? '☀' : '🌙'}</button>
 
-        {/* Sin simulación: solo CONFIGURAR */}
+        {/* Sin simulación: solo CONFIGURAR — cualquiera puede iniciar */}
         {!hasSimulation && (
           <button
-            style={{ ...s.btnStart(false), opacity: liveActive ? 0.4 : 1, cursor: liveActive ? 'default' : 'pointer' }}
+            style={{
+              ...s.btnStart(false),
+              opacity: liveActive ? 0.4 : 1,
+              cursor: liveActive ? 'default' : 'pointer',
+            }}
             onClick={liveActive ? undefined : onIniciar}
             disabled={liveActive}
           >
@@ -173,8 +178,16 @@ export default function TopBar({
         {/* Simulación en curso: Cancelar */}
         {isBackendRunning && (
           <button
-            style={{ ...s.btnReset, color: 'var(--red)', borderColor: 'rgba(240,75,75,0.4)' }}
-            onClick={onCancel}
+            style={{
+              ...s.btnReset,
+              color: isOwner ? 'var(--red)' : 'var(--muted)',
+              borderColor: isOwner ? 'rgba(240,75,75,0.4)' : 'var(--border)',
+              opacity: isOwner ? 1 : 0.4,
+              cursor: isOwner ? 'pointer' : 'not-allowed',
+            }}
+            onClick={isOwner ? onCancel : undefined}
+            disabled={!isOwner}
+            title={!isOwner ? 'Solo el iniciador puede cancelar la simulación' : undefined}
           >
             CANCELAR
           </button>
@@ -184,11 +197,29 @@ export default function TopBar({
         {isBackendFinished && !isBackendRunning && (
           <>
             {canRestart && (
-              <button style={s.btnStart(false)} onClick={onRestart}>
+              <button
+                style={{
+                  ...s.btnStart(false),
+                  opacity: isOwner ? 1 : 0.4,
+                  cursor: isOwner ? 'pointer' : 'not-allowed',
+                }}
+                onClick={isOwner ? onRestart : undefined}
+                disabled={!isOwner}
+                title={!isOwner ? 'Solo el iniciador puede empezar de nuevo' : undefined}
+              >
                 ↺ EMPEZAR DE NUEVO
               </button>
             )}
-            <button style={s.btnReset} onClick={() => onNavigate('config')}>
+            <button
+              style={{
+                ...s.btnReset,
+                opacity: isOwner ? 1 : 0.4,
+                cursor: isOwner ? 'pointer' : 'not-allowed',
+              }}
+              onClick={isOwner ? () => onNavigate('config') : undefined}
+              disabled={!isOwner}
+              title={!isOwner ? 'Solo el iniciador puede configurar una nueva simulación' : undefined}
+            >
               CONFIGURAR
             </button>
           </>

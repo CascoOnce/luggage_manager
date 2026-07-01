@@ -20,6 +20,8 @@ import { getLiveState, getOpsState, getOpsOccupancy, planificarOps, getOpsEnvios
 export default function App() {
   const ALGORITHM = 'SIMULATED_ANNEALING'
   const SIM_MINUTES_PER_REAL_SECOND = 1  // 1 min/tick @ 250ms = ~6min per simulated day → 30min for 5 days
+  // 4 ticks/sec × 1 min/tick = 4 simulated minutes per real second
+  const SIM_MIN_PER_REAL_SEC = SIM_MINUTES_PER_REAL_SECOND * 4
   const [realElapsedSeconds, setRealElapsedSeconds] = useState(0)
 
   const [threshold, setThreshold] = useState(80)
@@ -29,6 +31,7 @@ export default function App() {
   const [backendState, setBackendState] = useState(null)
   const [lastParams, setLastParams] = useState(null)
   const [isRestarting, setIsRestarting] = useState(false)
+  const [isOwner, setIsOwner] = useState(false)
   const [staticAirports, setStaticAirports] = useState([])
   const [airportGraph, setAirportGraph] = useState(null)
   const [originIds, setOriginIds] = useState(null)
@@ -51,6 +54,9 @@ export default function App() {
   const prefetchFiredRef = useRef(false)
   const colapsoPuntoAlertedRef = useRef(false)
   const simStartMinuteRef = useRef(0)
+  // Tracks whether this browser tab has ever seen an active simulation.
+  // Used to detect when a simulation is cancelled by another tab/user.
+  const wasSimRunningRef = useRef(false)
 
   const [pollingError, setPollingError] = useState(null)
 
@@ -147,11 +153,49 @@ export default function App() {
         // Only update state if backend has real data or is actively running/finished.
         // Prevents empty post-reset state from overwriting a valid finalizada snapshot.
         if (state && (state.enEjecucion || state.finalizada) && !stepInProgressRef.current) {
+          if (!wasSimRunningRef.current) {
+            // New simulation detected while B had no simulation — sync ownership and clock
+            const owned = localStorage.getItem('simOwner') === '1'
+            setIsOwner(owned || Boolean(state.finalizada))
+            const storedHoraInicio = parseInt(localStorage.getItem('simHoraInicio') || '0', 10)
+            simStartMinuteRef.current = storedHoraInicio
+            const dayStartedAt   = parseInt(localStorage.getItem('simDayStartedAt')  || '0', 10)
+            const dayStartMinute = parseInt(localStorage.getItem('simDayStartMinute') || '0', 10)
+            if (dayStartedAt > 0 && state.enEjecucion && !state.finalizada) {
+              const elapsed = ((Date.now() - dayStartedAt) / 1000) * SIM_MIN_PER_REAL_SEC
+              setSimClockMinutes(Math.min(dayStartMinute + elapsed, 1439))
+            }
+          }
+          wasSimRunningRef.current = true
           setBackendState(state)
           if (state.finalizada) {
             stopPolling()
             setTimeout(() => setScreen('resultados'), 8000)
           }
+        } else if (wasSimRunningRef.current && (!state || (!state.enEjecucion && !state.finalizada))) {
+          // Simulation was cancelled externally (e.g., by another user pressing CANCELAR).
+          // Triggers when state is null (backend cleared) OR flags are both false.
+          // Perform a frontend-only reset — do NOT call api.resetSimulation() again.
+          wasSimRunningRef.current = false
+          stopPolling()
+          clearInterval(autoStepRef.current)
+          setAutoStep(false)
+          setBackendState(null)
+          setSimClockMinutes(0)
+          setSelectedFlight(null)
+          setMapSelectedAirport(null)
+          setMapSelectedVuelo(null)
+          setHighlightedRoute(null)
+          setConfigOpen(false)
+          setActiveSideSection(null)
+          setScreen('main')
+          localStorage.removeItem('simOwner')
+          localStorage.removeItem('simHoraInicio')
+          localStorage.removeItem('simDayStartedAt')
+          localStorage.removeItem('simDayStartMinute')
+          setIsOwner(false)
+          // Refresh airport data to reflect post-reset warehouse occupancy
+          refreshStaticAirports()
         }
       } catch (err) {
         pollingErrorsRef.current += 1
@@ -164,6 +208,13 @@ export default function App() {
       }
     }, 2000)
   }, [stopPolling])
+
+  // When simulation finishes, unlock all users (anyone can start next sim)
+  useEffect(() => {
+    if (backendState?.finalizada) {
+      setIsOwner(true)
+    }
+  }, [backendState?.finalizada])
 
   function onIniciar() {
     if (!backendState) {
@@ -187,18 +238,43 @@ export default function App() {
     api.getAirportGraph().then(setAirportGraph).catch(() => {})
   }, [])
 
-  // On mount: check if a simulation is already running (another tab/user started it)
+  // On mount: check if a simulation is already running (another tab/user started it).
+  // Always start polling so B detects new simulations started by A after B has loaded.
   useEffect(() => {
     api.getState().then((state) => {
       if (state && (state.enEjecucion || state.finalizada)) {
+        wasSimRunningRef.current = true  // So external-cancel detection triggers correctly
         setBackendState(state)
-        startPolling()
+        // Determine ownership: the browser that started the simulation has the localStorage flag.
+        // localStorage persists across reloads and all tabs in the same browser, but NOT
+        // across different browsers/machines — perfect for the A/B scenario.
+        // If the simulation is finished, everyone gets full access.
+        const owned = localStorage.getItem('simOwner') === '1'
+        setIsOwner(owned || Boolean(state.finalizada))
+        // Restore horaInicio so day-1 flight filter works correctly
+        const storedHoraInicio = parseInt(localStorage.getItem('simHoraInicio') || '0', 10)
+        simStartMinuteRef.current = storedHoraInicio
+        // Estimate current simulated minute from localStorage timestamps
+        const dayStartedAt  = parseInt(localStorage.getItem('simDayStartedAt')  || '0', 10)
+        const dayStartMinute = parseInt(localStorage.getItem('simDayStartMinute') || '0', 10)
+        if (dayStartedAt > 0 && state.enEjecucion && !state.finalizada) {
+          const elapsedRealSec = (Date.now() - dayStartedAt) / 1000
+          const elapsedSimMin  = elapsedRealSec * SIM_MIN_PER_REAL_SEC
+          const estimated = Math.min(dayStartMinute + elapsedSimMin, 1439)
+          setSimClockMinutes(estimated)
+        }
         if (state.finalizada) setScreen('resultados')
       }
-    }).catch(() => {})
+      // Always poll — even if no simulation is running — so B detects
+      // when A starts one and cannot accidentally start a second simulation.
+      startPolling()
+    }).catch(() => {
+      startPolling()  // Start polling even on error
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startPolling])
 
-  useEffect(() => {
+  function refreshStaticAirports() {
     api.getAirports()
       .then((data) => setStaticAirports(
         data.map((airport) => ({
@@ -211,6 +287,11 @@ export default function App() {
         }))
       ))
       .catch(() => {})
+  }
+
+  useEffect(() => {
+    refreshStaticAirports()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -304,6 +385,8 @@ export default function App() {
         setTimeout(() => setScreen('resultados'), 3000)
       } else {
         // Reset clock to midnight simultaneously with new day data ONLY if continuing
+        localStorage.setItem('simDayStartedAt',  String(Date.now()))
+        localStorage.setItem('simDayStartMinute', '0')
         setSimClockMinutes(0)
       }
     }).catch((err) => {
@@ -651,12 +734,21 @@ export default function App() {
   async function handleReset() {
     stepInProgressRef.current = false
     colapsoPuntoAlertedRef.current = false
+    wasSimRunningRef.current = false
     stopPolling()
     pollingErrorsRef.current = 0
     setPollingError(null)
+    sessionStorage.removeItem('simOwner')
+    localStorage.removeItem('simOwner')
+    localStorage.removeItem('simHoraInicio')
+    localStorage.removeItem('simDayStartedAt')
+    localStorage.removeItem('simDayStartMinute')
+    setIsOwner(false)
     onReset()
     setBackendState(null)
-    api.resetSimulation().catch((err) => console.error('Reset backend error:', err))
+    api.resetSimulation()
+      .then(() => refreshStaticAirports())
+      .catch((err) => console.error('Reset backend error:', err))
   }
 
   async function handleRestart() {
@@ -864,12 +956,20 @@ export default function App() {
 
   const handleSimulationStarted = useCallback((state, params) => {
     setConfigOpen(false)
+    sessionStorage.setItem('simOwner', '1')
+    localStorage.setItem('simOwner', '1')
+    setIsOwner(true)
+    wasSimRunningRef.current = true
     setBackendState(state)
     setLastParams(params)
     const [h = 0, m = 0] = (params?.horaInicio || '00:00').split(':').map(Number)
     const startMin = h * 60 + m
     simStartMinuteRef.current = startMin
     setSimClockMinutes(startMin)
+    // Persist clock anchor so other tabs can sync to the correct simulated minute
+    localStorage.setItem('simHoraInicio',    String(startMin))
+    localStorage.setItem('simDayStartedAt',  String(Date.now()))
+    localStorage.setItem('simDayStartMinute', String(startMin))
     // Reset real-elapsed counter for each new simulation
     realStartRef.current = null
     accumulatedRealMsRef.current = 0
@@ -914,6 +1014,7 @@ export default function App() {
         colapsoPunto={backendState?.colapsoPunto ?? null}
         liveActive={screen === 'live'}
         onShowWidgets={handleShowWidgets}
+        isOwner={isOwner}
       />
       {backendState?.colapsoPunto && (
         <div style={{
@@ -989,6 +1090,8 @@ export default function App() {
                 setDestIds={setDestIds}
                 theme={theme}
                 onOpenOps={handleOpenOps}
+                isOwner={isOwner}
+                hasSimulation={Boolean(backendState)}
               />
             </div>
 
@@ -1017,7 +1120,7 @@ export default function App() {
             <DrawerVuelo
               vuelo={mapSelectedVuelo}
               onClose={handleCloseVuelo}
-              onCancelFlight={handleCancelFlight}
+              onCancelFlight={isOwner ? handleCancelFlight : null}
             />
           </div>
         )}

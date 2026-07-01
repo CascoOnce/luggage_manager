@@ -674,6 +674,8 @@ export default function SidePanel({
   opsIngressAirports = [],
   onOpsEnviosChanged,
   opsBase,
+  isOwner = true,
+  hasSimulation = false,
 }) {
   const sections = mode === 'ops' ? OPS_SECTIONS : SIM_SECTIONS
 
@@ -681,29 +683,38 @@ export default function SidePanel({
     <div style={{ display: 'flex', height: '100%', background: 'var(--panel)', borderRight: '1px solid var(--border)' }}>
       {/* Icon strip */}
       <div style={{ width: 52, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, flexShrink: 0, borderRight: activeSection ? '1px solid var(--border)' : 'none' }}>
-        {sections.map(({ id, Icon, label, action }) => (
-          <button
-            key={id}
-            onClick={() => {
-              if (action === 'ops') {
-                onOpenOps?.()
-                return
-              }
-              onSectionChange(activeSection === id ? null : id)
-            }}
-            title={label}
-            style={{
-              width: 40, height: 40,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: activeSection === id ? 'rgba(88,166,255,0.14)' : action === 'ops' ? 'rgba(34,197,94,0.08)' : 'transparent',
-              border: 'none', borderRadius: 8, cursor: 'pointer',
-              color: activeSection === id ? 'var(--blue)' : action === 'ops' ? '#22c55e' : 'var(--muted)',
-              transition: 'color 0.15s, background 0.15s',
-            }}
-          >
-            <Icon />
-          </button>
-        ))}
+        {sections.map(({ id, Icon, label, action }) => {
+          // ops-dia and config are restricted ONLY while a simulation is running and user is not owner
+          const restricted = hasSimulation && !isOwner && (action === 'ops' || id === 'config')
+          return (
+            <button
+              key={id}
+              onClick={() => {
+                if (restricted) return
+                if (action === 'ops') {
+                  onOpenOps?.()
+                  return
+                }
+                onSectionChange(activeSection === id ? null : id)
+              }}
+              title={restricted ? 'Solo el iniciador de la simulación tiene este acceso' : label}
+              style={{
+                width: 40, height: 40,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: activeSection === id ? 'rgba(88,166,255,0.14)' : action === 'ops' ? 'rgba(34,197,94,0.08)' : 'transparent',
+                border: 'none', borderRadius: 8,
+                cursor: restricted ? 'not-allowed' : 'pointer',
+                color: restricted
+                  ? 'var(--muted)'
+                  : activeSection === id ? 'var(--blue)' : action === 'ops' ? '#22c55e' : 'var(--muted)',
+                opacity: restricted ? 0.35 : 1,
+                transition: 'color 0.15s, background 0.15s',
+              }}
+            >
+              <Icon />
+            </button>
+          )
+        })}
       </div>
 
       {/* Content panel */}
