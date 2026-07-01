@@ -979,7 +979,7 @@ export default function App() {
                 setMapSelectedVuelo={setMapSelectedVuelo}
                 setMapSelectedAirport={setMapSelectedAirport}
                 simState={simState}
-                airports={normalizedAirports}
+                airports={clockedAirports}
                 threshold={threshold}
                 setThreshold={setThreshold}
                 onSimulationStarted={handleSimulationStarted}
