@@ -224,11 +224,13 @@ public class SimulationEngine {
         // is about to animate, so days advance 1:1 with the visual clock (no duplicate day-1
         // frame, and the final day animates before the redirect to resultados).
 
-        // Snapshot warehouse state at the START of the day — before any departures or
-        // deliveries — so that [OCUPACION] logs capture origin warehouses (e.g. OJAI)
-        // while bags are still present. The end-of-day call below reflects the
-        // post-delivery state and updates the domain field used by the API.
-        updateWarehouseOccupation();
+        // VISUAL CONTINUITY: Set ocupacionInicioDia BEFORE processing, so it matches
+        // what the frontend was showing at the end of the previous day (the ocupacionActual
+        // set by planNextBatch). After processing, departures/deliveries reduce the bag
+        // count — if we used the post-processing count as ocupacionInicioDia, the frontend
+        // would jump down at each day boundary.
+        // Use null ref to count ALL EN_ALMACEN bags (same as what planNextBatch computed).
+        updateWarehouseOccupation(null);
         accumulateOccupationSample();
         aeropuertos.forEach(a -> a.setOcupacionInicioDia(a.getOcupacionActual()));
 
@@ -239,15 +241,17 @@ public class SimulationEngine {
         Map<String, List<Maleta>> maletasByEnvio = maletas.stream().collect(Collectors.groupingBy(Maleta::getIdEnvio));
 
         // Run up to 3 passes so that same-day connections work correctly.
-        // On pass 1: leg-1 bags depart and arrive at the intermediate hub.
-        // On pass 2: leg-2 bags depart from the hub (now EN_ALMACEN) and arrive at destination.
-        // The existing state machine (EN_ALMACEN→EN_VUELO→EN_ALMACEN) prevents double-processing.
         for (int pass = 0; pass < 3; pass++) {
             processDepartures(envioById, vueloByCode, airportByCode, maletasByEnvio);
             processArrivals(vueloByCode, airportByCode, maletasByEnvio);
         }
         DeliveryStats deliveryStats = processDeliveries(envioById, airportByCode, maletasByEnvio);
         checkSlaViolations(maletasByEnvio);
+
+        // Post-processing: recalculate actual warehouse state for internal accuracy
+        // (colapso checks, KPIs, etc). ocupacionInicioDia is NOT changed — it stays
+        // at the pre-processing value for visual continuity.
+        updateWarehouseOccupation(null);
 
         if (Boolean.TRUE.equals(params.getEsColapso()) && colapsoPunto == null) {
             long retrasados = envios.stream()

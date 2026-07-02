@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 
-function fmtClock(sec) {
+function fmtClock(sec, includeSeconds = true) {
   if (sec == null || isNaN(sec)) return '—'
   const h = Math.floor(sec / 3600)
   const m = Math.floor((sec % 3600) / 60)
@@ -8,7 +8,7 @@ function fmtClock(sec) {
   const hh = String(h).padStart(2, '0')
   const mm = String(m).padStart(2, '0')
   const ss = String(s).padStart(2, '0')
-  return `${hh}:${mm}:${ss}`
+  return includeSeconds ? `${hh}:${mm}:${ss}` : `${hh}:${mm}`
 }
 
 function useWallClock() {
@@ -26,11 +26,10 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
   // -- REAL CLOCK --
   const realDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`
   const rawH = now.getHours()
-  const realHh = String(rawH % 12 || 12).padStart(2, '0')
+  const realHh = String(rawH).padStart(2, '0')
   const realMm = String(now.getMinutes()).padStart(2, '0')
   const realSs = String(now.getSeconds()).padStart(2, '0')
-  const ampm = rawH >= 12 ? 'p.m.' : 'a.m.'
-  const realTime = `${realHh}:${realMm}:${realSs} ${ampm}`
+  const realTime = `${realHh}:${realMm}:${realSs}`
 
   // -- SIM CLOCK --
   let simDate = '—'
@@ -48,18 +47,17 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
       const yyyy = current.getFullYear()
       const shh = String(current.getHours()).padStart(2, '0')
       const smm = String(current.getMinutes()).padStart(2, '0')
-      // Fake seconds to give a sense of continuous tick, matching realElapsedSeconds loosely
-      const sss = String((realElapsedSeconds || 0) % 60).padStart(2, '0')
-
       simDate = `${dd}/${mm}/${yyyy}`
-      simTime = `${shh}:${smm}:${sss}`
+      simTime = `${shh}:${smm}`
     }
   }
 
   // Elapsed SIM time — floor to avoid float display artifacts
-  const simElapsedSeconds = diaActual > 1 || simClockMinutes > 0
-    ? ((diaActual - 1) * 86400) + Math.floor((simClockMinutes || 0) * 60)
-    : 0
+  const simElapsedSeconds = backendState?.fechaSimulada
+    ? ((diaActual > 1 || simClockMinutes > 0)
+      ? ((diaActual - 1) * 86400) + Math.floor((simClockMinutes || 0) * 60)
+      : 0)
+    : null
 
   return (
     <div style={{
@@ -113,7 +111,7 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
           {simTime}
         </div>
         <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>
-          {fmtClock(simElapsedSeconds)}
+          {fmtClock(simElapsedSeconds, false)}
         </div>
       </div>
 
