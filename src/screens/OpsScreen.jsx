@@ -166,7 +166,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
           enUso: v.enUso ?? false,
         }
       })
-      .filter((v) => isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
+      .filter((v) => v.enUso && isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
   }, [opsState?.vuelos, liveNowMinutes])
 
   const plannedFlights = useMemo(() => {
@@ -197,7 +197,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
           enUso: v.enUso ?? false,
         }
       })
-      .filter((v) => !isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
+      .filter((v) => !v.enUso || !isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
   }, [opsState?.vuelos, liveNowMinutes])
 
   const cancelledFlights = useMemo(() => {

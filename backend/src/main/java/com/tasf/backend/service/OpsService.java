@@ -57,7 +57,7 @@ public class OpsService {
     private final ItinerarioRepository itinerarioRepository;
     private final EscalaRepository escalaRepository;
 
-    private final ConcurrentHashMap<String, PlanDeViaje> planesPorEnvio = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, List<PlanDeViaje>> planesPorEnvio = new ConcurrentHashMap<>();
     // idEnvio -> bag count, captured at planning time (plans don't carry bag counts).
     private final ConcurrentHashMap<String, Integer> maletasPorEnvio = new ConcurrentHashMap<>();
     // idEnvio -> warehouse entry time (UTC), captured at planning time.
@@ -100,11 +100,13 @@ public class OpsService {
 
         // 2b. Collect flight codes currently used in planned routes
         Set<String> flightsInUso = new HashSet<>();
-        for (PlanDeViaje plan : planesPorEnvio.values()) {
-            if (plan.getEscalas() != null) {
-                for (Escala e : plan.getEscalas()) {
-                    if (e.getCodigoVuelo() != null) {
-                        flightsInUso.add(e.getCodigoVuelo());
+        for (List<PlanDeViaje> planList : planesPorEnvio.values()) {
+            for (PlanDeViaje plan : planList) {
+                if (plan.getEscalas() != null) {
+                    for (Escala e : plan.getEscalas()) {
+                        if (e.getCodigoVuelo() != null) {
+                            flightsInUso.add(e.getCodigoVuelo());
+                        }
                     }
                 }
             }
@@ -113,8 +115,10 @@ public class OpsService {
         // 2c. Compute actual bag load per flight from EN_VUELO envíos
         Map<String, Integer> cargaPorVuelo = new HashMap<>();
         for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("EN_VUELO")) {
-            PlanDeViaje plan = planesPorEnvio.get(envio.getIdPedido());
-            if (plan == null || plan.getEscalas() == null) continue;
+            List<PlanDeViaje> plans = planesPorEnvio.get(envio.getIdPedido());
+            if (plans == null || plans.isEmpty()) continue;
+            PlanDeViaje plan = plans.get(0);
+            if (plan.getEscalas() == null) continue;
             int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
             plan.getEscalas().stream()
                     .filter(e -> e.getOrden() == orden && e.getCodigoVuelo() != null)
@@ -308,9 +312,10 @@ public class OpsService {
             // Capture origin timezone so the scheduler compares against the same local
             // time reference that the planner used to build horaSalidaEst/horaLlegadaEst.
             husoPorEnvio.put(e.getIdPedido(), husoByIata.getOrDefault(e.getIataOrigen(), 0));
+            planesPorEnvio.remove(e.getIdPedido()); // clear old plans before re-planning
         }
         for (PlanDeViaje plan : result.getPlanes()) {
-            planesPorEnvio.put(plan.getIdEnvio(), plan);
+            planesPorEnvio.computeIfAbsent(plan.getIdEnvio(), k -> new ArrayList<>()).add(plan);
         }
         persistOpsPlans(result.getPlanes());
 
@@ -333,12 +338,14 @@ public class OpsService {
     // -------------------------------------------------------------------------
 
     public PlanDeViaje getPlan(String idPedido) {
-        return planesPorEnvio.get(idPedido);
+        List<PlanDeViaje> plans = planesPorEnvio.get(idPedido);
+        return (plans != null && !plans.isEmpty()) ? plans.get(0) : null;
     }
 
     public Optional<EnvioDTO> getEnvioById(String idPedido) {
         return opsEnvioRepository.findByIdPedido(idPedido).map(ent -> {
-            PlanDeViaje plan = planesPorEnvio.get(idPedido);
+            List<PlanDeViaje> planList = planesPorEnvio.get(idPedido);
+            PlanDeViaje plan = (planList != null && !planList.isEmpty()) ? planList.get(0) : null;
             if (plan == null) {
                 plan = loadPlanFromDb(idPedido);
             }
@@ -519,10 +526,11 @@ public class OpsService {
                 .findAllByEstadoAndIataOrigen("PENDIENTE", upper)
                 .stream()
                 .map(e -> {
-                    boolean hasPlan = planesPorEnvio.containsKey(e.getIdPedido());
+                    List<PlanDeViaje> planList = planesPorEnvio.get(e.getIdPedido());
+                    boolean hasPlan = planList != null && !planList.isEmpty();
                     List<String> ruta = null;
                     if (hasPlan) {
-                        PlanDeViaje plan = planesPorEnvio.get(e.getIdPedido());
+                        PlanDeViaje plan = planList.get(0);
                         if (plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
                             ruta = new ArrayList<>();
                             ruta.add(e.getIataOrigen());
@@ -555,7 +563,8 @@ public class OpsService {
         List<EnvioSummaryDTO> entrando = new ArrayList<>();
         List<EnvioSummaryDTO> saliendo = new ArrayList<>();
 
-        for (PlanDeViaje plan : planesPorEnvio.values()) {
+        for (List<PlanDeViaje> planList : planesPorEnvio.values()) {
+            for (PlanDeViaje plan : planList) {
             EnvioEntity ent = entityById.get(plan.getIdEnvio());
             if (ent == null || plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
 
@@ -583,6 +592,7 @@ public class OpsService {
 
                 prevAeropuerto = legDestino;
             }
+            } // end inner plan loop
         }
 
         entrando.sort(Comparator.comparing(EnvioSummaryDTO::getHora, Comparator.nullsLast(Comparator.naturalOrder())));
@@ -604,11 +614,12 @@ public class OpsService {
 
     private EnvioSummaryDTO summaryFromPlan(PlanDeViaje plan, EnvioEntity ent,
             String codigoVuelo, LocalDateTime hora) {
+        int qty = plan.getCantidadMaletas() > 0 ? plan.getCantidadMaletas() : ent.getCantidadMaletas();
         return EnvioSummaryDTO.builder()
                 .idEnvio(plan.getIdEnvio())
                 .aeropuertoOrigen(ent.getIataOrigen())
                 .aeropuertoDestino(ent.getIataDestino())
-                .cantidadMaletas(ent.getCantidadMaletas())
+                .cantidadMaletas(qty)
                 .estado(ent.getEstado())
                 .sla(ent.getSla())
                 .planificado(true)
@@ -628,8 +639,10 @@ public class OpsService {
         LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
 
         for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("PENDIENTE")) {
-            PlanDeViaje plan = planesPorEnvio.get(envio.getIdPedido());
-            if (plan == null || plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
+            List<PlanDeViaje> plans = planesPorEnvio.get(envio.getIdPedido());
+            if (plans == null || plans.isEmpty()) continue;
+            PlanDeViaje plan = plans.get(0);
+            if (plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
 
             int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
             // Planner builds timestamps in origin-airport local time; compare in kind.
@@ -662,8 +675,10 @@ public class OpsService {
         LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
 
         for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("EN_VUELO")) {
-            PlanDeViaje plan = planesPorEnvio.get(envio.getIdPedido());
-            if (plan == null || plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
+            List<PlanDeViaje> plans = planesPorEnvio.get(envio.getIdPedido());
+            if (plans == null || plans.isEmpty()) continue;
+            PlanDeViaje plan = plans.get(0);
+            if (plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
 
             int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
             int huso = husoPorEnvio.getOrDefault(envio.getIdPedido(), 0);

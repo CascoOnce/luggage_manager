@@ -196,7 +196,7 @@ export default function TopBar({
         {/* Simulación finalizada: Empezar de nuevo + Configurar */}
         {isBackendFinished && !isBackendRunning && (
           <>
-            {canRestart && (
+            {/*canRestart && (
               <button
                 style={{
                   ...s.btnStart(false),
@@ -209,7 +209,7 @@ export default function TopBar({
               >
                 ↺ EMPEZAR DE NUEVO
               </button>
-            )}
+            )*/}
             <button
               style={{
                 ...s.btnReset,

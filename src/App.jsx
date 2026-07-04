@@ -329,6 +329,7 @@ export default function App() {
 
     function startTick() {
       autoStepRef.current = setInterval(() => {
+        if (stepInProgressRef.current) return
         setSimClockMinutes((current) => Math.min(current + SIM_MINUTES_PER_REAL_SECOND, 1440))
       }, 250)
     }

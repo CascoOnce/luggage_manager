@@ -241,12 +241,23 @@ public class SimulationEngine {
         Map<String, List<Maleta>> maletasByEnvio = maletas.stream().collect(Collectors.groupingBy(Maleta::getIdEnvio));
 
         // Run up to 3 passes so that same-day connections work correctly.
+        LocalTime endLimit = (diaActual >= params.getDiasSimulacion()) 
+            ? parseHoraInicio(params.getHoraInicio()) 
+            : null;
+
         for (int pass = 0; pass < 3; pass++) {
-            processDepartures(envioById, vueloByCode, airportByCode, maletasByEnvio);
-            processArrivals(vueloByCode, airportByCode, maletasByEnvio);
+            processDepartures(envioById, vueloByCode, airportByCode, maletasByEnvio, endLimit);
+            processArrivals(vueloByCode, airportByCode, maletasByEnvio, endLimit);
         }
         DeliveryStats deliveryStats = processDeliveries(envioById, airportByCode, maletasByEnvio);
-        checkSlaViolations(maletasByEnvio);
+
+        LocalDateTime currentStepEndTime;
+        if (diaActual >= params.getDiasSimulacion()) {
+            currentStepEndTime = params.getFechaInicio().plusDays(params.getDiasSimulacion() - 1).atTime(parseHoraInicio(params.getHoraInicio()));
+        } else {
+            currentStepEndTime = params.getFechaInicio().plusDays(diaActual).atStartOfDay();
+        }
+        checkSlaViolations(maletasByEnvio, currentStepEndTime);
 
         // Post-processing: recalculate actual warehouse state for internal accuracy
         // (colapso checks, KPIs, etc). ocupacionInicioDia is NOT changed — it stays
@@ -296,10 +307,11 @@ public class SimulationEngine {
         }
 
         if (diaActual >= params.getDiasSimulacion()) {
-            updateWarehouseOccupation(fechaSimulada.plusDays(1));
+            LocalDateTime simEndTime = params.getFechaInicio().plusDays(params.getDiasSimulacion() - 1).atTime(parseHoraInicio(params.getHoraInicio()));
+            updateWarehouseOccupation(simEndTime);
             this.finalizada = true;
             this.enEjecucion = false;
-            applySimulationEnd(params.getFechaInicio().plusDays(params.getDiasSimulacion() - 1));
+            applySimulationEnd(simEndTime);
             addOperationLog("Simulation completed - Day " + diaActual);
             persistenceService.persistSimulationResults(
                 List.copyOf(planes),
@@ -403,7 +415,7 @@ public class SimulationEngine {
         }
         this.enEjecucion = false;
         this.finalizada = true;
-        applySimulationEnd(fechaSimulada.toLocalDate());
+        applySimulationEnd(fechaSimulada);
         addOperationLog("Simulation stopped manually - Day " + diaActual);
         persistenceService.persistSimulationResults(
             List.copyOf(planes),
@@ -414,15 +426,15 @@ public class SimulationEngine {
         return this.cachedState = getEstado();
     }
 
-    private void applySimulationEnd(LocalDate simulationEndDate) {
+    private void applySimulationEnd(LocalDateTime simulationEndTime) {
         Map<String, PlanDeViaje> latestPlans = buildLatestPlanByEnvio();
 
         envios.stream()
             .filter(e -> e.getEstado() != EstadoEnvio.ENTREGADO && e.getEstado() != EstadoEnvio.RETRASADO)
-            .filter(e -> !isCrossWindow(e, simulationEndDate, latestPlans))
+            .filter(e -> !isCrossWindow(e, simulationEndTime, latestPlans))
             .forEach(e -> {
-                LocalDate deadline = e.getFechaHoraIngreso().plusDays(e.getSla()).toLocalDate();
-                if (!deadline.isAfter(simulationEndDate)) {
+                LocalDateTime deadline = e.getFechaHoraIngreso().plusDays(e.getSla());
+                if (!deadline.isAfter(simulationEndTime)) {
                     e.setEstado(EstadoEnvio.RETRASADO);
                 }
             });
@@ -432,24 +444,24 @@ public class SimulationEngine {
             .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
 
         long auditEvaluable = envios.stream()
-            .filter(e -> !e.getFechaHoraIngreso().toLocalDate().plusDays(e.getSla()).isAfter(simulationEndDate))
+            .filter(e -> !e.getFechaHoraIngreso().plusDays(e.getSla()).isAfter(simulationEndTime))
             .count();
         long auditEntregado = envios.stream()
             .filter(e -> e.getEstado() == EstadoEnvio.ENTREGADO)
-            .filter(e -> !e.getFechaHoraIngreso().toLocalDate().plusDays(e.getSla()).isAfter(simulationEndDate))
+            .filter(e -> !e.getFechaHoraIngreso().plusDays(e.getSla()).isAfter(simulationEndTime))
             .count();
         long auditRetrasado = envios.stream()
             .filter(e -> e.getEstado() == EstadoEnvio.RETRASADO)
-            .filter(e -> !e.getFechaHoraIngreso().toLocalDate().plusDays(e.getSla()).isAfter(simulationEndDate))
+            .filter(e -> !e.getFechaHoraIngreso().plusDays(e.getSla()).isAfter(simulationEndTime))
             .count();
         long auditInProgress = envios.stream()
             .filter(e -> e.getEstado() != EstadoEnvio.ENTREGADO && e.getEstado() != EstadoEnvio.RETRASADO)
-            .filter(e -> !e.getFechaHoraIngreso().toLocalDate().plusDays(e.getSla()).isAfter(simulationEndDate))
+            .filter(e -> !e.getFechaHoraIngreso().plusDays(e.getSla()).isAfter(simulationEndTime))
             .count();
         double auditSla = auditEvaluable == 0 ? 0.0
             : Math.round(auditEntregado * 1000.0 / auditEvaluable) / 10.0;
-        log.info("[SLA AUDIT] simulationEndDate={} Evaluable={} ENTREGADO={} RETRASADO={} IN_PROGRESS={} SLA={}%",
-            simulationEndDate, auditEvaluable, auditEntregado, auditRetrasado, auditInProgress, auditSla);
+        log.info("[SLA AUDIT] simulationEndTime={} Evaluable={} ENTREGADO={} RETRASADO={} IN_PROGRESS={} SLA={}%",
+            simulationEndTime, auditEvaluable, auditEntregado, auditRetrasado, auditInProgress, auditSla);
         addOperationLog(String.format(
             "[SLA AUDIT] period=%d ENTREGADO=%d RETRASADO=%d IN_PROGRESS=%d SLA=%.1f%%",
             auditEvaluable, auditEntregado, auditRetrasado, auditInProgress, auditSla));
@@ -837,22 +849,24 @@ public class SimulationEngine {
                 for (Escala esc : plan.getEscalas()) {
                     if (esc.isCompletada() || !iata.equals(esc.getCodigoAeropuerto())) continue;
                     if (esc.getHoraLlegadaEst() != null && esc.getHoraLlegadaEst().toLocalDate().equals(today)) {
+                        int qty = plan.getCantidadMaletas() > 0 ? plan.getCantidadMaletas() : e.getCantidadMaletas();
                         entrando.add(com.tasf.backend.dto.EnvioSummaryDTO.builder()
                             .idEnvio(plan.getIdEnvio())
                             .aeropuertoOrigen(e.getAeropuertoOrigen())
                             .aeropuertoDestino(e.getAeropuertoDestino())
-                            .cantidadMaletas(e.getCantidadMaletas())
+                            .cantidadMaletas(qty)
                             .estado(e.getEstado().name())
                             .codigoVuelo(esc.getCodigoVuelo())
                             .hora(esc.getHoraLlegadaEst().toLocalTime().toString().substring(0, 5))
                             .build());
                     }
                     if (esc.getHoraSalidaEst() != null && esc.getHoraSalidaEst().toLocalDate().equals(today)) {
+                        int qty = plan.getCantidadMaletas() > 0 ? plan.getCantidadMaletas() : e.getCantidadMaletas();
                         saliendo.add(com.tasf.backend.dto.EnvioSummaryDTO.builder()
                             .idEnvio(plan.getIdEnvio())
                             .aeropuertoOrigen(e.getAeropuertoOrigen())
                             .aeropuertoDestino(e.getAeropuertoDestino())
-                            .cantidadMaletas(e.getCantidadMaletas())
+                            .cantidadMaletas(qty)
                             .estado(e.getEstado().name())
                             .codigoVuelo(esc.getCodigoVuelo())
                             .hora(esc.getHoraSalidaEst().toLocalTime().toString().substring(0, 5))
@@ -884,7 +898,7 @@ public class SimulationEngine {
     }
 
     private void processDepartures(Map<String, Envio> envioById, Map<String, Vuelo> vueloByCode,
-            Map<String, Aeropuerto> airportByCode, Map<String, List<Maleta>> maletasByEnvio) {
+            Map<String, Aeropuerto> airportByCode, Map<String, List<Maleta>> maletasByEnvio, LocalTime endLimit) {
         LocalDate today = fechaSimulada.toLocalDate();
 
         for (PlanDeViaje plan : planes) {
@@ -894,6 +908,9 @@ public class SimulationEngine {
             }
             for (var escala : plan.getEscalas()) {
                 if (!escala.getHoraSalidaEst().toLocalDate().equals(today)) {
+                    continue;
+                }
+                if (endLimit != null && escala.getHoraSalidaEst().toLocalTime().isAfter(endLimit)) {
                     continue;
                 }
                 Vuelo vuelo = vueloByCode.get(escala.getCodigoVuelo());
@@ -928,12 +945,15 @@ public class SimulationEngine {
     }
 
     private void processArrivals(Map<String, Vuelo> vueloByCode, Map<String, Aeropuerto> airportByCode,
-            Map<String, List<Maleta>> maletasByEnvio) {
+            Map<String, List<Maleta>> maletasByEnvio, LocalTime endLimit) {
         LocalDate today = fechaSimulada.toLocalDate();
 
         for (PlanDeViaje plan : planes) {
             for (var escala : plan.getEscalas()) {
                 if (!escala.getHoraLlegadaEst().toLocalDate().equals(today)) {
+                    continue;
+                }
+                if (endLimit != null && escala.getHoraLlegadaEst().toLocalTime().isAfter(endLimit)) {
                     continue;
                 }
                 Vuelo vuelo = vueloByCode.get(escala.getCodigoVuelo());
@@ -1026,18 +1046,16 @@ public class SimulationEngine {
         return new DeliveryStats(delivered, slaOk, slaBreach);
     }
 
-    private boolean isCrossWindow(Envio envio, LocalDate simEnd, Map<String, PlanDeViaje> latestPlans) {
+    private boolean isCrossWindow(Envio envio, LocalDateTime simEnd, Map<String, PlanDeViaje> latestPlans) {
         if (simEnd == null) return false;
         PlanDeViaje plan = latestPlans.get(envio.getIdEnvio());
         if (plan == null) return false;
         return plan.getEscalas().stream()
             .filter(e -> !e.isCompletada() && e.getHoraLlegadaEst() != null)
-            .anyMatch(e -> e.getHoraLlegadaEst().toLocalDate().isAfter(simEnd));
+            .anyMatch(e -> e.getHoraLlegadaEst().isAfter(simEnd));
     }
 
-    private void checkSlaViolations(Map<String, List<Maleta>> maletasByEnvio) {
-        LocalDate simEnd = params == null ? null
-            : params.getFechaInicio().plusDays(params.getDiasSimulacion() - 1);
+    private void checkSlaViolations(Map<String, List<Maleta>> maletasByEnvio, LocalDateTime currentStepEndTime) {
         Map<String, PlanDeViaje> latestPlans = buildLatestPlanByEnvio();
         int newViolations = 0;
 
@@ -1045,11 +1063,11 @@ public class SimulationEngine {
             if (envio.getEstado() == EstadoEnvio.ENTREGADO) {
                 continue;
             }
-            if (isCrossWindow(envio, simEnd, latestPlans)) {
+            if (isCrossWindow(envio, currentStepEndTime, latestPlans)) {
                 continue;
             }
             LocalDateTime deadline = envio.getFechaHoraIngreso().plusDays(envio.getSla());
-            if (!fechaSimulada.isBefore(deadline) && envio.getEstado() != EstadoEnvio.RETRASADO) {
+            if (!currentStepEndTime.isBefore(deadline) && envio.getEstado() != EstadoEnvio.RETRASADO) {
                 envio.setEstado(EstadoEnvio.RETRASADO);
                 maletasByEnvio.getOrDefault(envio.getIdEnvio(), List.of()).stream()
                     .filter(m -> m.getEstado() != EstadoMaleta.ENTREGADA)

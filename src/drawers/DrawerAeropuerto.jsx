@@ -102,6 +102,11 @@ function flightColor(load, cap) {
   return 'var(--green)'
 }
 
+const sumarMaletas = (lista) => {
+  if (!lista || lista.length === 0) return 0;
+  return lista.reduce((total, e) => total + (e.cantidadMaletas || 0), 0);
+}
+
 const TAB_STYLE = (active) => ({
   fontFamily: 'var(--mono)', fontSize: 10, textTransform: 'uppercase',
   letterSpacing: 1.2, padding: '8px 12px', cursor: 'pointer',
@@ -213,10 +218,10 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
             )}
             {!loadingInv && inventory && (
               <>
-                <span style={s.sectionTitle}>En almacén ({inventory.enAlmacen?.length ?? 0})</span>
+                <span style={s.sectionTitle}>En almacén: {inventory.enAlmacen?.length ?? 0} envíos ({sumarMaletas(inventory.enAlmacen)} maletas)</span>
                 {(inventory.enAlmacen?.length ?? 0) === 0
                   ? <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 16 }}>Sin envíos en almacén</div>
-                  : inventory.enAlmacen.map((e) => <EnvioRow key={e.idEnvio} e={e} showPlanBadge />)
+                  : inventory.enAlmacen.map((e, i) => <EnvioRow key={`${e.idEnvio}-${i}`} e={e} showPlanBadge />)
                 }
               </>
             )}
@@ -233,13 +238,13 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
             )}
             {!loadingInv && inventory && (
               <>
-                <span style={{ ...s.sectionTitle, color: 'var(--green)' }}>Entrando hoy ({inventory.planificadosEntrando?.length ?? 0})</span>
+                <span style={{ ...s.sectionTitle, color: 'var(--green)' }}>Entrando hoy: {inventory.planificadosEntrando?.length ?? 0} envíos ({sumarMaletas(inventory.planificadosEntrando)} maletas)</span>
                 {(inventory.planificadosEntrando?.length ?? 0) === 0
                   ? <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 16 }}>Sin llegadas planificadas</div>
                   : inventory.planificadosEntrando.map((e, i) => <EnvioRow key={`in-${i}`} e={e} />)
                 }
                 <div style={{ marginTop: 16 }}>
-                  <span style={{ ...s.sectionTitle, color: 'var(--blue)' }}>Saliendo hoy ({inventory.planificadosSaliendo?.length ?? 0})</span>
+                  <span style={{ ...s.sectionTitle, color: 'var(--blue)' }}>Saliendo hoy: {inventory.planificadosSaliendo?.length ?? 0} envíos ({sumarMaletas(inventory.planificadosSaliendo)} maletas)</span>
                   {(inventory.planificadosSaliendo?.length ?? 0) === 0
                     ? <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Sin salidas planificadas</div>
                     : inventory.planificadosSaliendo.map((e, i) => <EnvioRow key={`out-${i}`} e={e} />)
@@ -247,7 +252,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
                 </div>
                 {(inventory.sinRuta?.length ?? 0) > 0 && (
                   <div style={{ marginTop: 16 }}>
-                    <span style={{ ...s.sectionTitle, color: 'var(--red)' }}>Sin ruta ({inventory.sinRuta.length})</span>
+                    <span style={{ ...s.sectionTitle, color: 'var(--red)' }}>Sin ruta: {inventory.sinRuta.length} envíos ({sumarMaletas(inventory.sinRuta)} maletas)</span>
                     {inventory.sinRuta.map((e, i) => <EnvioRow key={`nr-${i}`} e={e} />)}
                   </div>
                 )}
