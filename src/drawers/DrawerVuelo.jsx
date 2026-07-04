@@ -29,7 +29,7 @@ const s = {
     flex: 1,
   },
   pill: (color) => ({
-    fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 700,
+    fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700,
     textTransform: 'uppercase', letterSpacing: 0.8,
     padding: '3px 8px', borderRadius: 4,
     background: `${color}1f`, color, border: `1px solid ${color}66`,
@@ -38,12 +38,12 @@ const s = {
   closeBtn: {
     background: 'transparent', border: 'none',
     color: 'var(--muted)', cursor: 'pointer',
-    fontFamily: 'var(--mono)', fontSize: 14, lineHeight: 1,
+    fontFamily: 'var(--mono)', fontSize: 16, lineHeight: 1,
     padding: '2px 4px', flexShrink: 0,
   },
   section: { padding: '14px 16px', borderBottom: '1px solid var(--border)' },
   sectionTitle: {
-    fontFamily: 'var(--sans)', fontSize: 8, textTransform: 'uppercase',
+    fontFamily: 'var(--sans)', fontSize: 10, textTransform: 'uppercase',
     letterSpacing: 2, color: 'var(--muted)', fontWeight: 700,
     marginBottom: 10, display: 'block',
   },
@@ -57,7 +57,7 @@ const s = {
   }),
   barLabel: {
     display: 'flex', justifyContent: 'space-between',
-    fontFamily: 'var(--mono)', fontSize: 10,
+    fontFamily: 'var(--mono)', fontSize: 12,
   },
   row: {
     display: 'flex', justifyContent: 'space-between',

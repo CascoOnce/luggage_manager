@@ -29,7 +29,7 @@ const s = {
     flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
   pill: (color) => ({
-    fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 700,
+    fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700,
     textTransform: 'uppercase', letterSpacing: 0.8,
     padding: '3px 8px', borderRadius: 4,
     background: `${color}1f`, color, border: `1px solid ${color}66`,
@@ -38,12 +38,12 @@ const s = {
   closeBtn: {
     background: 'transparent', border: 'none',
     color: 'var(--muted)', cursor: 'pointer',
-    fontFamily: 'var(--mono)', fontSize: 14, lineHeight: 1,
+    fontFamily: 'var(--mono)', fontSize: 16, lineHeight: 1,
     padding: '2px 4px', flexShrink: 0,
   },
   section: { padding: '14px 16px', borderBottom: '1px solid var(--border)' },
   sectionTitle: {
-    fontFamily: 'var(--sans)', fontSize: 8, textTransform: 'uppercase',
+    fontFamily: 'var(--sans)', fontSize: 10, textTransform: 'uppercase',
     letterSpacing: 2, color: 'var(--muted)', fontWeight: 700,
     marginBottom: 10, display: 'block',
   },
@@ -57,14 +57,14 @@ const s = {
   }),
   barLabel: {
     display: 'flex', justifyContent: 'space-between',
-    fontFamily: 'var(--mono)', fontSize: 10,
+    fontFamily: 'var(--mono)', fontSize: 12,
   },
   row: {
     display: 'flex', justifyContent: 'space-between',
     alignItems: 'baseline', marginBottom: 7, gap: 8,
   },
-  rowLabel: { fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', flexShrink: 0 },
-  rowVal: { fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-bright)', textAlign: 'right' },
+  rowLabel: { fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', flexShrink: 0 },
+  rowVal: { fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-bright)', textAlign: 'right' },
   flightItem: {
     display: 'flex', alignItems: 'center', gap: 8,
     padding: '7px 0', borderBottom: '1px solid rgba(99,152,255,0.07)',
@@ -73,14 +73,14 @@ const s = {
     width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
     background: color, boxShadow: `0 0 5px ${color}`,
   }),
-  flightCode: { fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-bright)', flex: 1 },
-  flightMeta: { fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)' },
+  flightCode: { fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-bright)', flex: 1 },
+  flightMeta: { fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' },
   stat: {
     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
     padding: '10px 0',
   },
-  statVal: { fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 600, color: 'var(--text-bright)' },
-  statLabel: { fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 3 },
+  statVal: { fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 600, color: 'var(--text-bright)' },
+  statLabel: { fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 3 },
 }
 
 function semaforoColor(pct) {
@@ -108,21 +108,21 @@ const sumarMaletas = (lista) => {
 }
 
 const TAB_STYLE = (active) => ({
-  fontFamily: 'var(--mono)', fontSize: 10, textTransform: 'uppercase',
+  fontFamily: 'var(--mono)', fontSize: 12, textTransform: 'uppercase',
   letterSpacing: 1.2, padding: '8px 12px', cursor: 'pointer',
   background: 'transparent', border: 'none', outline: 'none',
   borderBottom: active ? '2px solid var(--blue)' : '2px solid transparent',
   color: active ? 'var(--text-bright)' : 'var(--muted)',
 })
 
-function EnvioRow({ e, showPlanBadge = false }) {
+function EnvioRow({ e }) {
   return (
     <div style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--blue)' }}>{e.idEnvio}</span>
-        {e.hora && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--amber)' }}>{e.hora}</span>}
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--blue)' }}>{e.idEnvio}</span>
+        {e.hora && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--amber)' }}>{e.hora}</span>}
       </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
         {e.rutaCompleta && e.rutaCompleta.length > 2
           ? e.rutaCompleta.join(' → ')
           : <>{e.aeropuertoOrigen} → {e.aeropuertoDestino}</>
@@ -132,15 +132,8 @@ function EnvioRow({ e, showPlanBadge = false }) {
       </div>
       <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
         {e.sla != null && (
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 3, padding: '0 4px' }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 3, padding: '0 4px' }}>
             SLA {e.sla}d
-          </span>
-        )}
-        {showPlanBadge && (
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, padding: '0 4px', borderRadius: 3,
-            color: e.planificado ? 'var(--green)' : 'var(--red)',
-            border: `1px solid ${e.planificado ? 'var(--green)' : 'var(--red)'}` }}>
-            {e.planificado ? 'Con ruta' : 'Sin ruta'}
           </span>
         )}
       </div>
@@ -152,6 +145,10 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
   const [tab, setTab] = useState('info')
   const [inventory, setInventory] = useState(null)
   const [loadingInv, setLoadingInv] = useState(false)
+  
+  const [expandedIn, setExpandedIn] = useState(true)
+  const [expandedOut, setExpandedOut] = useState(true)
+  const [expandedNoRoute, setExpandedNoRoute] = useState(true)
 
   useEffect(() => {
     if (!airport) return
@@ -210,9 +207,9 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
 
         {tab === 'inventario' && (
           <div style={{ padding: 14, flex: 1, overflowY: 'auto' }}>
-            {loadingInv && <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Cargando...</div>}
+            {loadingInv && <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Cargando...</div>}
             {!loadingInv && !inventory && (
-              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', opacity: 0.6 }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', opacity: 0.6 }}>
                 Sin datos — simulación no activa
               </div>
             )}
@@ -220,8 +217,8 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
               <>
                 <span style={s.sectionTitle}>En almacén: {inventory.enAlmacen?.length ?? 0} envíos ({sumarMaletas(inventory.enAlmacen)} maletas)</span>
                 {(inventory.enAlmacen?.length ?? 0) === 0
-                  ? <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 16 }}>Sin envíos en almacén</div>
-                  : inventory.enAlmacen.map((e, i) => <EnvioRow key={`${e.idEnvio}-${i}`} e={e} showPlanBadge />)
+                  ? <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>Sin envíos en almacén</div>
+                  : inventory.enAlmacen.map((e, i) => <EnvioRow key={`${e.idEnvio}-${i}`} e={e} />)
                 }
               </>
             )}
@@ -229,33 +226,62 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
         )}
 
         {tab === 'planificado' && (
-          <div style={{ padding: 14, flex: 1, overflowY: 'auto' }}>
-            {loadingInv && <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Cargando...</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+            {loadingInv && <div style={{ padding: '14px 16px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Cargando...</div>}
             {!loadingInv && !inventory && (
-              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', opacity: 0.6 }}>
+              <div style={{ padding: '14px 16px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', opacity: 0.6 }}>
                 Sin datos — simulación no activa
               </div>
             )}
             {!loadingInv && inventory && (
               <>
-                <span style={{ ...s.sectionTitle, color: 'var(--green)' }}>Entrando hoy: {inventory.planificadosEntrando?.length ?? 0} envíos ({sumarMaletas(inventory.planificadosEntrando)} maletas)</span>
-                {(inventory.planificadosEntrando?.length ?? 0) === 0
-                  ? <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 16 }}>Sin llegadas planificadas</div>
-                  : inventory.planificadosEntrando.map((e, i) => <EnvioRow key={`in-${i}`} e={e} />)
-                }
-                <div style={{ marginTop: 16 }}>
-                  <span style={{ ...s.sectionTitle, color: 'var(--blue)' }}>Saliendo hoy: {inventory.planificadosSaliendo?.length ?? 0} envíos ({sumarMaletas(inventory.planificadosSaliendo)} maletas)</span>
-                  {(inventory.planificadosSaliendo?.length ?? 0) === 0
-                    ? <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Sin salidas planificadas</div>
-                    : inventory.planificadosSaliendo.map((e, i) => <EnvioRow key={`out-${i}`} e={e} />)
-                  }
-                </div>
-                {(inventory.sinRuta?.length ?? 0) > 0 && (
-                  <div style={{ marginTop: 16 }}>
-                    <span style={{ ...s.sectionTitle, color: 'var(--red)' }}>Sin ruta: {inventory.sinRuta.length} envíos ({sumarMaletas(inventory.sinRuta)} maletas)</span>
-                    {inventory.sinRuta.map((e, i) => <EnvioRow key={`nr-${i}`} e={e} />)}
+                {/* ENTRADAS */}
+                <div style={{ display: 'flex', flexDirection: 'column', flex: expandedIn ? 1 : 'none', minHeight: 0 }}>
+                  <div 
+                    onClick={() => setExpandedIn(!expandedIn)}
+                    style={{ 
+                      padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                      cursor: 'pointer', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.05)' 
+                    }}
+                  >
+                    <span style={{ ...s.sectionTitle, color: 'var(--text-bright)', marginBottom: 0 }}>
+                      Entrando hoy: {inventory.planificadosEntrando?.length ?? 0} envíos ({sumarMaletas(inventory.planificadosEntrando)} maletas)
+                    </span>
+                    <span style={{ color: 'var(--muted)', fontSize: 12 }}>{expandedIn ? '▲' : '▼'}</span>
                   </div>
-                )}
+                  {expandedIn && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+                      {(inventory.planificadosEntrando?.length ?? 0) === 0
+                        ? <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Sin llegadas planificadas</div>
+                        : inventory.planificadosEntrando.map((e, i) => <EnvioRow key={`in-${i}`} e={e} />)
+                      }
+                    </div>
+                  )}
+                </div>
+
+                {/* SALIDAS */}
+                <div style={{ display: 'flex', flexDirection: 'column', flex: expandedOut ? 1 : 'none', minHeight: 0 }}>
+                  <div 
+                    onClick={() => setExpandedOut(!expandedOut)}
+                    style={{ 
+                      padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                      cursor: 'pointer', background: 'rgba(255,255,255,0.03)', borderTop: '1px solid var(--border)', borderBottom: '1px solid rgba(255,255,255,0.05)' 
+                    }}
+                  >
+                    <span style={{ ...s.sectionTitle, color: 'var(--text-bright)', marginBottom: 0 }}>
+                      Saliendo hoy: {inventory.planificadosSaliendo?.length ?? 0} envíos ({sumarMaletas(inventory.planificadosSaliendo)} maletas)
+                    </span>
+                    <span style={{ color: 'var(--muted)', fontSize: 12 }}>{expandedOut ? '▲' : '▼'}</span>
+                  </div>
+                  {expandedOut && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+                      {(inventory.planificadosSaliendo?.length ?? 0) === 0
+                        ? <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Sin salidas planificadas</div>
+                        : inventory.planificadosSaliendo.map((e, i) => <EnvioRow key={`out-${i}`} e={e} />)
+                      }
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -269,10 +295,10 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
             <div style={s.barFill(pct, color)} />
           </div>
           <div style={s.barLabel}>
-            <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 9 }}>
+            <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11 }}>
               {occ.toLocaleString()} / {cap.toLocaleString()} maletas
             </span>
-            <span style={{ color, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700 }}>{pctLabel}</span>
+            <span style={{ color, fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700 }}>{pctLabel}</span>
           </div>
         </div>
 
@@ -305,19 +331,18 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
           <div style={{ marginBottom: 12 }}>
             <span style={{ ...s.sectionTitle, color: 'var(--blue)' }}>Salidas ↑ ({salidas.length})</span>
             {salidas.length === 0 ? (
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Sin salidas</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Sin salidas</span>
             ) : salidas.map((v, i) => {
               const code = v.id || v.codigoVuelo || `FL-${i}`
-              const dest = v.destination || v.destino || '?'
               const load = v.maletasAsignadas ?? v.currentLoad ?? v.cargaActual ?? 0
               const vcap = v.capacity ?? v.capacidadTotal ?? 300
               const c = flightColor(load, vcap)
+              const displayCode = code.replace(`${iata}-`, '')
               return (
                 <div key={`s-${code}`} style={s.flightItem}>
                   <div style={s.dot(c)} />
-                  <span style={s.flightCode}>{code}</span>
-                  <span style={s.flightMeta}>→ {dest}</span>
-                  <span style={{ ...s.flightMeta, color: c }}>{((load / vcap) * 100).toFixed(2)}%</span>
+                  <span style={s.flightCode}>{displayCode}</span>
+                  <span style={{ ...s.flightMeta, color: c }}>→ {((load / vcap) * 100).toFixed(2)}%</span>
                 </div>
               )
             })}
@@ -325,21 +350,20 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
 
           {/* Llegadas */}
           <div>
-            <span style={{ ...s.sectionTitle, color: 'var(--green)' }}>Llegadas ↓ ({llegadas.length})</span>
+            <span style={{ ...s.sectionTitle, color: 'var(--blue)' }}>Llegadas ↓ ({llegadas.length})</span>
             {llegadas.length === 0 ? (
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>Sin llegadas</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Sin llegadas</span>
             ) : llegadas.map((v, i) => {
               const code = v.id || v.codigoVuelo || `FL-${i}`
-              const origin = v.origin || v.origen || '?'
               const load = v.maletasAsignadas ?? v.currentLoad ?? v.cargaActual ?? 0
               const vcap = v.capacity ?? v.capacidadTotal ?? 300
               const c = flightColor(load, vcap)
+              const displayCode = code.replace(`-${iata}`, '')
               return (
                 <div key={`l-${code}`} style={s.flightItem}>
                   <div style={s.dot(c)} />
-                  <span style={s.flightCode}>{code}</span>
-                  <span style={s.flightMeta}>{origin} →</span>
-                  <span style={{ ...s.flightMeta, color: c }}>{((load / vcap) * 100).toFixed(2)}%</span>
+                  <span style={s.flightCode}>{displayCode}</span>
+                  <span style={{ ...s.flightMeta, color: c }}>→ {((load / vcap) * 100).toFixed(2)}%</span>
                 </div>
               )
             })}

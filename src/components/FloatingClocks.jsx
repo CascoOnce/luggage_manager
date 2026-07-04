@@ -20,18 +20,24 @@ function useWallClock() {
   return now
 }
 
-export default function FloatingClocks({ backendState, simClockMinutes, realElapsedSeconds }) {
+export default function FloatingClocks({ backendState, simClockMinutes, simStartMinute = 0, simStartedAt }) {
   const now = useWallClock()
 
   // -- REAL CLOCK --
   const realDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`
-  const rawH = now.getHours()
-  const realHh = String(rawH).padStart(2, '0')
+  const realHh = String(now.getHours()).padStart(2, '0')
   const realMm = String(now.getMinutes()).padStart(2, '0')
   const realSs = String(now.getSeconds()).padStart(2, '0')
   const realTime = `${realHh}:${realMm}:${realSs}`
 
+  // Compute real elapsed from simStartedAt — accurate every second, no ref issues.
+  const realElapsedSeconds = simStartedAt != null
+    ? Math.floor((now.getTime() - simStartedAt) / 1000)
+    : 0
+
   // -- SIM CLOCK --
+  // simClockMinutes starts at simStartMinute (horaInicio) on day 1, then resets to 0
+  // at midnight for days 2+. We just add it directly to midnight of the sim date.
   let simDate = '—'
   let simTime = '—'
   const diaActual = backendState?.diaActual || backendState?.currentDay || 1
@@ -52,11 +58,21 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
     }
   }
 
-  // Elapsed SIM time — floor to avoid float display artifacts
+  // Elapsed SIM time since simulation began.
+  // Day 1: clock runs from simStartMinute → 1440. Elapsed = simClockMinutes - simStartMinute.
+  // Day 2+: clock runs from 0 → 1440. Add (1440 - simStartMinute) for day1 + previous full days.
   const simElapsedSeconds = backendState?.fechaSimulada
-    ? ((diaActual > 1 || simClockMinutes > 0)
-      ? ((diaActual - 1) * 86400) + Math.floor((simClockMinutes || 0) * 60)
-      : 0)
+    ? (() => {
+        const cur = simClockMinutes || 0
+        if (diaActual <= 1) {
+          return Math.max(0, (cur - simStartMinute) * 60)
+        }
+        // day 1 contributed (1440 - simStartMinute) minutes, each subsequent day up to diaActual-2
+        // contributed 1440 minutes, plus current day's simClockMinutes.
+        const day1 = 1440 - simStartMinute
+        const middleDays = (diaActual - 2) * 1440
+        return Math.max(0, (day1 + middleDays + cur) * 60)
+      })()
     : null
 
   return (
@@ -70,9 +86,9 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
       backdropFilter: 'blur(8px)',
       display: 'flex',
       gap: 30,
-      pointerEvents: 'none' // allow clicking through if needed, though usually nice to not block map
+      pointerEvents: 'none'
     }}>
-      
+
       {/* SECCIÓN REAL */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--blue)', fontWeight: 700 }}>
@@ -85,7 +101,7 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
           {realTime}
         </div>
         <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>
-          {fmtClock(realElapsedSeconds)}
+          {fmtClock(realElapsedSeconds ?? 0)}
         </div>
       </div>
 
@@ -111,10 +127,9 @@ export default function FloatingClocks({ backendState, simClockMinutes, realElap
           {simTime}
         </div>
         <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>
-          {fmtClock(simElapsedSeconds, false)}
+          {fmtClock(simElapsedSeconds ?? 0, false)}
         </div>
       </div>
-
 
     </div>
   )

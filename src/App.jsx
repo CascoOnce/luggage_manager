@@ -22,7 +22,7 @@ export default function App() {
   const SIM_MINUTES_PER_REAL_SECOND = 1  // 1 min/tick @ 250ms = ~6min per simulated day → 30min for 5 days
   // 4 ticks/sec × 1 min/tick = 4 simulated minutes per real second
   const SIM_MIN_PER_REAL_SEC = SIM_MINUTES_PER_REAL_SECOND * 4
-  const [realElapsedSeconds, setRealElapsedSeconds] = useState(0)
+  const [simStartedAt, setSimStartedAt] = useState(null)  // wall-clock ms when sim started
 
   const [threshold, setThreshold] = useState(80)
   const [theme, setTheme] = useState('dark')
@@ -43,8 +43,8 @@ export default function App() {
   const [highlightedRoute, setHighlightedRoute] = useState(null)
   const [simClockMinutes, setSimClockMinutes] = useState(0)
 
-  const realStartRef = useRef(null)
-  const accumulatedRealMsRef = useRef(0)
+  const realStartRef = useRef(null)  // kept for legacy compat, unused
+  const accumulatedRealMsRef = useRef(0)  // kept for legacy compat, unused
   const pollingRef = useRef(null)
   const autoStepRef = useRef(null)
   const pollingErrorsRef = useRef(0)
@@ -54,6 +54,13 @@ export default function App() {
   const prefetchFiredRef = useRef(false)
   const colapsoPuntoAlertedRef = useRef(false)
   const simStartMinuteRef = useRef(0)
+  const prevSimStateRef = useRef(null)
+
+  useEffect(() => {
+    if (backendState && !backendState.finalizada) {
+      prevSimStateRef.current = backendState
+    }
+  }, [backendState])
   // Tracks whether this browser tab has ever seen an active simulation.
   // Used to detect when a simulation is cancelled by another tab/user.
   const wasSimRunningRef = useRef(false)
@@ -119,9 +126,7 @@ export default function App() {
 
   function onReset() {
     setAutoStep(false)
-    realStartRef.current = null
-    accumulatedRealMsRef.current = 0
-    setRealElapsedSeconds(0)
+    setSimStartedAt(null)
     setSelectedFlight(null)
     setMapSelectedAirport(null)
     setMapSelectedVuelo(null)
@@ -142,13 +147,17 @@ export default function App() {
     stopPolling()
     pollingErrorsRef.current = 0
     setPollingError(null)
-    pollingRef.current = setInterval(async () => {
+    const id = setInterval(async () => {
       // Skip if a previous poll is still in flight — prevents request pileup/cancel
       // when the state download is slower than the 2s interval (slow VM uplink).
       if (pollInFlightRef.current) return
       pollInFlightRef.current = true
       try {
         const state = await api.getState()
+
+        // Ignore stale responses if this polling session was stopped or restarted
+        if (pollingRef.current !== id) return
+
         pollingErrorsRef.current = 0
         setPollingError(null)
         // Only update state if backend has real data or is actively running/finished.
@@ -178,7 +187,6 @@ export default function App() {
           // Triggers when state is null (backend cleared) OR flags are both false.
           // Perform a frontend-only reset — do NOT call api.resetSimulation() again.
           wasSimRunningRef.current = false
-          stopPolling()
           clearInterval(autoStepRef.current)
           setAutoStep(false)
           setBackendState(null)
@@ -205,9 +213,12 @@ export default function App() {
         }
         console.error('Polling error:', err)
       } finally {
-        pollInFlightRef.current = false
+        if (pollingRef.current === id) {
+          pollInFlightRef.current = false
+        }
       }
     }, 2000)
+    pollingRef.current = id
   }, [stopPolling])
 
   // When simulation finishes, unlock all users (anyone can start next sim)
@@ -397,28 +408,12 @@ export default function App() {
     })
   }, [simClockMinutes, autoStep, backendState?.diaActual, backendState?.totalDias])
 
-  useEffect(() => {
-    if (autoStep && realStartRef.current === null) {
-      realStartRef.current = Date.now()
-    }
-    if (!autoStep && realStartRef.current !== null) {
-      accumulatedRealMsRef.current += Date.now() - realStartRef.current
-      realStartRef.current = null
-      setRealElapsedSeconds(Math.floor(accumulatedRealMsRef.current / 1000))
-    }
-  }, [autoStep])
-
-  useEffect(() => {
-    if (!autoStep) return undefined
-    const id = setInterval(() => {
-      const liveMs = accumulatedRealMsRef.current + (Date.now() - realStartRef.current)
-      setRealElapsedSeconds(Math.floor(liveMs / 1000))
-    }, 250)
-    return () => clearInterval(id)
-  }, [autoStep])
 
 
-  const simState = backendState ?? {
+
+  const displayState = (backendState?.finalizada && prevSimStateRef.current) ? prevSimStateRef.current : backendState;
+
+  const simState = displayState ?? {
     currentDay: 0, totalDays: 0,
     elapsedSeconds: 0, algorithm: ALGORITHM,
     kpis: {
@@ -434,6 +429,10 @@ export default function App() {
   const normalizedAirports = useMemo(() => {
     const airports = simState?.aeropuertos || simState?.airports || []
     const vuelosList = simState?.vuelos || []
+    // When no simulation is running, force a neutral colour ('azul') so the map doesn't
+    // show green markers — the backend returns semaforo='verde' for 0% occupancy which is
+    // misleading when there is no active simulation.
+    const hasActiveSim = Boolean(displayState)
     return airports.map((airport) => {
       const iata = airport.codigoIATA || airport.id
       const ocupFin = airport.currentOccupation ?? airport.ocupacionActual ?? 0
@@ -445,14 +444,16 @@ export default function App() {
         continent: airport.continent || airport.continente,
         lat: airport.lat,
         lng: airport.lng,
-        currentOccupation: ocupFin,
-        ocupacionInicioDia: ocupIni,
+        // Override occupation and flights to 0 if simulation is cancelled to bypass stale backend state
+        currentOccupation: hasActiveSim ? ocupFin : 0,
+        ocupacionInicioDia: hasActiveSim ? ocupIni : 0,
         warehouseCapacity: airport.warehouseCapacity ?? airport.capacidadAlmacen ?? 600,
-        vuelosSalientes: vuelosList.filter((v) => (v.origen || v.origin) === iata && v.estado === 'activo').length,
-        vuelosLlegando:  vuelosList.filter((v) => (v.destino || v.destination) === iata && v.estado === 'activo').length,
+        semaforo: hasActiveSim ? (airport.semaforo || 'verde') : 'azul',
+        vuelosSalientes: hasActiveSim ? vuelosList.filter((v) => (v.origen || v.origin) === iata && v.estado === 'activo').length : 0,
+        vuelosLlegando:  hasActiveSim ? vuelosList.filter((v) => (v.destino || v.destination) === iata && v.estado === 'activo').length : 0,
       }
     })
-  }, [simState?.aeropuertos, simState?.airports, simState?.vuelos])
+  }, [simState?.aeropuertos, simState?.airports, simState?.vuelos, displayState])
 
   const clockedAirports = useMemo(() => {
     if (!backendState?.enEjecucion) return normalizedAirports
@@ -513,8 +514,8 @@ export default function App() {
 
   // Heavy work: filter + parse times. Only reruns when backend data changes (~every 12s).
   const activeVuelosWithTimes = useMemo(() => {
-    if (!backendState?.vuelos) return []
-    return backendState.vuelos
+    if (!displayState?.vuelos) return []
+    return displayState.vuelos
       .filter((v) => v.estado === 'activo')
       .map((v) => ({
         id: v.codigoVuelo,
@@ -531,13 +532,13 @@ export default function App() {
         depMin: parseTimeToMinutes(v.horaSalida),
         arrMin: parseTimeToMinutes(v.horaLlegada),
       }))
-  }, [backendState?.vuelos])
+  }, [displayState?.vuelos])
 
   // Light work: apply clock position. Reruns every second but only on pre-filtered list.
   // On Day 1, only flights departing at or after horaInicio are visible (no pre-existing
   // flights that were already in the air before the simulation started).
   const backendFlights = useMemo(() => {
-    const day = backendState?.diaActual || backendState?.currentDay || 1
+    const day = displayState?.diaActual || displayState?.currentDay || 1
     const startMin = day <= 1 ? simStartMinuteRef.current : 0
     return activeVuelosWithTimes
       .filter((v) =>
@@ -550,10 +551,10 @@ export default function App() {
         ...v,
         fraction: flightFractionAtMinute(simClockMinutes, v.depMin, v.arrMin),
       }))
-  }, [activeVuelosWithTimes, simClockMinutes, originSet, destSet, backendState?.diaActual])
+  }, [activeVuelosWithTimes, simClockMinutes, originSet, destSet, displayState?.diaActual])
 
   const backendPlannedFlights = useMemo(() => {
-    const day = backendState?.diaActual || backendState?.currentDay || 1
+    const day = displayState?.diaActual || displayState?.currentDay || 1
     const startMin = day <= 1 ? simStartMinuteRef.current : 0
     return activeVuelosWithTimes
       .filter((v) =>
@@ -567,12 +568,12 @@ export default function App() {
         status: 'planned',
         fraction: 0,
       }))
-  }, [activeVuelosWithTimes, simClockMinutes, originSet, destSet, backendState?.diaActual])
+  }, [activeVuelosWithTimes, simClockMinutes, originSet, destSet, displayState?.diaActual])
 
   const backendCancelledFlights = useMemo(() => {
-    if (!backendState?.cancelaciones) return []
-    const vuelosMap = new Map((backendState?.vuelos || []).map(v => [v.codigoVuelo, v]))
-    return backendState.cancelaciones
+    if (!displayState?.cancelaciones) return []
+    const vuelosMap = new Map((displayState?.vuelos || []).map(v => [v.codigoVuelo, v]))
+    return displayState.cancelaciones
       .filter((c) => {
         const v = vuelosMap.get(c.codigoVuelo)
         return (!originSet || originSet.has(v?.origen)) && (!destSet || destSet.has(v?.destino))
@@ -596,22 +597,22 @@ export default function App() {
           isCancelled: true
         }
       }).reverse()
-  }, [backendState?.cancelaciones, backendState?.vuelos, originSet, destSet])
+  }, [displayState?.cancelaciones, displayState?.vuelos, originSet, destSet])
 
   const fechaSimuladaDisplay = useMemo(() => {
-    if (!backendState?.fechaSimulada) return null
-    const source = new Date(backendState.fechaSimulada)
-    if (Number.isNaN(source.getTime())) return backendState.fechaSimulada
+    if (!displayState?.fechaSimulada) return null
+    const source = new Date(displayState.fechaSimulada)
+    if (Number.isNaN(source.getTime())) return displayState.fechaSimulada
 
     source.setHours(0, 0, 0, 0)
-    const dayOffset = Math.max(0, ((backendState.diaActual || backendState.currentDay || 1) - 1)) * 24 * 60 * 60 * 1000
+    const dayOffset = Math.max(0, ((displayState.diaActual || displayState.currentDay || 1) - 1)) * 24 * 60 * 60 * 1000
     const current = new Date(source.getTime() + dayOffset + simClockMinutes * 60000)
     const mm = String(current.getMonth() + 1).padStart(2, '0')
     const dd = String(current.getDate()).padStart(2, '0')
     const hh = String(current.getHours()).padStart(2, '0')
     const mi = String(current.getMinutes()).padStart(2, '0')
     return `${mm}-${dd} ${hh}:${mi}`
-  }, [backendState?.fechaSimulada, backendState?.diaActual, backendState?.currentDay, simClockMinutes, realElapsedSeconds])
+  }, [displayState?.fechaSimulada, displayState?.diaActual, displayState?.currentDay, simClockMinutes])
 
   useEffect(() => {
     if (!selectedFlight) {
@@ -624,16 +625,16 @@ export default function App() {
       
     if (vuelo) setMapSelectedVuelo(vuelo)
     // If vuelo not found in current frame, keep the previous drawer content open.
-  }, [selectedFlight, backendState, backendFlights, backendPlannedFlights, backendCancelledFlights])
+  }, [selectedFlight, displayState, backendFlights, backendPlannedFlights, backendCancelledFlights])
 
   const activeKpis = useMemo(() => {
-    const base = backendState?.kpis
+    const base = displayState?.kpis
       ? {
-          bagsInTransit: backendState.kpis.maletasEnTransito,
-          bagsDelivered: backendState.kpis.maletasEntregadas,
-          slaCompliance: backendState.kpis.cumplimientoSLA,
-          activeFlights: backendState.kpis.vuelosActivos,
-          slaViolated: backendState.kpis.slaVencidos,
+          bagsInTransit: displayState.kpis.maletasEnTransito,
+          bagsDelivered: displayState.kpis.maletasEntregadas,
+          slaCompliance: displayState.kpis.cumplimientoSLA,
+          activeFlights: displayState.kpis.vuelosActivos,
+          slaViolated: displayState.kpis.slaVencidos,
         }
       : simState?.kpis ?? {
           bagsInTransit: 0, bagsDelivered: 0,
@@ -647,8 +648,12 @@ export default function App() {
     const globalWarehouseOccupancy = withCap.length > 0
       ? withCap.reduce((acc, a) => acc + (a.currentOccupation / a.warehouseCapacity) * 100, 0) / withCap.length
       : 0
-    return { ...base, globalFleetOccupancy, globalWarehouseOccupancy }
-  }, [backendState?.kpis, simState?.kpis, backendFlights, clockedAirports])
+      
+    const freeFleetSpace = backendFlights.reduce((acc, f) => acc + Math.max(0, (f.capacity || 0) - (f.currentLoad || 0)), 0)
+    const freeWarehouseSpace = withCap.reduce((acc, a) => acc + Math.max(0, (a.warehouseCapacity || 0) - (a.currentOccupation || 0)), 0)
+
+    return { ...base, globalFleetOccupancy, globalWarehouseOccupancy, freeFleetSpace, freeWarehouseSpace }
+  }, [displayState?.kpis, simState?.kpis, backendFlights, clockedAirports])
 
   const isOpsActive = Boolean(opsState)
 
@@ -748,6 +753,7 @@ export default function App() {
     api.resetSimulation()
       .then(() => refreshStaticAirports())
       .catch((err) => console.error('Reset backend error:', err))
+      .finally(() => startPolling())
   }
 
   async function handleRestart() {
@@ -969,10 +975,8 @@ export default function App() {
     localStorage.setItem('simHoraInicio',    String(startMin))
     localStorage.setItem('simDayStartedAt',  String(Date.now()))
     localStorage.setItem('simDayStartMinute', String(startMin))
-    // Reset real-elapsed counter for each new simulation
-    realStartRef.current = null
-    accumulatedRealMsRef.current = 0
-    setRealElapsedSeconds(0)
+    // Capture wall-clock start for real elapsed timer in FloatingClocks
+    setSimStartedAt(Date.now())
     setScreen('main')
     setActiveSideSection('vuelos')
     startPolling()
@@ -1097,7 +1101,7 @@ export default function App() {
             {/* KPIs / clocks — shift right when panel open */}
             <div style={{
               position: 'absolute', top: 20,
-              left: activeSideSection ? 392 : 72,
+              left: activeSideSection ? 412 : 72,
               zIndex: 600,
               display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none',
               transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -1106,7 +1110,7 @@ export default function App() {
                 <FloatingKPIs kpis={activeKpis} hasSimulation={Boolean(backendState)} />
               </DraggableWidget>
               <DraggableWidget ref={clockWidgetRef} containerRef={mapContainerRef}>
-                <FloatingClocks backendState={backendState} simClockMinutes={simClockMinutes} realElapsedSeconds={realElapsedSeconds} />
+                <FloatingClocks backendState={backendState} simClockMinutes={simClockMinutes} simStartMinute={simStartMinuteRef.current} simStartedAt={simStartedAt} />
               </DraggableWidget>
             </div>
 

@@ -2,10 +2,10 @@ import React from 'react'
 
 export default function FloatingKPIs({ kpis, hasSimulation }) {
   const data = [
-    { label: 'En tránsito',    value: hasSimulation ? kpis.bagsInTransit.toLocaleString() : '—', color: hasSimulation ? 'var(--text-bright)' : 'var(--muted)' },
-    { label: 'Vuelos activos', value: hasSimulation ? String(kpis.activeFlights) : '—', color: hasSimulation ? 'var(--blue-bright)' : 'var(--muted)' },
-    { label: 'Cumpl. SLA',     value: hasSimulation ? `${Number(kpis.slaCompliance).toFixed(1)}%` : '—', color: hasSimulation ? (kpis.slaCompliance >= 90 ? 'var(--green)' : kpis.slaCompliance >= 75 ? 'var(--amber)' : 'var(--red)') : 'var(--muted)' },
-    { label: 'SLA vencidos',   value: hasSimulation ? String(kpis.slaViolated) : '—', color: hasSimulation && kpis.slaViolated > 0 ? 'var(--red)' : 'var(--muted)' },
+    { label: 'Ocup. Vuelos',   value: hasSimulation ? `${Number(kpis.globalFleetOccupancy).toFixed(1)}%` : '—', color: hasSimulation ? (kpis.globalFleetOccupancy > 90 ? 'var(--red)' : kpis.globalFleetOccupancy > 75 ? 'var(--amber)' : 'var(--blue-bright)') : 'var(--muted)' },
+    { label: 'Ocup. Almacenes',value: hasSimulation ? `${Number(kpis.globalWarehouseOccupancy).toFixed(1)}%` : '—', color: hasSimulation ? (kpis.globalWarehouseOccupancy > 90 ? 'var(--red)' : kpis.globalWarehouseOccupancy > 75 ? 'var(--amber)' : 'var(--green)') : 'var(--muted)' },
+    { label: 'Espacio Disp. (V)', value: hasSimulation ? kpis.freeFleetSpace.toLocaleString() : '—', color: hasSimulation ? 'var(--text-bright)' : 'var(--muted)' },
+    { label: 'Espacio Disp. (A)', value: hasSimulation ? kpis.freeWarehouseSpace.toLocaleString() : '—', color: hasSimulation ? 'var(--text-bright)' : 'var(--muted)' },
   ]
 
   return (

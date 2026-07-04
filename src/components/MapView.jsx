@@ -2,8 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MapContainer, TileLayer, Tooltip, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
-import { CiAirportSign1 } from 'react-icons/ci'
-import { FaMapMarker } from 'react-icons/fa'
+import { MdWarehouse } from 'react-icons/md'
 
 const AIRPORT_BOUNDS = [[-40, -85], [60, 82]]
 const SNAP_THRESHOLD_PX = 200
@@ -126,22 +125,17 @@ function trafficLightColor(pct, threshold, theme) {
   return '#22d07a'
 }
 
-// FaMapMarker viewBox: 384×512 (ratio 3:4). react-icons sets width/height as HTML attrs
-// overriding any CSS — must strip them before applying correct dimensions (24×32).
-// Pin tip: center-x=12, bottom-y=32. iconAnchor=[12,32].
 function makeAirportIcon(pct, threshold, theme) {
   const pinColor = trafficLightColor(pct, threshold, theme)
-  const markerSvg = renderToStaticMarkup(React.createElement(FaMapMarker, { size: 20, color: pinColor }))
-  const signSvg   = renderToStaticMarkup(React.createElement(CiAirportSign1, { size: 16, color: '#fff' }))
-  const pinHtml = markerSvg
-    .replace(/\sheight="[^"]*"/, '')
-    .replace(/\swidth="[^"]*"/, '')
-    .replace('<svg ', '<svg style="width:20px;height:27px;display:block;" ')
+  const warehouseSvg = renderToStaticMarkup(React.createElement(MdWarehouse, { size: 16, color: '#fff' }))
+  const borderColor = theme === 'dark' ? '#060606' : '#ffffff'
+  // Single-line HTML avoids whitespace issues with Leaflet's DivIcon rendering
+  const html = `<div class="airport-pin" style="width:28px;height:28px;background:${pinColor};border-radius:50%;display:flex;align-items:center;justify-content:center;border:2.5px solid ${borderColor};box-shadow:0 0 7px ${pinColor}99;transform-origin:50% 50%;box-sizing:border-box;">${warehouseSvg}</div>`
   return L.divIcon({
     className: '',
-    html: `<div class="airport-pin" style="position:relative;width:20px;height:27px;transform-origin:50% 100%;">${pinHtml}<div style="position:absolute;top:3px;left:50%;transform:translateX(-50%);">${signSvg}</div></div>`,
-    iconSize: [20, 27],
-    iconAnchor: [10, 25],
+    html,
+    iconSize:   [28, 28],  // Exact visual size of the circle
+    iconAnchor: [14, 14],  // Center of the 28×28 circle → sits precisely on the coordinate
   })
 }
 
