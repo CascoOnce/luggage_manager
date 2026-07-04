@@ -1083,6 +1083,7 @@ export default function App() {
                 setMapSelectedVuelo={setMapSelectedVuelo}
                 setMapSelectedAirport={setMapSelectedAirport}
                 simState={simState}
+                onShowEnvioRoute={handleShowEnvioRoute}
                 airports={clockedAirports}
                 threshold={threshold}
                 setThreshold={setThreshold}
