@@ -3,21 +3,23 @@ import { api } from '../services/api.js'
 
 const s = {
   overlay: {
-    position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, zIndex: 500,
-    display: 'flex', justifyContent: 'flex-end', pointerEvents: 'auto',
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2000,
+    display: 'flex', pointerEvents: 'auto',
   },
   backdrop: {
-    flex: 1, height: '100%', border: 'none',
-    background: 'transparent', cursor: 'pointer',
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    background: 'transparent', border: 'none', cursor: 'pointer',
   },
   panel: {
-    position: 'relative', width: 400, height: '100%',
-    background: 'var(--panel)', borderLeft: '1px solid var(--border)',
-    display: 'flex', flexDirection: 'column', overflowY: 'auto', zIndex: 501,
+    position: 'absolute', left: 60, top: 10, bottom: 10, width: 340,
+    background: 'rgba(22, 27, 34, 0.75)', backdropFilter: 'blur(12px)',
+    border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: 16,
+    display: 'flex', flexDirection: 'column', overflowY: 'auto', zIndex: 2001,
+    boxShadow: '4px 4px 24px rgba(0, 0, 0, 0.5)',
   },
   header: {
     display: 'flex', alignItems: 'center', gap: 10,
-    padding: '14px 16px', borderBottom: '1px solid var(--border)',
+    padding: '16px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.1)',
     flexShrink: 0,
   },
   envioId: {
@@ -47,8 +49,8 @@ const s = {
     display: 'flex', justifyContent: 'space-between',
     alignItems: 'baseline', marginBottom: 7, gap: 8,
   },
-  rowLabel: { fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', flexShrink: 0 },
-  rowVal: { fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-bright)', textAlign: 'right' },
+  rowLabel: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', flexShrink: 0 },
+  rowVal: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', textAlign: 'right' },
   // Timeline
   tlRow: { display: 'flex', alignItems: 'stretch', gap: 12, position: 'relative' },
   tlDotCol: { display: 'flex', flexDirection: 'column', alignItems: 'center', width: 14, flexShrink: 0 },
@@ -58,10 +60,10 @@ const s = {
   }),
   tlLine: { flex: 1, width: 1, background: 'var(--border)', margin: '2px 0' },
   tlContent: { paddingBottom: 14, flex: 1, minWidth: 0 },
-  tlCode: { fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-bright)', fontWeight: 600 },
-  tlMeta: { fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', marginTop: 2 },
+  tlCode: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', fontWeight: 600 },
+  tlMeta: { fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 },
   // Status
-  statusMsg: { fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', padding: '20px 16px' },
+  statusMsg: { fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', padding: '20px 16px' },
   // Tiempo restante big number
   tiempoBlock: {
     padding: '16px 16px', borderBottom: 'none', textAlign: 'center',

@@ -1044,7 +1044,6 @@ export default function App() {
       )}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative', minHeight: 0 }}>
         {/* ── OPERACIONES (main map view) ─────────────────────────────── */}
-        {/* ── OPERACIONES (main map view) ─────────────────────────────── */}
         {(screen === 'main' && !configOpen) && (
           <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
             <div ref={mapContainerRef} style={{
@@ -1101,7 +1100,7 @@ export default function App() {
             {/* KPIs / clocks — shift right when panel open */}
             <div style={{
               position: 'absolute', top: 20,
-              left: activeSideSection ? 412 : 72,
+              left: activeSideSection ? 432 : 72,
               zIndex: 600,
               display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none',
               transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',

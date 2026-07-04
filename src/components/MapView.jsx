@@ -417,7 +417,7 @@ export default function MapView({
       </div>
     <MapContainer
       center={[20, 0]} zoom={3} minZoom={1} maxZoom={7}
-      zoomSnap={0} zoomDelta={0.25} wheelPxPerZoomLevel={120} wheelDebounceTime={10}
+      zoomSnap={0} zoomDelta={0.1} wheelPxPerZoomLevel={6000} wheelDebounceTime={40} scrollWheelZoom={true}
       maxBounds={[[-50, -90], [65, 90]]}
       maxBoundsViscosity={1.0}
       style={{ width: '100%', height: '100%', background: '#060606' }}
@@ -426,7 +426,7 @@ export default function MapView({
       <FitAirportBounds paddingLeft={viewportPaddingLeft} />
       <MapResizer />
       <IconScaler />
-      <ZoomSnapper airportList={airportList} />
+      {/* <ZoomSnapper airportList={airportList} /> */}
       {onMapClick && <MapClickDeselect onDeselect={onMapClick} />}
       <TileLayer
         url={theme === 'light'

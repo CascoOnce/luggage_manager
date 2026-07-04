@@ -3,21 +3,23 @@ import { api } from '../services/api.js'
 
 const s = {
   overlay: {
-    position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, zIndex: 500,
-    display: 'flex', justifyContent: 'flex-end', pointerEvents: 'auto',
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2000,
+    display: 'flex', pointerEvents: 'auto',
   },
   backdrop: {
-    flex: 1, height: '100%', border: 'none',
-    background: 'transparent', cursor: 'pointer',
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    background: 'transparent', border: 'none', cursor: 'pointer',
   },
   panel: {
-    position: 'relative', width: 380, height: '100%',
-    background: 'var(--panel)', borderLeft: '1px solid var(--border)',
-    display: 'flex', flexDirection: 'column', overflowY: 'auto', zIndex: 501,
+    position: 'absolute', left: 60, top: 10, bottom: 10, width: 340,
+    background: 'rgba(22, 27, 34, 0.75)', backdropFilter: 'blur(12px)',
+    border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: 16,
+    display: 'flex', flexDirection: 'column', overflowY: 'auto', zIndex: 2001,
+    boxShadow: '4px 4px 24px rgba(0, 0, 0, 0.5)',
   },
   header: {
     display: 'flex', alignItems: 'center', gap: 10,
-    padding: '14px 16px', borderBottom: '1px solid var(--border)',
+    padding: '16px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.1)',
     flexShrink: 0,
   },
   code: {
@@ -41,7 +43,7 @@ const s = {
     fontFamily: 'var(--mono)', fontSize: 16, lineHeight: 1,
     padding: '2px 4px', flexShrink: 0,
   },
-  section: { padding: '14px 16px', borderBottom: '1px solid var(--border)' },
+  section: { padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)' },
   sectionTitle: {
     fontFamily: 'var(--sans)', fontSize: 10, textTransform: 'uppercase',
     letterSpacing: 2, color: 'var(--muted)', fontWeight: 700,
@@ -63,8 +65,8 @@ const s = {
     display: 'flex', justifyContent: 'space-between',
     alignItems: 'baseline', marginBottom: 7, gap: 8,
   },
-  rowLabel: { fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', flexShrink: 0 },
-  rowVal: { fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-bright)', textAlign: 'right' },
+  rowLabel: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', flexShrink: 0 },
+  rowVal: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', textAlign: 'right' },
   timeline: { display: 'flex', flexDirection: 'column', gap: 0 },
   tlRow: { display: 'flex', alignItems: 'stretch', gap: 12 },
   tlDotCol: { display: 'flex', flexDirection: 'column', alignItems: 'center', width: 14, flexShrink: 0 },
@@ -79,8 +81,8 @@ const s = {
   tlContent: {
     paddingBottom: 16, flex: 1,
   },
-  tlLabel: { fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-bright)', fontWeight: 600 },
-  tlMeta: { fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', marginTop: 2 },
+  tlLabel: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', fontWeight: 600 },
+  tlMeta: { fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 },
 }
 
 function loadColor(pct) {
@@ -180,7 +182,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
         {/* Header */}
         <div style={s.header}>
           <span style={s.code}>{code}</span>
-          <span style={s.route}>{origin} → {dest}</span>
+          <div style={{ flex: 1 }} />
           <span style={s.pill(eColor)}>
             {estado === 'active' ? 'ACTIVO'
               : estado === 'planned' ? 'PLANIFICADO'
@@ -200,14 +202,14 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
                 <div style={s.barFill(pct, color)} />
               </div>
               <div style={s.barLabel}>
-                <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 9 }}>
+                <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11 }}>
                   {load} / {cap} maletas
                 </span>
-                <span style={{ color, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700 }}>{pct.toFixed(2)}%</span>
+                <span style={{ color, fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700 }}>{pct.toFixed(2)}%</span>
               </div>
             </>
           ) : (
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
               Sin datos de asignación (modo en vivo)
             </div>
           )}
@@ -224,14 +226,14 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
             <span style={s.rowLabel}>Hora salida</span>
             <span style={s.rowVal}>
               {salidaLocal ?? salida}
-              {salidaLocal && <span style={{ color: 'var(--muted)', fontSize: 9, marginLeft: 6 }}>(UTC {salida})</span>}
+              {salidaLocal && <span style={{ color: 'var(--muted)', fontSize: 11, marginLeft: 6 }}>(UTC {salida})</span>}
             </span>
           </div>
           <div style={s.row}>
             <span style={s.rowLabel}>Hora llegada</span>
             <span style={s.rowVal}>
               {llegadaLocal ? (isOvernight ? `${llegadaLocal} (+1d)` : llegadaLocal) : llegadaLabel}
-              {llegadaLocal && <span style={{ color: 'var(--muted)', fontSize: 9, marginLeft: 6 }}>(UTC {llegada})</span>}
+              {llegadaLocal && <span style={{ color: 'var(--muted)', fontSize: 11, marginLeft: 6 }}>(UTC {llegada})</span>}
             </span>
           </div>
           <div style={s.row}>
@@ -241,19 +243,19 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
         </div>
 
         {/* Envíos asignados */}
-        <div style={s.section}>
+        <div style={{ ...s.section, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <span style={s.sectionTitle}>Envíos asignados ({enviosAsignados.length})</span>
           {enviosAsignados.length === 0 ? (
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>Sin envíos asignados</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>Sin envíos asignados</div>
           ) : (
-            <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
               {enviosAsignados.map((e) => (
                 <div key={e.idEnvio} style={{ padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--blue)' }}>{e.idEnvio}</span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>{e.cantidadMaletas} maletas</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--blue)' }}>{e.idEnvio}</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>{e.cantidadMaletas} maletas</span>
                   </div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                     {e.aeropuertoOrigen} → {e.aeropuertoDestino}
                   </div>
                 </div>
@@ -263,7 +265,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
         </div>
 
         {/* Trayecto */}
-        <div style={{ ...s.section, borderBottom: 'none', flex: 1 }}>
+        <div style={{ ...s.section, borderBottom: 'none' }}>
           <span style={s.sectionTitle}>Trayecto</span>
           <div style={s.timeline}>
             {/* Origen */}
@@ -327,13 +329,13 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
         {showConfirmCancel && (
           <div style={{
             position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(0,0,0,0.85)', zIndex: 10,
+            background: 'rgba(0,0,0,0.6)', zIndex: 10, borderRadius: 16,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            backdropFilter: 'blur(4px)', padding: 24,
+            backdropFilter: 'blur(6px)', padding: 24,
           }}>
             <div style={{
-              background: 'var(--panel)', border: '1px solid var(--border)',
-              borderRadius: 8, padding: 20, width: '100%',
+              background: 'rgba(22, 27, 34, 0.95)', border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: 12, padding: 20, width: '100%',
               boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
               display: 'flex', flexDirection: 'column', gap: 16
             }}>

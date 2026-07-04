@@ -3,21 +3,23 @@ import { api } from '../services/api.js'
 
 const s = {
   overlay: {
-    position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, zIndex: 500,
-    display: 'flex', justifyContent: 'flex-end', pointerEvents: 'auto',
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2000,
+    display: 'flex', pointerEvents: 'auto',
   },
   backdrop: {
-    flex: 1, height: '100%', border: 'none',
-    background: 'transparent', cursor: 'pointer',
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    background: 'transparent', border: 'none', cursor: 'pointer',
   },
   panel: {
-    position: 'relative', width: 380, height: '100%',
-    background: 'var(--panel)', borderLeft: '1px solid var(--border)',
-    display: 'flex', flexDirection: 'column', overflowY: 'auto', zIndex: 501,
+    position: 'absolute', left: 60, top: 10, bottom: 10, width: 340,
+    background: 'rgba(22, 27, 34, 0.75)', backdropFilter: 'blur(12px)',
+    border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: 16,
+    display: 'flex', flexDirection: 'column', overflowY: 'auto', zIndex: 2001,
+    boxShadow: '4px 4px 24px rgba(0, 0, 0, 0.5)',
   },
   header: {
     display: 'flex', alignItems: 'center', gap: 10,
-    padding: '14px 16px', borderBottom: '1px solid var(--border)',
+    padding: '16px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.1)',
     flexShrink: 0,
   },
   iata: {
@@ -25,7 +27,7 @@ const s = {
     color: 'var(--text-bright)', letterSpacing: 1,
   },
   headerName: {
-    fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--muted)',
+    fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--muted)',
     flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
   pill: (color) => ({
@@ -41,9 +43,9 @@ const s = {
     fontFamily: 'var(--mono)', fontSize: 16, lineHeight: 1,
     padding: '2px 4px', flexShrink: 0,
   },
-  section: { padding: '14px 16px', borderBottom: '1px solid var(--border)' },
+  section: { padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)' },
   sectionTitle: {
-    fontFamily: 'var(--sans)', fontSize: 10, textTransform: 'uppercase',
+    fontFamily: 'var(--sans)', fontSize: 11, textTransform: 'uppercase',
     letterSpacing: 2, color: 'var(--muted)', fontWeight: 700,
     marginBottom: 10, display: 'block',
   },
@@ -63,18 +65,18 @@ const s = {
     display: 'flex', justifyContent: 'space-between',
     alignItems: 'baseline', marginBottom: 7, gap: 8,
   },
-  rowLabel: { fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', flexShrink: 0 },
-  rowVal: { fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-bright)', textAlign: 'right' },
+  rowLabel: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', flexShrink: 0 },
+  rowVal: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', textAlign: 'right' },
   flightItem: {
     display: 'flex', alignItems: 'center', gap: 8,
     padding: '7px 0', borderBottom: '1px solid rgba(99,152,255,0.07)',
   },
   dot: (color) => ({
-    width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
     background: color, boxShadow: `0 0 5px ${color}`,
   }),
-  flightCode: { fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-bright)', flex: 1 },
-  flightMeta: { fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' },
+  flightCode: { fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--text-bright)', flex: 1 },
+  flightMeta: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' },
   stat: {
     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
     padding: '10px 0',
@@ -115,24 +117,55 @@ const TAB_STYLE = (active) => ({
   color: active ? 'var(--text-bright)' : 'var(--muted)',
 })
 
-function EnvioRow({ e }) {
+function EnvioRow({ e, singleLine }) {
+  if (singleLine) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', gap: 8 }}>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--blue)', flexShrink: 0 }}>
+          {e.idEnvio}
+        </span>
+        
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {e.aeropuertoOrigen} → {e.aeropuertoDestino}
+          {e.codigoVuelo && <span style={{ color: 'var(--text)' }}> · {e.codigoVuelo}</span>}
+        </span>
+
+        {e.hora && (
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--amber)', flexShrink: 0 }}>
+            {e.hora}
+          </span>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', flexShrink: 0 }}>
+          {e.cantidadMaletas} 🧳
+        </div>
+
+        {e.sla != null && (
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 3, padding: '0 4px', flexShrink: 0 }}>
+            SLA {e.sla}d
+          </span>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--blue)' }}>{e.idEnvio}</span>
-        {e.hora && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--amber)' }}>{e.hora}</span>}
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--blue)' }}>{e.idEnvio}</span>
+        {e.hora && <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--amber)' }}>{e.hora}</span>}
       </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
         {e.rutaCompleta && e.rutaCompleta.length > 2
           ? e.rutaCompleta.join(' → ')
           : <>{e.aeropuertoOrigen} → {e.aeropuertoDestino}</>
         }
         {e.codigoVuelo && <span style={{ color: 'var(--text)' }}> · {e.codigoVuelo}</span>}
-        <span style={{ marginLeft: 6 }}>{e.cantidadMaletas} maletas</span>
+        <span style={{ marginLeft: 6 }}>{e.cantidadMaletas} 🧳</span>
       </div>
       <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
         {e.sla != null && (
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 3, padding: '0 4px' }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 3, padding: '0 4px' }}>
             SLA {e.sla}d
           </span>
         )}
@@ -193,7 +226,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
         {/* Header */}
         <div style={s.header}>
           <span style={s.iata}>{airport.id}</span>
-          <span style={s.headerName}>{airport.name || airport.nombre}</span>
+          <div style={{ flex: 1 }} />
           <span style={s.pill(color)}>{semaforoLabel(pct)}</span>
           <button style={s.closeBtn} onClick={onClose} aria-label="Cerrar">✕</button>
         </div>
@@ -218,7 +251,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
                 <span style={s.sectionTitle}>En almacén: {inventory.enAlmacen?.length ?? 0} envíos ({sumarMaletas(inventory.enAlmacen)} maletas)</span>
                 {(inventory.enAlmacen?.length ?? 0) === 0
                   ? <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>Sin envíos en almacén</div>
-                  : inventory.enAlmacen.map((e, i) => <EnvioRow key={`${e.idEnvio}-${i}`} e={e} />)
+                  : inventory.enAlmacen.map((e, i) => <EnvioRow key={`${e.idEnvio}-${i}`} e={e} singleLine />)
                 }
               </>
             )}

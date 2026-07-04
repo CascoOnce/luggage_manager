@@ -325,14 +325,16 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
       </div>
 
       <div style={{ flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
+        
         <div style={{
           position: 'absolute',
           top: 0,
           right: 0,
           bottom: 0,
-          left: activeSideSection ? 372 : 52,
+          left: activeSideSection ? 412 : 52,
           transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         }}>
+          {/* Map Layer */}
           <MapView
             airports={visibleAirports}
             flights={visibleFlights}
@@ -340,8 +342,11 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
             setSelectedFlight={setSelectedFlight}
             selectedFlightData={selectedFlightData}
             onAirportClick={setSelectedAirport}
-            onMapClick={handleCloseVuelo}
-            theme={theme}
+            onMapClick={() => {
+              setSelectedAirport(null)
+              setSelectedFlight(null)
+            }}
+            theme="dark"
           />
         </div>
 
