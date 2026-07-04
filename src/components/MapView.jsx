@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MapContainer, TileLayer, Tooltip, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
-import { MdWarehouse } from 'react-icons/md'
-
-const AIRPORT_BOUNDS = [[-40, -85], [60, 82]]
+import { MdWarehouse, MdFlight, MdFilterList } from 'react-icons/md'
+import DraggableWidget from './DraggableWidget'
+const AIRPORT_BOUNDS = [[-50, -85], [60, 82]]
 const SNAP_THRESHOLD_PX = 200
 
 // Keeps the airport bounding box always filling the container.
@@ -371,53 +371,151 @@ export default function MapView({
   threshold = 85,
 }) {
   const [showRoutes, setShowRoutes] = useState(true)
-  const [showEmptyFlights, setShowEmptyFlights] = useState(true)
+  const [aptFilters, setAptFilters] = useState({ blue: true, green: true, amber: true, red: true })
+  const [fltFilters, setFltFilters] = useState({ blue: true, green: true, amber: true, red: true })
+  const [isFiltersExpanded, setIsFiltersExpanded] = useState(false)
   const [hoveredAirport, setHoveredAirport] = useState(null)
+  
+  const containerRef = useRef(null)
+  const widgetRef = useRef(null)
+
+  useEffect(() => {
+    const handleRestore = () => {
+      if (widgetRef.current) {
+        widgetRef.current.setVisibility(true)
+        widgetRef.current.resetPosition()
+      }
+    }
+    window.addEventListener('restoreWidgets', handleRestore)
+    return () => window.removeEventListener('restoreWidgets', handleRestore)
+  }, [])
+
   const airportList = airports || []
   const flightList = flights || []
 
   const apIdx = useMemo(() => airportIndex(airportList), [airportList])
 
+  const getTrafficLight = (pct) => {
+    if (pct === 0) return 'blue'
+    if (pct >= threshold) return 'red'
+    if (pct >= threshold - 20) return 'amber'
+    return 'green'
+  }
+
+  const filteredAirports = useMemo(() => {
+    return airportList.filter(ap => {
+      const pct = occupancyPct(ap)
+      const tl = getTrafficLight(pct)
+      return aptFilters[tl]
+    })
+  }, [airportList, aptFilters, threshold])
+
   // Only show active (non-cancelled) flights on map
-  const activeFlights = flightList.filter((f) => 
-    f.status === 'active' && (showEmptyFlights || (f.currentLoad ?? 0) > 0)
+  const activeFlights = flightList.filter((f) => {
+    if (f.status !== 'active') return false
+    
+    const flightPct = f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
+    const tl = getTrafficLight(flightPct)
+    return fltFilters[tl]
+  })
+
+  const PillBtn = ({ active, color, onClick }) => (
+    <button
+      onClick={onClick}
+      style={{
+        background: active ? `${color}25` : 'rgba(255,255,255,0.02)',
+        border: `1px solid ${active ? `${color}88` : 'rgba(255,255,255,0.1)'}`,
+        borderRadius: 4, width: 24, height: 24, padding: 0, cursor: 'pointer',
+        transition: 'all 0.2s ease', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <div style={{ 
+        width: 10, height: 10, borderRadius: '50%', 
+        backgroundColor: active ? color : 'rgba(255,255,255,0.2)', 
+        boxShadow: active ? `0 0 6px ${color}88` : 'none',
+        transition: 'all 0.2s ease'
+      }} />
+    </button>
   )
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <div style={{ position: 'absolute', bottom: 16, left: 32, zIndex: 500, display: 'flex', gap: 8, flexDirection: 'row' }}>
-        <button
-          onClick={() => setShowRoutes(v => !v)}
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <div style={{ position: 'absolute', bottom: 16, left: 20, zIndex: 500, pointerEvents: 'none' }}>
+        <DraggableWidget
+          ref={widgetRef}
+          containerRef={containerRef}
           style={{
-            background: showRoutes ? 'rgba(61,139,255,0.15)' : 'rgba(255,255,255,0.05)',
-            border: `1px solid ${showRoutes ? '#3d8bff55' : 'rgba(255,255,255,0.1)'}`,
-            color: showRoutes ? '#60a5fa' : 'rgba(255,255,255,0.3)',
-            fontFamily: 'var(--mono)', fontSize: 10, padding: '5px 10px',
-            borderRadius: 4, cursor: 'pointer', letterSpacing: 0.8,
-            textTransform: 'uppercase', backdropFilter: 'blur(4px)',
-            transition: 'all 0.2s ease',
+            pointerEvents: 'auto',
+            background: 'rgba(22, 27, 34, 0.85)', backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8,
+            padding: '8px', display: 'flex', flexDirection: 'column', gap: 8,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', width: 'max-content'
           }}
         >
-          {showRoutes ? '— rutas' : '+ rutas'}
-        </button>
-        <button
-          onClick={() => setShowEmptyFlights(v => !v)}
-          style={{
-            background: showEmptyFlights ? 'rgba(61,139,255,0.15)' : 'rgba(255,255,255,0.05)',
-            border: `1px solid ${showEmptyFlights ? '#3d8bff55' : 'rgba(255,255,255,0.1)'}`,
-            color: showEmptyFlights ? '#60a5fa' : 'rgba(255,255,255,0.3)',
-            fontFamily: 'var(--mono)', fontSize: 10, padding: '5px 10px',
-            borderRadius: 4, cursor: 'pointer', letterSpacing: 0.8,
-            textTransform: 'uppercase', backdropFilter: 'blur(4px)',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          {showEmptyFlights ? '— vacíos' : '+ vacíos'}
-        </button>
+          <div 
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px', userSelect: 'none' }}
+          >
+            <button
+              onClick={(e) => { e.stopPropagation(); setIsFiltersExpanded(!isFiltersExpanded) }}
+              style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px', background: 'transparent', border: 'none', borderRadius: 4 }}
+              title={isFiltersExpanded ? "Ocultar filtros" : "Mostrar filtros"}
+            >
+              <MdFilterList size={18} color="rgba(255,255,255,0.7)" />
+            </button>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.9)', letterSpacing: 1, flex: 1, cursor: 'move' }} title="Arrastrar">
+              FILTROS DE MAPA
+            </span>
+          </div>
+
+          {isFiltersExpanded && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 10 }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowRoutes(v => !v) }}
+                  style={{
+                    flex: 1,
+                    background: showRoutes ? 'rgba(61,139,255,0.15)' : 'rgba(255,255,255,0.05)',
+                    border: `1px solid ${showRoutes ? '#3d8bff55' : 'rgba(255,255,255,0.1)'}`,
+                    color: showRoutes ? '#60a5fa' : 'rgba(255,255,255,0.3)',
+                    fontFamily: 'var(--mono)', fontSize: 10, padding: '4px 10px',
+                    borderRadius: 4, cursor: 'pointer', letterSpacing: 0.8,
+                    textTransform: 'uppercase', transition: 'all 0.2s ease',
+                  }}
+                >
+                  {showRoutes ? '— RUTAS' : '+ RUTAS'}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 24, display: 'flex', justifyContent: 'center' }}>
+                  <MdWarehouse size={16} color="rgba(255,255,255,0.5)" />
+                </div>
+                <div style={{ display: 'flex', gap: 4, flex: 1 }}>
+                  <PillBtn active={aptFilters.blue} color="#4d9fff" onClick={(e) => { e.stopPropagation(); setAptFilters(f => ({ ...f, blue: !f.blue })) }} />
+                  <PillBtn active={aptFilters.green} color="#22d07a" onClick={(e) => { e.stopPropagation(); setAptFilters(f => ({ ...f, green: !f.green })) }} />
+                  <PillBtn active={aptFilters.amber} color="#f5a623" onClick={(e) => { e.stopPropagation(); setAptFilters(f => ({ ...f, amber: !f.amber })) }} />
+                  <PillBtn active={aptFilters.red} color="#f04b4b" onClick={(e) => { e.stopPropagation(); setAptFilters(f => ({ ...f, red: !f.red })) }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 24, display: 'flex', justifyContent: 'center' }}>
+                  <MdFlight size={16} color="rgba(255,255,255,0.5)" />
+                </div>
+                <div style={{ display: 'flex', gap: 4, flex: 1 }}>
+                  <PillBtn active={fltFilters.blue} color="#4d9fff" onClick={(e) => { e.stopPropagation(); setFltFilters(f => ({ ...f, blue: !f.blue })) }} />
+                  <PillBtn active={fltFilters.green} color="#22d07a" onClick={(e) => { e.stopPropagation(); setFltFilters(f => ({ ...f, green: !f.green })) }} />
+                  <PillBtn active={fltFilters.amber} color="#f5a623" onClick={(e) => { e.stopPropagation(); setFltFilters(f => ({ ...f, amber: !f.amber })) }} />
+                  <PillBtn active={fltFilters.red} color="#f04b4b" onClick={(e) => { e.stopPropagation(); setFltFilters(f => ({ ...f, red: !f.red })) }} />
+                </div>
+              </div>
+            </div>
+          )}
+        </DraggableWidget>
       </div>
     <MapContainer
       center={[20, 0]} zoom={3} minZoom={1} maxZoom={7}
-      zoomSnap={0} zoomDelta={0.1} wheelPxPerZoomLevel={6000} wheelDebounceTime={40} scrollWheelZoom={true}
+      zoomSnap={0} zoomDelta={0.5} wheelPxPerZoomLevel={150} wheelDebounceTime={40} scrollWheelZoom={true}
       maxBounds={[[-50, -90], [65, 90]]}
       maxBoundsViscosity={1.0}
       style={{ width: '100%', height: '100%', background: '#060606' }}
@@ -457,7 +555,7 @@ export default function MapView({
 
       {/* ── AIRPORT NODES ─────────────────────────────────────────────────── */}
       <AirportMarkers
-        airports={airportList}
+        airports={filteredAirports}
         theme={theme}
         threshold={threshold}
         hoveredAirport={hoveredAirport}

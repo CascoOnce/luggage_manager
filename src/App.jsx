@@ -995,6 +995,7 @@ export default function App() {
       clockWidgetRef.current.setVisibility(true)
       clockWidgetRef.current.resetPosition()
     }
+    window.dispatchEvent(new CustomEvent('restoreWidgets'))
   }
 
   return (
@@ -1051,7 +1052,7 @@ export default function App() {
               top: 0,
               right: 0,
               bottom: 0,
-              left: activeSideSection ? 372 : 52,
+              left: activeSideSection ? 412 : 52,
               zIndex: 0,
               transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             }}>
