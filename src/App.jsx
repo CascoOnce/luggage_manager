@@ -520,21 +520,6 @@ export default function App() {
     })
   }, [visibleAirports, airportMapFilter, threshold])
 
-  const mapFilteredFlights = useMemo(() => {
-    const { origin, dest, semaforo } = vueloMapFilter
-    if (!origin && !dest && semaforo.length === 0) return backendFlights
-    return backendFlights.filter(f => {
-      if (origin && f.origin !== origin) return false
-      if (dest && f.destination !== dest) return false
-      if (semaforo.length > 0) {
-        const pct = f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
-        const s = pct === 0 ? 'vacio' : pct >= 85 ? 'rojo' : pct >= 60 ? 'ambar' : 'verde'
-        if (!semaforo.includes(s)) return false
-      }
-      return true
-    })
-  }, [backendFlights, vueloMapFilter])
-
   const normalizedRoutes = useMemo(() =>
     simState?.envios
       ? simState.envios.map((envio, idx) => ({
@@ -590,6 +575,21 @@ export default function App() {
         fraction: flightFractionAtMinute(simClockMinutes, v.depMin, v.arrMin),
       }))
   }, [activeVuelosWithTimes, simClockMinutes, originSet, destSet, displayState?.diaActual])
+
+  const mapFilteredFlights = useMemo(() => {
+    const { origin, dest, semaforo } = vueloMapFilter
+    if (!origin && !dest && semaforo.length === 0) return backendFlights
+    return backendFlights.filter(f => {
+      if (origin && f.origin !== origin) return false
+      if (dest && f.destination !== dest) return false
+      if (semaforo.length > 0) {
+        const pct = f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
+        const s = pct === 0 ? 'vacio' : pct >= 60 ? (pct >= 85 ? 'rojo' : 'ambar') : 'verde'
+        if (!semaforo.includes(s)) return false
+      }
+      return true
+    })
+  }, [backendFlights, vueloMapFilter])
 
   const backendPlannedFlights = useMemo(() => {
     const day = displayState?.diaActual || displayState?.currentDay || 1
