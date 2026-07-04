@@ -275,7 +275,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
     border: '1px solid var(--border)',
     color: 'var(--text)',
     fontFamily: 'var(--mono)',
-    fontSize: 13,
+    fontSize: 15,
     padding: '8px 10px',
     boxSizing: 'border-box',
     outline: 'none',
@@ -284,7 +284,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
 
   const labelStyle = {
     fontFamily: 'var(--mono)',
-    fontSize: 11,
+    fontSize: 13,
     textTransform: 'uppercase',
     letterSpacing: 1,
     color: 'var(--muted)',
@@ -294,7 +294,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
 
   const sectionTitleStyle = {
     fontFamily: 'var(--mono)',
-    fontSize: 11,
+    fontSize: 13,
     textTransform: 'uppercase',
     letterSpacing: 2,
     color: 'var(--muted)',
@@ -332,7 +332,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
               background: 'transparent',
               color: 'var(--muted)',
               fontFamily: 'var(--mono)',
-              fontSize: 12,
+              fontSize: 14,
               textTransform: 'uppercase',
               letterSpacing: 1,
               cursor: uploadLoading ? 'not-allowed' : 'pointer',
@@ -345,7 +345,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
           </label>
 
           {uploadFileError && (
-            <div style={{ marginTop: 6, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>
+            <div style={{ marginTop: 6, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 13 }}>
               {uploadFileError}
             </div>
           )}
@@ -378,8 +378,8 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
                       <div style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
                         <span style={{ width: 10, height: 10, borderRadius: '50%', background: statusColor, flexShrink: 0, display: 'inline-block' }} />
                         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                          <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-                          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>
                             <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', marginRight: 6 }}>{ext}</span>
                             {status === 'in_progress' && 'En curso'}
                             {status === 'done' && 'Completado'}
@@ -391,7 +391,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
                         onClick={() => removeSelectedFile(idx)}
                         disabled={uploadLoading}
                         title="Eliminar"
-                        style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: uploadLoading ? 'not-allowed' : 'pointer', flexShrink: 0 }}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: uploadLoading ? 'not-allowed' : 'pointer', flexShrink: 0 }}
                       >
                         ×
                       </button>
@@ -410,7 +410,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
                   border: '1px solid rgba(88,166,255,0.3)',
                   color: 'var(--blue)',
                   fontFamily: 'var(--mono)',
-                  fontSize: 12,
+                  fontSize: 14,
                   textTransform: 'uppercase',
                   letterSpacing: 1,
                   cursor: uploadLoading ? 'not-allowed' : 'pointer',
@@ -429,7 +429,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
             </div>
           )}
 
-          <div style={{ marginTop: 8, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 10, opacity: 0.6 }}>
+          <div style={{ marginTop: 8, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12, opacity: 0.6 }}>
             Formato: _envios_XXXX_.txt
           </div>
         </div>
@@ -501,7 +501,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
                 required
               />
               {localTimeHint && (
-                <div style={{ marginTop: 4, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+                <div style={{ marginTop: 4, fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>
                   {localTimeHint}
                 </div>
               )}
@@ -528,7 +528,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
                 border: '1px solid rgba(34,197,94,0.4)',
                 color: '#22c55e',
                 fontFamily: 'var(--mono)',
-                fontSize: 12,
+                fontSize: 14,
                 textTransform: 'uppercase',
                 letterSpacing: 1,
                 cursor: (!origen || !destino || !codigoCliente.trim()) ? 'not-allowed' : 'pointer',
@@ -539,7 +539,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
             </button>
 
             {formError && (
-              <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>
+              <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 13 }}>
                 {formError}
               </div>
             )}
@@ -557,7 +557,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
               const idDisplay = formatIdPedido(e.idPedido)
               return (
                 <li key={e._localId} style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 4, padding: '5px 6px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 11, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 13, overflow: 'hidden' }}>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                       {idDisplay && <span style={{ color: 'var(--muted)', flexShrink: 0 }}>{idDisplay}</span>}
                       <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>{e.iataOrigen}</span>
@@ -566,11 +566,11 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
                       <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{String(e.cantidadMaletas).padStart(2, '0')} {horaDisplay}</span>
                     </div>
                     {e.idCliente && (
-                      <span style={{ color: 'var(--blue)', fontSize: 10, opacity: 0.8 }}>{e.idCliente}</span>
+                      <span style={{ color: 'var(--blue)', fontSize: 12, opacity: 0.8 }}>{e.idCliente}</span>
                     )}
                   </div>
                   <button onClick={() => setPendingEnvios(prev => prev.filter(x => x._localId !== e._localId))}
-                    title="Eliminar" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: 'pointer', flexShrink: 0, lineHeight: 1, padding: '0 2px' }}>×</button>
+                    title="Eliminar" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', flexShrink: 0, lineHeight: 1, padding: '0 2px' }}>×</button>
                 </li>
               )
             })}
@@ -591,7 +591,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
             border: '1px solid rgba(88,166,255,0.3)',
             color: 'var(--blue)',
             fontFamily: 'var(--mono)',
-            fontSize: 12,
+            fontSize: 14,
             textTransform: 'uppercase',
             letterSpacing: 1,
             fontWeight: 700,
@@ -603,14 +603,14 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
         </button>
 
         {planResult && !planLoading && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#22c55e' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: '#22c55e' }}>
             {planResult.planesCalculados ?? planResult.planned ?? 0} planes calculados,{' '}
             {planResult.sinRuta ?? planResult.unplanned ?? 0} sin ruta
           </div>
         )}
 
         {planError && !planLoading && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--red)' }}>
             {planError}
           </div>
         )}

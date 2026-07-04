@@ -144,7 +144,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
       .map((v) => {
         const depLocal = parseTimeToMinutes(v.horaSalida)
         const arrLocal = parseTimeToMinutes(v.horaLlegada)
-        // Flight times are origin/destination local; convert both ends to UTC.
+        // Convert local origin/dest times to UTC for the global clock
         const depMin = depLocal != null ? mod1440(depLocal - (v.husOrigen ?? 0) * 60) : null
         const arrMin = arrLocal != null ? mod1440(arrLocal - (v.husDestino ?? 0) * 60) : null
         return {
@@ -166,7 +166,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
           enUso: v.enUso ?? false,
         }
       })
-      .filter((v) => v.enUso && isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
+      .filter((v) => isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
   }, [opsState?.vuelos, liveNowMinutes])
 
   const plannedFlights = useMemo(() => {
@@ -197,7 +197,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
           enUso: v.enUso ?? false,
         }
       })
-      .filter((v) => !v.enUso || !isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
+      .filter((v) => !isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
   }, [opsState?.vuelos, liveNowMinutes])
 
   const cancelledFlights = useMemo(() => {
@@ -289,7 +289,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
 
   if (!opsState) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: '12px', color: 'var(--text-secondary, #888)', fontSize: '14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: '12px', color: 'var(--text-secondary, #888)', fontSize: '16px' }}>
         <div style={{ width: '32px', height: '32px', border: '3px solid var(--border, #444)', borderTopColor: '#22c55e', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         Cargando operaciones...
@@ -304,24 +304,24 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
       {/* Header bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 16px', borderBottom: '1px solid var(--border, #333)', background: 'var(--panel, #1a1a1a)', flexShrink: 0 }}>
         {onBack && (
-          <button onClick={onBack} style={{ background: 'none', border: '1px solid var(--border, #444)', borderRadius: '4px', color: 'var(--text, #eee)', cursor: 'pointer', padding: '3px 10px', fontSize: '13px', marginRight: '6px' }}>
+          <button onClick={onBack} style={{ background: 'none', border: '1px solid var(--border, #444)', borderRadius: '4px', color: 'var(--text, #eee)', cursor: 'pointer', padding: '3px 10px', fontSize: '15px', marginRight: '6px' }}>
             ← Volver
           </button>
         )}
         <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e', animation: 'livePulse 2s ease-in-out infinite', flexShrink: 0 }} />
-        <span style={{ fontWeight: 700, fontSize: '13px', color: '#22c55e', letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ fontWeight: 700, fontSize: '15px', color: '#22c55e', letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: 12 }}>
           <span>OPERACIONES {opsBase ? `— ${opsBase}` : ''}</span>
           {opsBase && (
             <button 
               onClick={() => { sessionStorage.removeItem('opsBase'); setOpsBase(null); }}
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--muted)', borderRadius: 4, padding: '2px 8px', fontSize: '10px', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: 0.5 }}
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--muted)', borderRadius: 4, padding: '2px 8px', fontSize: '12px', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: 0.5 }}
               title="Cambiar Base de Operaciones"
             >
               Cambiar Base
             </button>
           )}
         </span>
-        <span style={{ marginLeft: 'auto', fontSize: '13px', color: 'var(--text-secondary, #888)', fontVariantNumeric: 'tabular-nums' }}>{wallClock}</span>
+        <span style={{ marginLeft: 'auto', fontSize: '15px', color: 'var(--text-secondary, #888)', fontVariantNumeric: 'tabular-nums' }}>{wallClock}</span>
       </div>
 
       <div style={{ flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
@@ -390,15 +390,15 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
           <div style={{ background: '#161b22', border: '1px solid var(--border)', borderRadius: 8, padding: 24, width: 400, maxWidth: '90vw', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', maxHeight: '85vh' }}>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-              <h2 style={{ margin: 0, fontFamily: 'var(--mono)', fontSize: 16, color: 'var(--text-bright)', letterSpacing: 1 }}>BASE DE OPERACIONES</h2>
+              <h2 style={{ margin: 0, fontFamily: 'var(--mono)', fontSize: 18, color: 'var(--text-bright)', letterSpacing: 1 }}>BASE DE OPERACIONES</h2>
               {onBack && (
-                <button onClick={onBack} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text)', cursor: 'pointer', padding: '4px 10px', fontSize: '11px', fontFamily: 'var(--mono)', textTransform: 'uppercase', flexShrink: 0 }}>
+                <button onClick={onBack} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text)', cursor: 'pointer', padding: '4px 10px', fontSize: '13px', fontFamily: 'var(--mono)', textTransform: 'uppercase', flexShrink: 0 }}>
                   ← Volver
                 </button>
               )}
             </div>
             
-            <p style={{ margin: '0 0 16px 0', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', lineHeight: 1.4 }}>
+            <p style={{ margin: '0 0 16px 0', fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--muted)', lineHeight: 1.4 }}>
               Seleccione el aeropuerto desde el cual estará despachando envíos en esta sesión.
             </p>
 
@@ -408,12 +408,12 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
                 placeholder="Buscar IATA o Nombre..." 
                 value={modalSearch}
                 onChange={e => setModalSearch(e.target.value)}
-                style={{ flex: 1, background: '#161b22', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '8px', borderRadius: 4, outline: 'none' }}
+                style={{ flex: 1, background: '#161b22', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 14, padding: '8px', borderRadius: 4, outline: 'none' }}
               />
               <select 
                 value={modalContinent} 
                 onChange={e => setModalContinent(e.target.value)}
-                style={{ width: 120, background: '#161b22', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '8px', borderRadius: 4, outline: 'none', appearance: 'none', WebkitAppearance: 'none' }}
+                style={{ width: 120, background: '#161b22', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 14, padding: '8px', borderRadius: 4, outline: 'none', appearance: 'none', WebkitAppearance: 'none' }}
               >
                 <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Continente</option>
                 {[...new Set(ingressAirports.map(a => a.continent).filter(Boolean))].sort().map(c => (
@@ -448,10 +448,10 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
                   onMouseEnter={e => { e.currentTarget.style.background = 'rgba(34,197,94,0.1)'; e.currentTarget.style.borderColor = 'rgba(34,197,94,0.3)' }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = 'var(--border)' }}
                 >
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: 14, fontWeight: 700, color: '#22c55e', width: 40 }}>{ap.id}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 700, color: '#22c55e', width: 40 }}>{ap.id}</span>
                   <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ap.name}</span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>{ap.continent} • UTC{ap.huso >= 0 ? '+' : ''}{ap.huso}</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ap.name}</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>{ap.continent} • UTC{ap.huso >= 0 ? '+' : ''}{ap.huso}</span>
                   </div>
                 </button>
               ))}

@@ -97,20 +97,20 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px 12px', overflow: 'hidden' }}>
       <div style={{ display: 'flex', marginBottom: 10, background: 'rgba(255,255,255,0.04)', borderRadius: 4, padding: 2 }}>
-        <button onClick={() => setTab('activos')} style={{ flex: 1, padding: '4px 0', border: 'none', background: tab === 'activos' ? 'rgba(61,139,255,0.15)' : 'transparent', color: tab === 'activos' ? 'var(--blue)' : 'var(--muted)', borderRadius: 3, fontFamily: 'var(--mono)', fontSize: 10, cursor: 'pointer', transition: 'all 0.15s' }}>
+        <button onClick={() => setTab('activos')} style={{ flex: 1, padding: '4px 0', border: 'none', background: tab === 'activos' ? 'rgba(61,139,255,0.15)' : 'transparent', color: tab === 'activos' ? 'var(--blue)' : 'var(--muted)', borderRadius: 3, fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer', transition: 'all 0.15s' }}>
           ACTIVOS
         </button>
-        <button onClick={() => setTab('planificados')} style={{ flex: 1, padding: '4px 0', border: 'none', background: tab === 'planificados' ? 'rgba(61,139,255,0.15)' : 'transparent', color: tab === 'planificados' ? 'var(--blue)' : 'var(--muted)', borderRadius: 3, fontFamily: 'var(--mono)', fontSize: 10, cursor: 'pointer', transition: 'all 0.15s' }}>
+        <button onClick={() => setTab('planificados')} style={{ flex: 1, padding: '4px 0', border: 'none', background: tab === 'planificados' ? 'rgba(61,139,255,0.15)' : 'transparent', color: tab === 'planificados' ? 'var(--blue)' : 'var(--muted)', borderRadius: 3, fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer', transition: 'all 0.15s' }}>
           PLANIFICADOS
         </button>
-        <button onClick={() => setTab('cancelados')} style={{ flex: 1, padding: '4px 0', border: 'none', background: tab === 'cancelados' ? 'rgba(240,75,75,0.15)' : 'transparent', color: tab === 'cancelados' ? 'var(--red)' : 'var(--muted)', borderRadius: 3, fontFamily: 'var(--mono)', fontSize: 10, cursor: 'pointer', transition: 'all 0.15s' }}>
+        <button onClick={() => setTab('cancelados')} style={{ flex: 1, padding: '4px 0', border: 'none', background: tab === 'cancelados' ? 'rgba(240,75,75,0.15)' : 'transparent', color: tab === 'cancelados' ? 'var(--red)' : 'var(--muted)', borderRadius: 3, fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer', transition: 'all 0.15s' }}>
           CANCELADOS
         </button>
       </div>
       <input
         value={query} onChange={e => setQuery(e.target.value)}
         placeholder="Buscar vuelo, origen, destino…"
-        style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '5px 8px', borderRadius: 2, outline: 'none', marginBottom: 6 }}
+        style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '5px 8px', borderRadius: 2, outline: 'none', marginBottom: 6 }}
       />
       <div style={{ display: 'flex', gap: 5, marginBottom: 6 }}>
         {[
@@ -118,7 +118,7 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
           { label: 'Destino', val: filterDest, set: setFilterDest, opts: destOptions },
         ].map(({ label, val, set, opts }) => (
           <select key={label} value={val} onChange={e => set(e.target.value)}
-            style={{ flex: 1, background: selBg, border: `1px solid ${val ? '#3d8bff88' : selBdr}`, color: val ? '#60a5fa' : 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 10, padding: '4px 5px', borderRadius: 2, outline: 'none', cursor: 'pointer' }}>
+            style={{ flex: 1, background: selBg, border: `1px solid ${val ? '#3d8bff88' : selBdr}`, color: val ? '#60a5fa' : 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12, padding: '4px 5px', borderRadius: 2, outline: 'none', cursor: 'pointer' }}>
             <option value="">{label}</option>
             {opts.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
@@ -126,13 +126,13 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
       </div>
       <div style={{ display: 'flex', gap: 5, marginBottom: 8, alignItems: 'center' }}>
         <select value={sortField} onChange={e => setSortField(e.target.value)}
-          style={{ flex: 1, background: selBg, border: `1px solid ${selBdr}`, color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 10, padding: '4px 5px', borderRadius: 2 }}>
+          style={{ flex: 1, background: selBg, border: `1px solid ${selBdr}`, color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '4px 5px', borderRadius: 2 }}>
           <option value="occupancy">Ocupación</option>
           <option value="origin">Origen</option>
           <option value="dest">Destino</option>
         </select>
         <button onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
-          style={{ background: 'none', border: '1px solid var(--border)', padding: '3px 7px', cursor: 'pointer', borderRadius: 2, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11 }}>
+          style={{ background: 'none', border: '1px solid var(--border)', padding: '3px 7px', cursor: 'pointer', borderRadius: 2, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13 }}>
           {sortDir === 'desc' ? '↓' : '↑'}
         </button>
       </div>
@@ -149,13 +149,13 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
                 style={{ padding: '8px 12px', borderBottom: '1px solid rgba(240,75,75,0.1)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', background: sel ? 'rgba(240,75,75,0.09)' : 'transparent', borderLeft: `2px solid ${sel ? 'var(--red)' : 'transparent'}`, transition: 'background 0.15s', userSelect: 'none' }}>
                 <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: 'var(--red)', boxShadow: `0 0 5px var(--red)` }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--red)', fontWeight: 500 }}>{f.origin} → {f.destination} ({f.id})</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--red)', fontWeight: 500 }}>{f.origin} → {f.destination} ({f.id})</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                     Día: {f.fecha} · {f.hora}
                   </div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{f.motivo}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{f.motivo}</div>
                 </div>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, padding: '2px 6px', borderRadius: 3, background: `rgba(240,75,75,0.1)`, color: 'var(--red)', border: `1px solid rgba(240,75,75,0.4)`, flexShrink: 0 }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 12, padding: '2px 6px', borderRadius: 3, background: `rgba(240,75,75,0.1)`, color: 'var(--red)', border: `1px solid rgba(240,75,75,0.4)`, flexShrink: 0 }}>
                   {f.currentLoad} 🧳
                 </span>
               </div>
@@ -167,20 +167,20 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
               style={{ padding: '8px 12px', borderBottom: '1px solid rgba(99,152,255,0.07)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', background: sel ? 'rgba(61,139,255,0.09)' : 'transparent', borderLeft: `2px solid ${sel ? '#3d8bff' : 'transparent'}`, transition: 'background 0.15s', userSelect: 'none' }}>
               <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: color, boxShadow: `0 0 5px ${color}` }} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-bright)', fontWeight: 500 }}>{f.origin} → {f.destination}</div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{f.currentLoad}/{f.capacity} · {f.type === 'continental' ? 'CONT' : 'INT'}</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--text-bright)', fontWeight: 500 }}>{f.origin} → {f.destination}</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{f.currentLoad}/{f.capacity} · {f.type === 'continental' ? 'CONT' : 'INT'}</div>
                 <div style={{ height: 2, background: 'rgba(255,255,255,0.07)', borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: color, transition: 'width 0.4s' }} />
                 </div>
               </div>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, padding: '2px 6px', borderRadius: 3, background: `${color}18`, color, border: `1px solid ${color}40`, flexShrink: 0 }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 12, padding: '2px 6px', borderRadius: 3, background: `${color}18`, color, border: `1px solid ${color}40`, flexShrink: 0 }}>
                 {pct.toFixed(2)}%
               </span>
             </div>
           )
         })}
         {shown.length === 0 && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', padding: '16px 12px' }}>Sin vuelos {tab === 'activos' ? 'activos' : tab === 'planificados' ? 'planificados' : 'cancelados'}</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin vuelos {tab === 'activos' ? 'activos' : tab === 'planificados' ? 'planificados' : 'cancelados'}</div>
         )}
       </div>
     </div>
@@ -221,16 +221,16 @@ function EnviosSection({ simState }) {
       <input
         value={query} onChange={e => setQuery(e.target.value)}
         placeholder="Buscar ID, origen, destino…"
-        style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '5px 8px', borderRadius: 2, outline: 'none', marginBottom: 6 }}
+        style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '5px 8px', borderRadius: 2, outline: 'none', marginBottom: 6 }}
       />
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
         <button onClick={() => setEstado('')}
-          style={{ fontFamily: 'var(--mono)', fontSize: 9, padding: '2px 8px', borderRadius: 3, border: `1px solid ${!estado ? '#3d8bff88' : 'var(--border)'}`, background: !estado ? 'rgba(61,139,255,0.1)' : 'transparent', color: !estado ? 'var(--blue)' : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.5 }}>
+          style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 8px', borderRadius: 3, border: `1px solid ${!estado ? '#3d8bff88' : 'var(--border)'}`, background: !estado ? 'rgba(61,139,255,0.1)' : 'transparent', color: !estado ? 'var(--blue)' : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.5 }}>
           TODOS
         </button>
         {ESTADOS.map(s => (
           <button key={s} onClick={() => setEstado(estado === s ? '' : s)}
-            style={{ fontFamily: 'var(--mono)', fontSize: 9, padding: '2px 8px', borderRadius: 3, border: `1px solid ${estado === s ? `${ESTADO_COLOR[s]}88` : 'var(--border)'}`, background: estado === s ? `${ESTADO_COLOR[s]}18` : 'transparent', color: estado === s ? ESTADO_COLOR[s] : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.3 }}>
+            style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 8px', borderRadius: 3, border: `1px solid ${estado === s ? `${ESTADO_COLOR[s]}88` : 'var(--border)'}`, background: estado === s ? `${ESTADO_COLOR[s]}18` : 'transparent', color: estado === s ? ESTADO_COLOR[s] : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.3 }}>
             {s.replace('_', ' ')}
           </button>
         ))}
@@ -243,21 +243,21 @@ function EnviosSection({ simState }) {
               style={{ padding: '8px 12px', borderBottom: '1px solid rgba(99,152,255,0.07)', display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: color }} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-bright)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {e.aeropuertoOrigen} → {e.aeropuertoDestino}
                 </div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                   {e.idEnvio} · {e.cantidadMaletas} 🧳
                 </div>
               </div>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, padding: '2px 6px', borderRadius: 3, background: `${color}18`, color, border: `1px solid ${color}40`, flexShrink: 0 }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 6px', borderRadius: 3, background: `${color}18`, color, border: `1px solid ${color}40`, flexShrink: 0 }}>
                 {(e.estado || '—').replace('_', ' ')}
               </span>
             </div>
           )
         })}
         {list.length === 0 && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', padding: '16px 12px' }}>Sin envíos{query || estado ? ' (filtro activo)' : ''}</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin envíos{query || estado ? ' (filtro activo)' : ''}</div>
         )}
       </div>
     </div>
@@ -306,16 +306,16 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport }) {
       <input
         value={pattern} onChange={e => setPattern(e.target.value)}
         placeholder="Buscar almacén..."
-        style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '5px 8px', borderRadius: 2, outline: 'none', marginBottom: 6 }}
+        style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '5px 8px', borderRadius: 2, outline: 'none', marginBottom: 6 }}
       />
       <div style={{ display: 'flex', gap: 5, marginBottom: 8, alignItems: 'center' }}>
         <select value={continent} onChange={e => setContinent(e.target.value)}
-          style={{ flex: 1, background: selBg, border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 10, padding: '4px 5px', borderRadius: 2 }}>
+          style={{ flex: 1, background: selBg, border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '4px 5px', borderRadius: 2 }}>
           <option value="">Continente</option>
           {continents.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <button onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
-          style={{ background: 'none', border: '1px solid var(--border)', padding: '3px 7px', cursor: 'pointer', borderRadius: 2, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11 }}>
+          style={{ background: 'none', border: '1px solid var(--border)', padding: '3px 7px', cursor: 'pointer', borderRadius: 2, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13 }}>
           {sortDir === 'desc' ? '↓' : '↑'}
         </button>
       </div>
@@ -328,8 +328,8 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport }) {
           return (
             <div key={ap.id} style={{ marginBottom: 10, cursor: 'pointer' }} onClick={() => setMapSelectedAirport?.(ap)}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)' }}>{ap.id} — {ap.name}</span>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color }}>{pct.toFixed(2)}%</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>{ap.id} — {ap.name}</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color }}>{pct.toFixed(2)}%</span>
               </div>
               <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 3, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: color, borderRadius: 3, transition: 'width 0.4s' }} />
@@ -338,7 +338,7 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport }) {
           )
         })}
         {shown.length === 0 && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>Sin aeropuertos con actividad</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>Sin aeropuertos con actividad</div>
         )}
       </div>
     </div>
@@ -446,7 +446,7 @@ function ConfigSection({ onSimulationStarted, onClose, theme }) {
   const inputNum = (val, set, min, max) => ({
     type: 'number', min, max, value: val, disabled: loading,
     onChange: e => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= min && v <= max) set(v) },
-    style: { width: 64, textAlign: 'right', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '5px 7px', appearance: 'textfield', MozAppearance: 'textfield', WebkitAppearance: 'none', boxSizing: 'border-box' }
+    style: { width: 64, textAlign: 'right', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 14, padding: '5px 7px', appearance: 'textfield', MozAppearance: 'textfield', WebkitAppearance: 'none', boxSizing: 'border-box' }
   })
 
   return (
@@ -455,9 +455,9 @@ function ConfigSection({ onSimulationStarted, onClose, theme }) {
         <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(13,17,23,0.88)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
           <div style={{ width: 48, height: 48, borderRadius: '50%', border: '3px solid rgba(88,166,255,0.15)', borderTopColor: 'var(--blue)', animation: 'spin 0.75s linear infinite' }} />
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)', letterSpacing: 1, marginBottom: 4 }}>Calculando rutas óptimas…</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--text)', letterSpacing: 1, marginBottom: 4 }}>Calculando rutas óptimas…</div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 22, color: 'var(--blue-bright)', fontWeight: 700, letterSpacing: 2 }}>{loadingElapsed.toFixed(1)}s</div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 }}>tiempo de planificación</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 }}>tiempo de planificación</div>
           </div>
         </div>
       )}
@@ -465,15 +465,15 @@ function ConfigSection({ onSimulationStarted, onClose, theme }) {
 
         {/* Periodo */}
         <div>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Tipo de periodo</span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Tipo de periodo</span>
           {PERIOD_OPTIONS.map(opt => {
             const sel = periodo === opt.key
             return (
               <button key={opt.key} disabled={loading} onClick={() => setPeriodo(opt.key)}
                 style={{ width: '100%', padding: '8px 10px', border: `1px solid ${sel ? 'var(--blue)' : 'var(--border)'}`, background: sel ? 'rgba(88,166,255,0.06)' : 'transparent', cursor: loading ? 'not-allowed' : 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)', textAlign: 'left' }}>{opt.label}</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', textAlign: 'left' }}>{opt.sublabel}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--text)', textAlign: 'left' }}>{opt.label}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', textAlign: 'left' }}>{opt.sublabel}</div>
                 </div>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: sel ? 'var(--blue)' : 'transparent', border: `1px solid ${sel ? 'var(--blue)' : 'var(--border)'}`, flexShrink: 0 }} />
               </button>
@@ -483,25 +483,25 @@ function ConfigSection({ onSimulationStarted, onClose, theme }) {
 
         {/* Fecha y hora */}
         <div style={{ marginBottom: 20 }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Fecha y hora de inicio (UTC)</span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Fecha y hora de inicio (UTC)</span>
           <div style={{ display: 'flex', gap: 10 }}>
             <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} disabled={loading}
               colorScheme={theme !== 'light' ? 'dark' : 'light'}
-              style={{ flex: 2, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', colorScheme: theme !== 'light' ? 'dark' : 'light', boxSizing: 'border-box' }} />
+              style={{ flex: 2, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 14, padding: '6px 8px', colorScheme: theme !== 'light' ? 'dark' : 'light', boxSizing: 'border-box' }} />
             <input type="time" value={horaInicio} onChange={e => setHoraInicio(e.target.value)} disabled={loading}
-              style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', colorScheme: theme !== 'light' ? 'dark' : 'light', boxSizing: 'border-box' }} />
+              style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 14, padding: '6px 8px', colorScheme: theme !== 'light' ? 'dark' : 'light', boxSizing: 'border-box' }} />
           </div>
         </div>
 
         {/* Archivos de envíos */}
         <div>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Archivos de envíos</span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Archivos de envíos</span>
           <input ref={fileInputRef} type="file" accept=".txt" multiple onChange={handleFileChange} disabled={loading || uploadLoading} style={{ display: 'none' }} id="sp-upload-envios-input" />
           <label htmlFor="sp-upload-envios-input"
-            style={{ display: 'block', width: '100%', padding: '7px 10px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, cursor: loading || uploadLoading ? 'not-allowed' : 'pointer', textAlign: 'center', boxSizing: 'border-box', opacity: loading || uploadLoading ? 0.5 : 1 }}>
+            style={{ display: 'block', width: '100%', padding: '7px 10px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, cursor: loading || uploadLoading ? 'not-allowed' : 'pointer', textAlign: 'center', boxSizing: 'border-box', opacity: loading || uploadLoading ? 0.5 : 1 }}>
             Seleccionar archivos (.txt)
           </label>
-          {uploadFileError && <div style={{ marginTop: 5, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 10 }}>{uploadFileError}</div>}
+          {uploadFileError && <div style={{ marginTop: 5, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 12 }}>{uploadFileError}</div>}
           {uploadFile.length > 0 && (
             <div style={{ marginTop: 6 }}>
               {uploadFile.map((item, idx) => {
@@ -509,31 +509,31 @@ function ConfigSection({ onSimulationStarted, onClose, theme }) {
                 return (
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 4, marginBottom: 4 }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, flexShrink: 0 }} />
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.file.name}</span>
-                    {item.status === 'pending' && <button onClick={() => setUploadFile(p => p.filter((_, i) => i !== idx))} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 14, cursor: 'pointer', padding: 0 }}>×</button>}
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.file.name}</span>
+                    {item.status === 'pending' && <button onClick={() => setUploadFile(p => p.filter((_, i) => i !== idx))} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: 'pointer', padding: 0 }}>×</button>}
                   </div>
                 )
               })}
               <button onClick={handleUpload} disabled={uploadLoading || loading}
-                style={{ width: '100%', padding: '6px 10px', background: 'rgba(88,166,255,0.08)', border: '1px solid rgba(88,166,255,0.3)', color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, cursor: uploadLoading || loading ? 'not-allowed' : 'pointer', opacity: uploadLoading || loading ? 0.5 : 1 }}>
+                style={{ width: '100%', padding: '6px 10px', background: 'rgba(88,166,255,0.08)', border: '1px solid rgba(88,166,255,0.3)', color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, cursor: uploadLoading || loading ? 'not-allowed' : 'pointer', opacity: uploadLoading || loading ? 0.5 : 1 }}>
                 {uploadLoading ? 'Subiendo...' : 'Subir'}
               </button>
             </div>
           )}
-          {uploadResult && <div style={{ marginTop: 5, color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 10 }}>{uploadResult.count} envíos cargados ({uploadResult.files} archivo{uploadResult.files !== 1 ? 's' : ''})</div>}
-          {uploadError && <div style={{ marginTop: 5, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 10 }}>{uploadError}</div>}
-          <div style={{ marginTop: 5, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 9, opacity: 0.6 }}>Formato: _envios_XXXX_.txt</div>
+          {uploadResult && <div style={{ marginTop: 5, color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 12 }}>{uploadResult.count} envíos cargados ({uploadResult.files} archivo{uploadResult.files !== 1 ? 's' : ''})</div>}
+          {uploadError && <div style={{ marginTop: 5, color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 12 }}>{uploadError}</div>}
+          <div style={{ marginTop: 5, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11, opacity: 0.6 }}>Formato: _envios_XXXX_.txt</div>
         </div>
 
         {/* Parámetros de conexión */}
         <div>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Parámetros de conexión</span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Parámetros de conexión</span>
           {[
             { label: 'Escala mínima (min)',         val: escalaMinima,   set: setEscalaMinima,   min: 1, max: 60 },
             { label: 'Tiempo recogida destino (min)', val: tiempoRecogida, set: setTiempoRecogida, min: 1, max: 60 },
           ].map(({ label, val, set, min, max }) => (
             <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11 }}>{label}</span>
+              <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13 }}>{label}</span>
               <input {...inputNum(val, set, min, max)} />
             </div>
           ))}
@@ -542,9 +542,9 @@ function ConfigSection({ onSimulationStarted, onClose, theme }) {
         {/* Condición de colapso */}
         {periodo === 'colapso' && (
           <div>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Condición de colapso</span>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Condición de colapso</span>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11 }}>Umbral SLA vencido (%)</span>
+              <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13 }}>Umbral SLA vencido (%)</span>
               <input {...inputNum(umbralColapso, setUmbralColapso, 10, 90)} style={{ ...inputNum(umbralColapso, setUmbralColapso, 10, 90).style }} />
             </div>
           </div>
@@ -552,7 +552,7 @@ function ConfigSection({ onSimulationStarted, onClose, theme }) {
 
         {/* Semáforo */}
         <div>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Rangos de semáforo</span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Rangos de semáforo</span>
           {[
             { key: 'verde', color: 'var(--green)', label: 'Verde',  desc: 'Normal' },
             { key: 'ambar', color: 'var(--amber)', label: 'Ámbar',  desc: 'Elevada' },
@@ -560,51 +560,51 @@ function ConfigSection({ onSimulationStarted, onClose, theme }) {
             <div key={item.key} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 8, alignItems: 'center', marginBottom: 8 }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.color }} />
               <div>
-                <div style={{ color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11 }}>{item.label}</div>
-                <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 10 }}>{item.desc}</div>
+                <div style={{ color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13 }}>{item.label}</div>
+                <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>{item.desc}</div>
               </div>
-              <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11 }}>{'<'}</span>
+              <span style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13 }}>{'<'}</span>
               <input
                 type="number" value={semaforo[item.key]} disabled={loading}
                 onChange={e => { const v = Number(e.target.value); setSemaforo(p => ({ ...p, [item.key]: Number.isFinite(v) ? v : p[item.key] })) }}
-                style={{ width: 52, textAlign: 'right', background: 'rgba(255,255,255,0.04)', border: `1px solid ${semaforoError && item.key === 'ambar' ? 'var(--red)' : 'var(--border)'}`, color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '4px 6px', appearance: 'textfield', MozAppearance: 'textfield', WebkitAppearance: 'none' }}
+                style={{ width: 52, textAlign: 'right', background: 'rgba(255,255,255,0.04)', border: `1px solid ${semaforoError && item.key === 'ambar' ? 'var(--red)' : 'var(--border)'}`, color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '4px 6px', appearance: 'textfield', MozAppearance: 'textfield', WebkitAppearance: 'none' }}
               />
             </div>
           ))}
-          {semaforoError && <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 10, marginTop: 2 }}>{semaforoError}</div>}
+          {semaforoError && <div style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 12, marginTop: 2 }}>{semaforoError}</div>}
         </div>
 
         {/* Cancelaciones */}
         <div>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Cancelaciones aleatorias</span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>Cancelaciones aleatorias</span>
           <button type="button" disabled={loading} onClick={() => setCancelacionesAleatorias(v => !v)}
             style={{ width: '100%', padding: '7px 10px', border: `1px solid ${cancelacionesAleatorias ? 'var(--blue)' : 'var(--border)'}`, background: cancelacionesAleatorias ? 'rgba(88,166,255,0.06)' : 'transparent', cursor: loading ? 'not-allowed' : 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)' }}>{cancelacionesAleatorias ? 'Habilitadas' : 'Deshabilitadas'}</span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>{cancelacionesAleatorias ? 'ON' : 'OFF'}</span>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--text)' }}>{cancelacionesAleatorias ? 'Habilitadas' : 'Deshabilitadas'}</span>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>{cancelacionesAleatorias ? 'ON' : 'OFF'}</span>
           </button>
           {cancelacionesAleatorias && (
             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <label style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>% por día</label>
+              <label style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', flexShrink: 0 }}>% por día</label>
               <input type="number" min={1} max={50} value={porcentajeCancelacion} disabled={loading}
                 onChange={e => setPorcentajeCancelacion(e.target.value)}
-                style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '5px 8px' }} />
+                style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 14, padding: '5px 8px' }} />
             </div>
           )}
         </div>
 
         {/* Error */}
         {error && (
-          <div style={{ borderLeft: '2px solid var(--red)', background: 'rgba(248,81,73,0.06)', padding: '8px 10px', color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 11 }}>{error}</div>
+          <div style={{ borderLeft: '2px solid var(--red)', background: 'rgba(248,81,73,0.06)', padding: '8px 10px', color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 13 }}>{error}</div>
         )}
 
         {/* Action buttons */}
         <div style={{ display: 'flex', gap: 8, paddingBottom: 4 }}>
           <button onClick={onClose} disabled={loading}
-            style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, cursor: loading ? 'not-allowed' : 'pointer' }}>
+            style={{ flex: 1, padding: '8px 0', background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1, cursor: loading ? 'not-allowed' : 'pointer' }}>
             Cancelar
           </button>
           <button onClick={handleSimular} disabled={Boolean(semaforoError) || loading}
-            style={{ flex: 2, padding: '8px 0', background: 'rgba(88,166,255,0.12)', border: '1px solid rgba(88,166,255,0.4)', color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, cursor: Boolean(semaforoError) || loading ? 'not-allowed' : 'pointer', opacity: Boolean(semaforoError) || loading ? 0.35 : 1 }}>
+            style={{ flex: 2, padding: '8px 0', background: 'rgba(88,166,255,0.12)', border: '1px solid rgba(88,166,255,0.4)', color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, cursor: Boolean(semaforoError) || loading ? 'not-allowed' : 'pointer', opacity: Boolean(semaforoError) || loading ? 0.35 : 1 }}>
             {loading ? 'PROCESANDO...' : '▶ SIMULAR'}
           </button>
         </div>
@@ -714,7 +714,7 @@ export default function SidePanel({
       {activeSection && (
         <div style={{ width: 340, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--blue)', fontWeight: 700 }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--blue)', fontWeight: 700 }}>
               {sections.find(s => s.id === activeSection)?.label}
             </span>
             <button onClick={() => onSectionChange(null)}
