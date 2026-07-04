@@ -42,6 +42,9 @@ export default function App() {
   const [mapSelectedVuelo, setMapSelectedVuelo] = useState(null)
   const [highlightedRoute, setHighlightedRoute] = useState(null)
   const [simClockMinutes, setSimClockMinutes] = useState(0)
+  const [mapFlyTo, setMapFlyTo] = useState(null)
+  const [vueloMapFilter, setVueloMapFilter] = useState({ origin: '', dest: '', semaforo: [] })
+  const [airportMapFilter, setAirportMapFilter] = useState({ continent: '', pattern: '', semaforo: [] })
 
   const realStartRef = useRef(null)  // kept for legacy compat, unused
   const accumulatedRealMsRef = useRef(0)  // kept for legacy compat, unused
@@ -496,6 +499,41 @@ export default function App() {
     }
     return clockedAirports.filter((a) => visible.has(a.id))
   }, [clockedAirports, originSet, destSet])
+
+  const mapFilteredAirports = useMemo(() => {
+    const { continent, pattern, semaforo } = airportMapFilter
+    if (!continent && !pattern && semaforo.length === 0) return visibleAirports
+    return visibleAirports.filter(a => {
+      if (continent && (a.continent || a.continente || '') !== continent) return false
+      if (pattern) {
+        const pat = pattern.toLowerCase()
+        if (!(a.id || '').toLowerCase().includes(pat)) return false
+      }
+      if (semaforo.length > 0) {
+        const occ = a.currentOccupation ?? 0
+        const cap = a.warehouseCapacity ?? 600
+        const pct = cap > 0 ? (occ / cap) * 100 : 0
+        const s = pct === 0 ? 'vacio' : pct >= threshold ? 'rojo' : pct >= threshold - 20 ? 'ambar' : 'verde'
+        if (!semaforo.includes(s)) return false
+      }
+      return true
+    })
+  }, [visibleAirports, airportMapFilter, threshold])
+
+  const mapFilteredFlights = useMemo(() => {
+    const { origin, dest, semaforo } = vueloMapFilter
+    if (!origin && !dest && semaforo.length === 0) return backendFlights
+    return backendFlights.filter(f => {
+      if (origin && f.origin !== origin) return false
+      if (dest && f.destination !== dest) return false
+      if (semaforo.length > 0) {
+        const pct = f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
+        const s = pct === 0 ? 'vacio' : pct >= 85 ? 'rojo' : pct >= 60 ? 'ambar' : 'verde'
+        if (!semaforo.includes(s)) return false
+      }
+      return true
+    })
+  }, [backendFlights, vueloMapFilter])
 
   const normalizedRoutes = useMemo(() =>
     simState?.envios
@@ -1057,8 +1095,8 @@ export default function App() {
               transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             }}>
               <MapView
-                airports={visibleAirports}
-                flights={backendFlights}
+                airports={mapFilteredAirports}
+                flights={mapFilteredFlights}
                 selectedFlight={selectedFlight}
                 setSelectedFlight={setSelectedFlight}
                 selectedFlightData={mapSelectedVuelo}
@@ -1067,6 +1105,7 @@ export default function App() {
                 theme={theme}
                 threshold={threshold}
                 highlightedRoute={highlightedRoute}
+                flyToTarget={mapFlyTo}
               />
             </div>
 
@@ -1085,6 +1124,9 @@ export default function App() {
                 simState={simState}
                 onShowEnvioRoute={handleShowEnvioRoute}
                 airports={clockedAirports}
+                onVueloFilterChange={setVueloMapFilter}
+                onAirportFilterChange={setAirportMapFilter}
+                onFocusMapLocation={setMapFlyTo}
                 threshold={threshold}
                 setThreshold={setThreshold}
                 onSimulationStarted={handleSimulationStarted}

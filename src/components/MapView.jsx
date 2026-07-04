@@ -79,6 +79,18 @@ function MapClickDeselect({ onDeselect }) {
   return null
 }
 
+function FlyToTarget({ target }) {
+  const map = useMap()
+  const prevRef = useRef(null)
+  useEffect(() => {
+    if (!target || !target.lat || !target.lng) return
+    if (prevRef.current === target) return
+    prevRef.current = target
+    map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 5), { animate: true, duration: 0.7 })
+  }, [map, target])
+  return null
+}
+
 // On wheel zoom-in, nudges the map center toward the nearest airport if within threshold.
 // Does NOT intercept the scroll — Leaflet handles zoom naturally, we only reposition.
 function ZoomSnapper({ airportList }) {
@@ -369,6 +381,7 @@ export default function MapView({
   highlightedRoute = null,
   viewportPaddingLeft = 0,
   threshold = 85,
+  flyToTarget = null,
 }) {
   const [showRoutes, setShowRoutes] = useState(true)
   const [showEmptyFlights, setShowEmptyFlights] = useState(true)
@@ -428,6 +441,7 @@ export default function MapView({
       <IconScaler />
       <ZoomSnapper airportList={airportList} />
       {onMapClick && <MapClickDeselect onDeselect={onMapClick} />}
+      <FlyToTarget target={flyToTarget} />
       <TileLayer
         url={theme === 'light'
           ? 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png'
