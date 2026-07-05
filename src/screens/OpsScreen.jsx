@@ -119,24 +119,6 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
     }).catch(() => {})
   }, [])
 
-  const airports = useMemo(() => {
-    if (!opsState?.aeropuertos) return []
-    return opsState.aeropuertos.map((a) => ({
-      id: a.codigoIATA,
-      name: a.nombre,
-      continent: a.continente,
-      lat: a.lat,
-      lng: a.lng,
-      warehouseCapacity: a.capacidadAlmacen ?? 600,
-      currentOccupation: a.ocupacionPct != null
-        ? Math.round((a.ocupacionPct / 100) * (a.capacidadAlmacen ?? 600))
-        : 0,
-      maletasPendientes: a.maletasPendientes,
-      semaforo: a.semaforo,
-      ciudad: a.ciudad,
-    }))
-  }, [opsState?.aeropuertos])
-
   const flights = useMemo(() => {
     if (!opsState?.vuelos) return []
     return opsState.vuelos
@@ -199,6 +181,49 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
       })
       .filter((v) => !isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
   }, [opsState?.vuelos, liveNowMinutes])
+
+  const airports = useMemo(() => {
+    if (!opsState?.aeropuertos) return []
+    
+    const nextDep = {}
+    const nextArr = {}
+    
+    const allOpsFlights = [...flights, ...plannedFlights]
+    allOpsFlights.forEach(v => {
+      if (v.depMin != null) {
+        let waitDep = Math.round((v.depMin - liveNowMinutes + 1440) % 1440)
+        if (nextDep[v.origin] === undefined || waitDep < nextDep[v.origin]) {
+           nextDep[v.origin] = waitDep
+        }
+      }
+      
+      if (v.arrMin != null) {
+        let waitArr = Math.round((v.arrMin - liveNowMinutes + 1440) % 1440)
+        if (nextArr[v.destination] === undefined || waitArr < nextArr[v.destination]) {
+           nextArr[v.destination] = waitArr
+        }
+      }
+    })
+
+    return opsState.aeropuertos.map((a) => ({
+      id: a.codigoIATA,
+      name: a.nombre,
+      continent: a.continente,
+      lat: a.lat,
+      lng: a.lng,
+      warehouseCapacity: a.capacidadAlmacen ?? 600,
+      currentOccupation: a.ocupacionPct != null
+        ? Math.round((a.ocupacionPct / 100) * (a.capacidadAlmacen ?? 600))
+        : 0,
+      maletasPendientes: a.maletasPendientes,
+      semaforo: a.semaforo,
+      ciudad: a.ciudad,
+      nextDepartureWait: nextDep[a.codigoIATA] ?? Infinity,
+      nextArrivalWait: nextArr[a.codigoIATA] ?? Infinity,
+    }))
+  }, [opsState?.aeropuertos, flights, plannedFlights, liveNowMinutes])
+
+
 
   const cancelledFlights = useMemo(() => {
     if (!opsState?.cancelaciones) return []

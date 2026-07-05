@@ -458,14 +458,53 @@ export default function App() {
     })
   }, [simState?.aeropuertos, simState?.airports, simState?.vuelos, displayState])
 
+  const activeVuelosWithTimes = useMemo(() => {
+    if (!displayState?.vuelos) return []
+    return displayState.vuelos
+      .filter((v) => v.estado === 'activo')
+      .map((v) => ({
+        id: v.codigoVuelo,
+        origin: v.origen,
+        destination: v.destino,
+        currentLoad: v.maletasAsignadas ?? v.cargaActual ?? 0,
+        capacity: v.capacidadTotal ?? 300,
+        type: v.tipo === 'continental' ? 'continental' : 'intercontinental',
+        status: 'active',
+        horaSalida: v.horaSalida,
+        horaLlegada: v.horaLlegada,
+        husOrigen: v.husOrigen ?? null,
+        husDestino: v.husDestino ?? null,
+        depMin: parseTimeToMinutes(v.horaSalida),
+        arrMin: parseTimeToMinutes(v.horaLlegada),
+      }))
+  }, [displayState?.vuelos])
+
   const clockedAirports = useMemo(() => {
     if (!backendState?.enEjecucion) return normalizedAirports
     const fraction = Math.min(simClockMinutes / 1440, 1)
+
+    const nextDep = {}
+    const nextArr = {}
+    
+    activeVuelosWithTimes.forEach(v => {
+      let waitDep = (v.depMin - simClockMinutes + 1440) % 1440
+      if (nextDep[v.origin] === undefined || waitDep < nextDep[v.origin]) {
+         nextDep[v.origin] = waitDep
+      }
+      
+      let waitArr = (v.arrMin - simClockMinutes + 1440) % 1440
+      if (nextArr[v.destination] === undefined || waitArr < nextArr[v.destination]) {
+         nextArr[v.destination] = waitArr
+      }
+    })
+
     return normalizedAirports.map((ap) => ({
       ...ap,
       currentOccupation: Math.round(ap.ocupacionInicioDia + (ap.currentOccupation - ap.ocupacionInicioDia) * fraction),
+      nextDepartureWait: nextDep[ap.id] ?? Infinity,
+      nextArrivalWait: nextArr[ap.id] ?? Infinity,
     }))
-  }, [normalizedAirports, simClockMinutes, backendState?.enEjecucion])
+  }, [normalizedAirports, simClockMinutes, backendState?.enEjecucion, activeVuelosWithTimes])
 
   const normalizedFlights = useMemo(() =>
     simState?.vuelos
@@ -535,27 +574,6 @@ export default function App() {
   [simState?.envios, simState?.routes])
 
 
-  // Heavy work: filter + parse times. Only reruns when backend data changes (~every 12s).
-  const activeVuelosWithTimes = useMemo(() => {
-    if (!displayState?.vuelos) return []
-    return displayState.vuelos
-      .filter((v) => v.estado === 'activo')
-      .map((v) => ({
-        id: v.codigoVuelo,
-        origin: v.origen,
-        destination: v.destino,
-        currentLoad: v.maletasAsignadas ?? v.cargaActual ?? 0,
-        capacity: v.capacidadTotal ?? 300,
-        type: v.tipo === 'continental' ? 'continental' : 'intercontinental',
-        status: 'active',
-        horaSalida: v.horaSalida,
-        horaLlegada: v.horaLlegada,
-        husOrigen: v.husOrigen ?? null,
-        husDestino: v.husDestino ?? null,
-        depMin: parseTimeToMinutes(v.horaSalida),
-        arrMin: parseTimeToMinutes(v.horaLlegada),
-      }))
-  }, [displayState?.vuelos])
 
   // Light work: apply clock position. Reruns every second but only on pre-filtered list.
   // On Day 1, only flights departing at or after horaInicio are visible (no pre-existing
@@ -721,6 +739,21 @@ export default function App() {
 
   const opsAsSimState = useMemo(() => {
     if (!opsState) return null
+    
+    const nextDep = {}
+    const nextArr = {}
+    opsActiveFlights.forEach(v => {
+      let waitDep = (v.depMin - opsNowMinutes + 1440) % 1440
+      if (nextDep[v.origin] === undefined || waitDep < nextDep[v.origin]) {
+         nextDep[v.origin] = waitDep
+      }
+      
+      let waitArr = (v.arrMin - opsNowMinutes + 1440) % 1440
+      if (nextArr[v.destination] === undefined || waitArr < nextArr[v.destination]) {
+         nextArr[v.destination] = waitArr
+      }
+    })
+
     const envios = opsEnvios.map((e) => ({
       idEnvio: e.idPedido,
       aeropuertoOrigen: e.iataOrigen,
@@ -759,7 +792,10 @@ export default function App() {
     } : null
     const aeropuertos = (opsState.aeropuertos || []).map((a) => ({
       ...a,
+      id: a.codigoIATA,
       ocupacionActual: a.maletasPendientes,
+      nextDepartureWait: nextDep[a.codigoIATA] ?? Infinity,
+      nextArrivalWait: nextArr[a.codigoIATA] ?? Infinity,
     }))
     return {
       aeropuertos,
