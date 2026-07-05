@@ -479,6 +479,14 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport, onA
       return true
     })
     return [...filtered].sort((a, b) => {
+      if (sortField === 'nextDeparture') {
+        const diff = (a.nextDepartureWait ?? Infinity) - (b.nextDepartureWait ?? Infinity);
+        return sortDir === 'asc' ? diff : -diff;
+      }
+      if (sortField === 'nextArrival') {
+        const diff = (a.nextArrivalWait ?? Infinity) - (b.nextArrivalWait ?? Infinity);
+        return sortDir === 'asc' ? diff : -diff;
+      }
       const aOcc = a.currentOccupation ?? a.ocupacionActual ?? 0
       const aCap = a.warehouseCapacity ?? a.capacidadAlmacen ?? 600
       const bOcc = b.currentOccupation ?? b.ocupacionActual ?? 0
@@ -486,8 +494,7 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport, onA
       const diff = (bOcc / bCap) - (aOcc / aCap)
       return sortDir === 'desc' ? diff : -diff
     })
-  }, [list, pattern, continent, semaforoFilt, threshold, sortDir])
-
+  }, [list, pattern, continent, semaforoFilt, threshold, sortDir, sortField])
   const toggleSemaforo = (key) =>
     setSemaforoFilt(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
 
@@ -500,12 +507,18 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport, onA
       />
       <div style={{ display: 'flex', gap: 5, marginBottom: 6, alignItems: 'center' }}>
         <select value={continent} onChange={e => setContinent(e.target.value)}
-          style={{ flex: 1, background: selBg, border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '4px 5px', borderRadius: 2 }}>
+          style={{ flex: 1, background: selBg, border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '4px 5px', borderRadius: 2, minWidth: 0 }}>
           <option value="">Continente</option>
           {continents.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
+        <select value={sortField} onChange={e => setSortField(e.target.value)}
+          style={{ flex: 1, background: selBg, border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '4px 5px', borderRadius: 2, minWidth: 0 }}>
+          <option value="occupation">Ocupación</option>
+          <option value="nextDeparture">Próxima Salida</option>
+          <option value="nextArrival">Próxima Llegada</option>
+        </select>
         <button onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
-          style={{ background: 'none', border: '1px solid var(--border)', padding: '3px 7px', cursor: 'pointer', borderRadius: 2, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13 }}>
+          style={{ background: 'none', border: '1px solid var(--border)', padding: '3px 7px', cursor: 'pointer', borderRadius: 2, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 13, flexShrink: 0 }}>
           {sortDir === 'desc' ? '↓' : '↑'}
         </button>
       </div>
@@ -532,7 +545,15 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport, onA
               if (ap.lat && ap.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng })
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>{ap.id} — {ap.name}</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>
+                  {ap.id} — {ap.name}
+                  {sortField === 'nextDeparture' && ap.nextDepartureWait !== Infinity && (
+                    <span style={{ color: 'var(--blue)', marginLeft: 8, fontSize: 11 }}>Sale en {ap.nextDepartureWait}m</span>
+                  )}
+                  {sortField === 'nextArrival' && ap.nextArrivalWait !== Infinity && (
+                    <span style={{ color: 'var(--blue)', marginLeft: 8, fontSize: 11 }}>Llega en {ap.nextArrivalWait}m</span>
+                  )}
+                </span>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color }}>{pct.toFixed(2)}%</span>
               </div>
               <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 3, overflow: 'hidden' }}>
