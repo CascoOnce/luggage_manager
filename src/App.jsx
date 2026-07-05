@@ -479,22 +479,74 @@ export default function App() {
       }))
   }, [displayState?.vuelos])
 
+  const originSet = useMemo(() => originIds ? new Set(originIds) : null, [originIds])
+  const destSet = useMemo(() => destIds ? new Set(destIds) : null, [destIds])
+
+
   const clockedAirports = useMemo(() => {
     if (!backendState?.enEjecucion) return normalizedAirports
     const fraction = Math.min(simClockMinutes / 1440, 1)
 
     const nextDep = {}
     const nextArr = {}
+    const depFlightsConsidered = {}
+    const arrFlightsConsidered = {}
     
+    // In App.jsx simulation, backendState.diaActual gives the current simulation day (1-indexed)
+    const isDayOne = (backendState?.diaActual || 1) === 1
+    const simStartMinute = simStartMinuteRef.current
+
     activeVuelosWithTimes.forEach(v => {
-      let waitDep = (v.depMin - simClockMinutes + 1440) % 1440
-      if (nextDep[v.origin] === undefined || waitDep < nextDep[v.origin]) {
-         nextDep[v.origin] = waitDep
+      // Map filters
+      if (originSet && !originSet.has(v.origin)) return
+      if (destSet && !destSet.has(v.destination)) return
+
+      let waitDep = null
+      let waitArr = null
+
+      if (v.depMin != null) {
+        const utcDepMin = v.depMin // Ya viene en UTC, no aplicar fórmula
+        let excludeDep = false
+        if (isDayOne && utcDepMin < simStartMinute) {
+          excludeDep = true
+        }
+        if (isDayOne && v.arrMin != null && utcDepMin > v.arrMin) {
+          excludeDep = true
+        }
+        if (!excludeDep) {
+          waitDep = Math.floor((utcDepMin - simClockMinutes + 1440) % 1440)
+          if (!depFlightsConsidered[v.origin]) depFlightsConsidered[v.origin] = []
+          depFlightsConsidered[v.origin].push({ id: v.id, time: v.horaSalida, wait: waitDep })
+          if (nextDep[v.origin] === undefined || waitDep < nextDep[v.origin]) {
+             nextDep[v.origin] = waitDep
+          }
+        }
       }
       
-      let waitArr = (v.arrMin - simClockMinutes + 1440) % 1440
-      if (nextArr[v.destination] === undefined || waitArr < nextArr[v.destination]) {
-         nextArr[v.destination] = waitArr
+      if (v.arrMin != null) {
+        const utcArrMin = v.arrMin // Ya viene en UTC, no aplicar fórmula
+        const utcDepMin = v.depMin // Ya viene en UTC, no aplicar fórmula
+        
+        let excludeArr = false
+        if (utcDepMin != null) {
+          if (isDayOne && utcDepMin < utcArrMin && utcArrMin < simStartMinute) {
+            excludeArr = true
+          }
+          if (isDayOne && utcDepMin > utcArrMin) {
+            excludeArr = true
+          }
+        }
+        
+        if (!excludeArr) {
+          if (utcDepMin != null && isActiveAtMinute(simClockMinutes, utcDepMin, utcArrMin)) {
+            waitArr = Math.floor((utcArrMin - simClockMinutes + 1440) % 1440)
+            if (!arrFlightsConsidered[v.destination]) arrFlightsConsidered[v.destination] = []
+            arrFlightsConsidered[v.destination].push({ id: v.id, time: v.horaLlegada, wait: waitArr })
+            if (nextArr[v.destination] === undefined || waitArr < nextArr[v.destination]) {
+               nextArr[v.destination] = waitArr
+            }
+          }
+        }
       }
     })
 
@@ -503,8 +555,10 @@ export default function App() {
       currentOccupation: Math.round(ap.ocupacionInicioDia + (ap.currentOccupation - ap.ocupacionInicioDia) * fraction),
       nextDepartureWait: nextDep[ap.id] ?? Infinity,
       nextArrivalWait: nextArr[ap.id] ?? Infinity,
+      debugDep: depFlightsConsidered[ap.id] || [],
+      debugArr: arrFlightsConsidered[ap.id] || [],
     }))
-  }, [normalizedAirports, simClockMinutes, backendState?.enEjecucion, activeVuelosWithTimes])
+  }, [normalizedAirports, simClockMinutes, backendState?.enEjecucion, activeVuelosWithTimes, originSet, destSet, backendState?.diaActual])
 
   const normalizedFlights = useMemo(() =>
     simState?.vuelos
@@ -526,8 +580,7 @@ export default function App() {
       : (simState?.flights || []),
   [simState?.vuelos, simState?.flights])
 
-  const originSet = useMemo(() => originIds ? new Set(originIds) : null, [originIds])
-  const destSet = useMemo(() => destIds ? new Set(destIds) : null, [destIds])
+
 
   const visibleAirports = useMemo(() => {
     if (!originSet && !destSet) return clockedAirports

@@ -126,9 +126,8 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
       .map((v) => {
         const depLocal = parseTimeToMinutes(v.horaSalida)
         const arrLocal = parseTimeToMinutes(v.horaLlegada)
-        // Convert local origin/dest times to UTC for the global clock
-        const depMin = depLocal != null ? mod1440(depLocal - (v.husOrigen ?? 0) * 60) : null
-        const arrMin = arrLocal != null ? mod1440(arrLocal - (v.husDestino ?? 0) * 60) : null
+        const depMin = depLocal // Ya viene en UTC
+        const arrMin = arrLocal // Ya viene en UTC
         return {
           id: v.codigoVuelo,
           origin: v.origen,
@@ -158,8 +157,8 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
       .map((v) => {
         const depLocal = parseTimeToMinutes(v.horaSalida)
         const arrLocal = parseTimeToMinutes(v.horaLlegada)
-        const depMin = depLocal != null ? mod1440(depLocal - (v.husOrigen ?? 0) * 60) : null
-        const arrMin = arrLocal != null ? mod1440(arrLocal - (v.husDestino ?? 0) * 60) : null
+        const depMin = depLocal // Ya viene en UTC
+        const arrMin = arrLocal // Ya viene en UTC
         return {
           id: v.codigoVuelo,
           origin: v.origen,
@@ -182,25 +181,76 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
       .filter((v) => !isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
   }, [opsState?.vuelos, liveNowMinutes])
 
+  const originSet = useMemo(() => originIds ? new Set(originIds) : null, [originIds])
+  const destSet = useMemo(() => destIds ? new Set(destIds) : null, [destIds])
+
+  const visibleFlights = useMemo(() =>
+    flights.filter((f) =>
+      (!originSet || originSet.has(f.origin)) &&
+      (!destSet || destSet.has(f.destination))
+    ),
+  [flights, originSet, destSet])
+
+  const visiblePlannedFlights = useMemo(() =>
+    plannedFlights.filter((f) =>
+      (!originSet || originSet.has(f.origin)) &&
+      (!destSet || destSet.has(f.destination))
+    ),
+  [plannedFlights, originSet, destSet])
+
   const airports = useMemo(() => {
     if (!opsState?.aeropuertos) return []
     
     const nextDep = {}
     const nextArr = {}
+    const depFlightsConsidered = {}
+    const arrFlightsConsidered = {}
     
-    const allOpsFlights = [...flights, ...plannedFlights]
+    const simStartedAt = parseInt(localStorage.getItem('simDayStartedAt') || '0', 10)
+    const simStartMinute = parseInt(localStorage.getItem('simHoraInicio') || '0', 10)
+    const isDayOne = simStartedAt > 0 && (Date.now() - simStartedAt) < 24 * 60 * 60 * 1000
+
+    const allOpsFlights = [...visibleFlights, ...visiblePlannedFlights]
     allOpsFlights.forEach(v => {
-      if (v.depMin != null) {
-        let waitDep = Math.round((v.depMin - liveNowMinutes + 1440) % 1440)
-        if (nextDep[v.origin] === undefined || waitDep < nextDep[v.origin]) {
-           nextDep[v.origin] = waitDep
+      const utcDepMin = v.depMin
+      const utcArrMin = v.arrMin
+
+      let waitDep = null
+      let waitArr = null
+
+      if (utcDepMin != null) {
+        let excludeDep = false
+        if (isDayOne && utcDepMin < simStartMinute) {
+          excludeDep = true
+        }
+        if (!excludeDep) {
+          waitDep = Math.floor((utcDepMin - liveNowMinutes + 1440) % 1440)
+          if (!depFlightsConsidered[v.origin]) depFlightsConsidered[v.origin] = []
+          depFlightsConsidered[v.origin].push({ id: v.id, time: v.horaSalida, wait: waitDep })
+          if (nextDep[v.origin] === undefined || waitDep < nextDep[v.origin]) {
+             nextDep[v.origin] = waitDep
+          }
         }
       }
       
-      if (v.arrMin != null) {
-        let waitArr = Math.round((v.arrMin - liveNowMinutes + 1440) % 1440)
-        if (nextArr[v.destination] === undefined || waitArr < nextArr[v.destination]) {
-           nextArr[v.destination] = waitArr
+      if (utcArrMin != null) {
+        let excludeArr = false
+        if (utcDepMin != null) {
+          if (isDayOne && utcDepMin < utcArrMin && utcArrMin < simStartMinute) {
+            excludeArr = true
+          }
+        }
+        
+        if (!excludeArr) {
+          // Solo si ya partió (está en el aire)
+          if (isActiveAtMinute(liveNowMinutes, utcDepMin, utcArrMin)) {
+            waitArr = Math.floor((utcArrMin - liveNowMinutes + 1440) % 1440)
+            if (!arrFlightsConsidered[v.destination]) arrFlightsConsidered[v.destination] = []
+            arrFlightsConsidered[v.destination].push({ id: v.id, time: v.horaLlegada, wait: waitArr })
+            if (nextArr[v.destination] === undefined || waitArr < nextArr[v.destination]) {
+               nextArr[v.destination] = waitArr
+            }
+          }
         }
       }
     })
@@ -220,8 +270,10 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
       ciudad: a.ciudad,
       nextDepartureWait: nextDep[a.codigoIATA] ?? Infinity,
       nextArrivalWait: nextArr[a.codigoIATA] ?? Infinity,
+      debugDep: depFlightsConsidered[a.codigoIATA] || [],
+      debugArr: arrFlightsConsidered[a.codigoIATA] || [],
     }))
-  }, [opsState?.aeropuertos, flights, plannedFlights, liveNowMinutes])
+  }, [opsState?.aeropuertos, visibleFlights, visiblePlannedFlights, liveNowMinutes])
 
 
 
@@ -249,10 +301,6 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
     }).reverse() // Show newest first
   }, [opsState?.cancelaciones, opsState?.vuelos])
 
-
-  const originSet = useMemo(() => originIds ? new Set(originIds) : null, [originIds])
-  const destSet = useMemo(() => destIds ? new Set(destIds) : null, [destIds])
-
   const visibleAirports = useMemo(() => {
     if (!originSet && !destSet) return airports
     const visible = new Set()
@@ -263,19 +311,6 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
     return airports.filter((a) => visible.has(a.id))
   }, [airports, originSet, destSet])
 
-  const visibleFlights = useMemo(() =>
-    flights.filter((f) =>
-      (!originSet || originSet.has(f.origin)) &&
-      (!destSet || destSet.has(f.destination))
-    ),
-  [flights, originSet, destSet])
-
-  const visiblePlannedFlights = useMemo(() =>
-    plannedFlights.filter((f) =>
-      (!originSet || originSet.has(f.origin)) &&
-      (!destSet || destSet.has(f.destination))
-    ),
-  [plannedFlights, originSet, destSet])
 
   const visibleCancelledFlights = useMemo(() =>
     cancelledFlights.filter((f) =>

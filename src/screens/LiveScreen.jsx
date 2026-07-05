@@ -57,16 +57,75 @@ export default function LiveScreen({ liveState, theme, onBack }) {
     return () => clearInterval(id)
   }, [])
 
+  const originSet = useMemo(() => originIds ? new Set(originIds) : null, [originIds])
+  const destSet = useMemo(() => destIds ? new Set(destIds) : null, [destIds])
+
   const airports = useMemo(() => {
     if (!liveState?.aeropuertos) return []
+    
+    const nextDep = {}
+    const nextArr = {}
+    const depFlightsConsidered = {}
+    const arrFlightsConsidered = {}
+    
+    const simStartedAt = parseInt(localStorage.getItem('simDayStartedAt') || '0', 10)
+    const simStartMinute = parseInt(localStorage.getItem('simHoraInicio') || '0', 10)
+    const isDayOne = simStartedAt > 0 && (Date.now() - simStartedAt) < 24 * 60 * 60 * 1000
+
+    if (liveState?.vuelos) {
+      liveState.vuelos.forEach(v => {
+        if (originSet && !originSet.has(v.origen)) return
+        if (destSet && !destSet.has(v.destino)) return
+
+        const depLocal = parseTimeToMinutes(v.horaSalida)
+        const arrLocal = parseTimeToMinutes(v.horaLlegada)
+        const depMin = depLocal // Ya viene en UTC, no aplicar fórmula
+        const arrMin = arrLocal // Ya viene en UTC, no aplicar fórmula
+        
+        let waitDep = null
+        let waitArr = null
+        
+        if (depMin != null) {
+          let excludeDep = false
+          if (isDayOne && depMin < simStartMinute) {
+            excludeDep = true
+          }
+          if (!excludeDep) {
+            waitDep = Math.floor((depMin - liveNowMinutes + 1440) % 1440)
+            if (!depFlightsConsidered[v.origen]) depFlightsConsidered[v.origen] = []
+            depFlightsConsidered[v.origen].push({ id: v.codigoVuelo, time: v.horaSalida, wait: waitDep })
+            if (nextDep[v.origen] === undefined || waitDep < nextDep[v.origen]) {
+               nextDep[v.origen] = waitDep
+            }
+          }
+        }
+        if (arrMin != null) {
+          let excludeArr = false
+          if (depMin != null) {
+            if (isDayOne && depMin < arrMin && arrMin < simStartMinute) {
+              excludeArr = true
+            }
+          }
+          if (!excludeArr) {
+            if (depMin != null && isActiveAtMinute(liveNowMinutes, depMin, arrMin)) {
+              waitArr = Math.floor((arrMin - liveNowMinutes + 1440) % 1440)
+              if (!arrFlightsConsidered[v.destino]) arrFlightsConsidered[v.destino] = []
+              arrFlightsConsidered[v.destino].push({ id: v.codigoVuelo, time: v.horaLlegada, wait: waitArr })
+              if (nextArr[v.destino] === undefined || waitArr < nextArr[v.destino]) {
+                 nextArr[v.destino] = waitArr
+              }
+            }
+          }
+        }
+      })
+    }
+
     return liveState.aeropuertos.map((a) => ({
       id: a.codigoIATA,
       name: a.nombre,
       continent: a.continente,
       lat: a.lat,
       lng: a.lng,
-      // backend may return both `maletasPendientes` (absolute) and `ocupacionPct` (percentage)
-      // compute a sane `currentOccupation` (absolute) and ensure capacity is provided
       warehouseCapacity: a.capacidadAlmacen ?? 600,
       currentOccupation: (a.maletasPendientes != null)
         ? a.maletasPendientes
@@ -74,8 +133,12 @@ export default function LiveScreen({ liveState, theme, onBack }) {
       maletasPendientes: a.maletasPendientes,
       semaforo: a.semaforo,
       ciudad: a.ciudad,
+      nextDepartureWait: nextDep[a.codigoIATA] ?? Infinity,
+      nextArrivalWait: nextArr[a.codigoIATA] ?? Infinity,
+      debugDep: depFlightsConsidered[a.codigoIATA] || [],
+      debugArr: arrFlightsConsidered[a.codigoIATA] || [],
     }))
-  }, [liveState?.aeropuertos])
+  }, [liveState?.aeropuertos, liveState?.vuelos, originSet, destSet, liveNowMinutes])
 
   const flights = useMemo(() => {
     if (!liveState?.vuelos) return []
@@ -105,9 +168,6 @@ export default function LiveScreen({ liveState, theme, onBack }) {
       })
       .filter((v) => isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
   }, [liveState?.vuelos, liveNowMinutes])
-
-  const originSet = useMemo(() => originIds ? new Set(originIds) : null, [originIds])
-  const destSet = useMemo(() => destIds ? new Set(destIds) : null, [destIds])
 
   const visibleAirports = useMemo(() => {
     if (!originSet && !destSet) return airports
