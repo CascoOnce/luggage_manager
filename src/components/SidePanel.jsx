@@ -48,15 +48,36 @@ function warehouseColor(ap, threshold, theme) {
 }
 
 // ── SECTION: VUELOS ──────────────────────────────────────────────────────────
-function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlight, setSelectedFlight, setMapSelectedVuelo, theme }) {
+const SEMAFORO_VU = [
+  { key: 'verde', label: 'Verde', color: '#22d07a' },
+  { key: 'ambar', label: 'Ámbar', color: '#f5a623' },
+  { key: 'rojo',  label: 'Rojo',  color: '#f04b4b' },
+  { key: 'vacio', label: 'Vacío', color: '#4d9fff' },
+]
+
+function vuSemaforo(f) {
+  const pct = f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
+  if (pct === 0)    return 'vacio'
+  if (pct >= 85)    return 'rojo'
+  if (pct >= 60)    return 'ambar'
+  return 'verde'
+}
+
+function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlight, setSelectedFlight, setMapSelectedVuelo, theme, onVueloFilterChange }) {
   const [tab,          setTab]          = useState('activos')
   const [query,        setQuery]        = useState('')
   const [sortField,    setSortField]    = useState('occupancy')
   const [sortDir,      setSortDir]      = useState('desc')
   const [filterOrigin, setFilterOrigin] = useState('')
   const [filterDest,   setFilterDest]   = useState('')
+  const [semaforoFilt, setSemaforoFilt] = useState([])
 
   const list = tab === 'activos' ? (flights || []) : tab === 'planificados' ? (plannedFlights || []) : (cancelledFlights || [])
+
+  // Propagate origin/dest/semaforo filters to map
+  useEffect(() => {
+    onVueloFilterChange?.({ origin: filterOrigin, dest: filterDest, semaforo: semaforoFilt })
+  }, [filterOrigin, filterDest, semaforoFilt]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const originOptions = useMemo(() =>
     [...new Set(list.map(f => f.origin).filter(Boolean))].sort().filter(x => !filterDest || x !== filterDest)
@@ -70,6 +91,7 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
     const filtered = list.filter(f => {
       if (filterOrigin && f.origin      !== filterOrigin) return false
       if (filterDest   && f.destination !== filterDest)   return false
+      if (semaforoFilt.length > 0 && !f.isCancelled && !semaforoFilt.includes(vuSemaforo(f))) return false
       if (!q) return true
       return (
         f.id?.toLowerCase().includes(q) ||
@@ -78,17 +100,24 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
       )
     })
     const occ = f => f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
+    const parseHHMM = s => {
+      if (!s || !s.includes(':')) return null
+      const [h, m] = s.split(':').map(Number)
+      return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null
+    }
     return [...filtered].sort((a, b) => {
       let av, bv
-      if (sortField === 'origin')      { av = (a.origin || '').toLowerCase();      bv = (b.origin || '').toLowerCase() }
-      else if (sortField === 'dest')   { av = (a.destination || '').toLowerCase(); bv = (b.destination || '').toLowerCase() }
-      else                             { av = occ(a); bv = occ(b) }
+      if (sortField === 'origin')           { av = (a.origin || '').toLowerCase();      bv = (b.origin || '').toLowerCase() }
+      else if (sortField === 'dest')        { av = (a.destination || '').toLowerCase(); bv = (b.destination || '').toLowerCase() }
+      else if (sortField === 'departureTime') { av = a.depMin ?? parseHHMM(a.horaSalida); bv = b.depMin ?? parseHHMM(b.horaSalida) }
+      else if (sortField === 'arrivalTime')   { av = a.arrMin ?? parseHHMM(a.horaLlegada); bv = b.arrMin ?? parseHHMM(b.horaLlegada) }
+      else                                  { av = occ(a); bv = occ(b) }
       if (av == null && bv == null) return 0
       if (av == null) return 1; if (bv == null) return -1
       if (typeof av === 'number') return sortDir === 'desc' ? bv - av : av - bv
       return sortDir === 'desc' ? (av < bv ? 1 : -1) : (av < bv ? -1 : 1)
     })
-  }, [list, query, filterOrigin, filterDest, sortField, sortDir])
+  }, [list, query, filterOrigin, filterDest, semaforoFilt, sortField, sortDir])
 
   const isDark = theme !== 'light'
   const selBg  = isDark ? '#1e2130' : '#f1f5f9'
@@ -124,10 +153,23 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
           </select>
         ))}
       </div>
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+        {SEMAFORO_VU.map(({ key, label, color }) => {
+          const active = semaforoFilt.includes(key)
+          return (
+            <button key={key} onClick={() => setSemaforoFilt(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])}
+              style={{ fontFamily: 'var(--mono)', fontSize: 10, padding: '2px 7px', borderRadius: 3, border: `1px solid ${active ? `${color}88` : 'var(--border)'}`, background: active ? `${color}18` : 'transparent', color: active ? color : 'var(--muted)', cursor: 'pointer' }}>
+              {label}
+            </button>
+          )
+        })}
+      </div>
       <div style={{ display: 'flex', gap: 5, marginBottom: 8, alignItems: 'center' }}>
         <select value={sortField} onChange={e => setSortField(e.target.value)}
           style={{ flex: 1, background: selBg, border: `1px solid ${selBdr}`, color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '4px 5px', borderRadius: 2 }}>
           <option value="occupancy">Ocupación</option>
+          <option value="departureTime">Hora salida</option>
+          <option value="arrivalTime">Hora llegada</option>
           <option value="origin">Origen</option>
           <option value="dest">Destino</option>
         </select>
@@ -168,7 +210,10 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
               <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: color, boxShadow: `0 0 5px ${color}` }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--text-bright)', fontWeight: 500 }}>{f.origin} → {f.destination}</div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{f.currentLoad}/{f.capacity} · {f.type === 'continental' ? 'CONT' : 'INT'}</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                  {f.currentLoad}/{f.capacity} · {f.type === 'continental' ? 'CONT' : 'INT'}
+                  {f.horaSalida && <span style={{ marginLeft: 6 }}>· ✈ {f.horaSalida}{f.horaLlegada ? `→${f.horaLlegada}` : ''}</span>}
+                </div>
                 <div style={{ height: 2, background: 'rgba(255,255,255,0.07)', borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: color, transition: 'width 0.4s' }} />
                 </div>
@@ -195,11 +240,127 @@ const ESTADO_COLOR = {
   RETRASADO:   '#f04b4b',
 }
 
-function EnviosSection({ simState }) {
+function parseEnvioIdFromMaletaId(maletaId) {
+  const match = maletaId.match(/^(.+)-(\d+)$/)
+  return match ? match[1] : null
+}
+
+function EscalasDetalle({ escalas }) {
+  if (!escalas || escalas.length === 0) return null
+  const fmt = (dt) => {
+    if (!dt) return '—'
+    const s = typeof dt === 'string' ? dt : String(dt)
+    const t = s.includes('T') ? s.split('T')[1]?.slice(0, 5) : s.slice(0, 5)
+    return t || '—'
+  }
+  return (
+    <div style={{ marginTop: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+      {escalas.map((esc, i) => {
+        const isFirst = i === 0
+        const isLast  = i === escalas.length - 1
+        const tipo    = isFirst ? 'ORIGEN' : isLast ? 'DESTINO' : 'ESCALA'
+        const tipoColor = isFirst ? '#4d9fff' : isLast ? '#22d07a' : '#f5a623'
+        return (
+          <div key={i} style={{ padding: '7px 10px', borderBottom: i < escalas.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: tipoColor, marginTop: 5, flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', fontWeight: 600 }}>{esc.codigoAeropuerto}</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, padding: '1px 5px', borderRadius: 3, background: `${tipoColor}18`, color: tipoColor, border: `1px solid ${tipoColor}40` }}>{tipo}</span>
+              </div>
+              {esc.codigoVuelo && (
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Vuelo: {esc.codigoVuelo}</div>
+              )}
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                {!isFirst && esc.horaLlegadaEst && <span>Llega: {fmt(esc.horaLlegadaEst)}</span>}
+                {!isFirst && esc.horaLlegadaEst && !isLast && esc.horaSalidaEst && <span style={{ margin: '0 6px', opacity: 0.4 }}>·</span>}
+                {!isLast && esc.horaSalidaEst && <span>Sale: {fmt(esc.horaSalidaEst)}</span>}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function BuscarRutaPanel({ simState, onShowEnvioRoute }) {
+  const [mode,     setMode]     = useState('envio')   // 'maleta' | 'envio'
+  const [inputId,  setInputId]  = useState('')
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState(null)
+  const [result,   setResult]   = useState(null)       // { envioId, escalas, origen, destino }
+
+  async function handleBuscar() {
+    const id = inputId.trim()
+    if (!id) return
+    setLoading(true); setError(null); setResult(null)
+    try {
+      let envioId = id
+      if (mode === 'maleta') {
+        const parsed = parseEnvioIdFromMaletaId(id)
+        if (parsed) envioId = parsed
+      }
+      const envio = await api.getEnvioById(envioId)
+      const escalas = envio?.planDetalle?.escalas || []
+      setResult({ envioId: envio.idEnvio, escalas, origen: envio.aeropuertoOrigen, destino: envio.aeropuertoDestino })
+      onShowEnvioRoute?.(envioId)
+    } catch {
+      setError('No se encontró ruta para ese ID')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const selBg = 'rgba(88,166,255,0.1)'
+
+  return (
+    <div style={{ marginBottom: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 4, padding: '10px 10px 8px' }}>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--blue)', display: 'block', marginBottom: 8 }}>Buscar ruta en mapa</span>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+        {[{ key: 'maleta', label: 'Por maleta' }, { key: 'envio', label: 'Por envío' }].map(({ key, label }) => (
+          <button key={key} onClick={() => { setMode(key); setResult(null); setError(null) }}
+            style={{ flex: 1, padding: '4px 0', border: `1px solid ${mode === key ? '#3d8bff88' : 'var(--border)'}`, background: mode === key ? selBg : 'transparent', color: mode === key ? 'var(--blue)' : 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11, borderRadius: 3, cursor: 'pointer', letterSpacing: 0.5 }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 5 }}>
+        <input
+          value={inputId} onChange={e => setInputId(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleBuscar()}
+          placeholder={mode === 'maleta' ? 'ID maleta (ej: ENV001-3)' : 'ID envío (ej: ENV001)'}
+          style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '5px 7px', borderRadius: 2, outline: 'none', minWidth: 0 }}
+        />
+        <button onClick={handleBuscar} disabled={loading || !inputId.trim()}
+          style={{ padding: '5px 10px', background: loading ? 'transparent' : 'rgba(88,166,255,0.12)', border: '1px solid rgba(88,166,255,0.4)', color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 11, borderRadius: 2, cursor: loading || !inputId.trim() ? 'not-allowed' : 'pointer', flexShrink: 0, opacity: !inputId.trim() ? 0.4 : 1 }}>
+          {loading ? '...' : '▶ VER'}
+        </button>
+      </div>
+      {error && <div style={{ marginTop: 6, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)' }}>{error}</div>}
+      {result && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
+            Envío: <span style={{ color: 'var(--blue)' }}>{result.envioId}</span>
+            <span style={{ margin: '0 6px', opacity: 0.4 }}>·</span>
+            {result.origen} → {result.destino}
+          </div>
+          <EscalasDetalle escalas={result.escalas} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation }) {
   const [query,  setQuery]  = useState('')
   const [estado, setEstado] = useState('')
 
-  const envios = simState?.envios || simState?.aeropuertos?.flatMap?.(() => []) || []
+  const handleEnvioClick = (e) => {
+    const iata = e.aeropuertoOrigen
+    const ap = (airports || []).find(a => (a.id || a.codigoIATA) === iata)
+    if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng })
+  }
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -218,6 +379,7 @@ function EnviosSection({ simState }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px 12px', overflow: 'hidden' }}>
+      <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} />
       <input
         value={query} onChange={e => setQuery(e.target.value)}
         placeholder="Buscar ID, origen, destino…"
@@ -240,7 +402,8 @@ function EnviosSection({ simState }) {
           const color = ESTADO_COLOR[e.estado] || 'var(--muted)'
           return (
             <div key={e.idEnvio || i}
-              style={{ padding: '8px 12px', borderBottom: '1px solid rgba(99,152,255,0.07)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              onClick={() => handleEnvioClick(e)}
+              style={{ padding: '8px 12px', borderBottom: '1px solid rgba(99,152,255,0.07)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
               <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: color }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -265,15 +428,38 @@ function EnviosSection({ simState }) {
 }
 
 // ── SECTION: ALMACÉN ─────────────────────────────────────────────────────────
-function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport }) {
-  const [pattern,   setPattern]   = useState('')
-  const [continent, setContinent] = useState('')
-  const [sortField, setSortField] = useState('occupation')
-  const [sortDir,   setSortDir]   = useState('desc')
+const SEMAFORO_AP = [
+  { key: 'verde', label: 'Verde', color: '#22d07a' },
+  { key: 'ambar', label: 'Ámbar', color: '#f5a623' },
+  { key: 'rojo',  label: 'Rojo',  color: '#f04b4b' },
+  { key: 'vacio', label: 'Vacío', color: '#4d9fff' },
+]
+
+function apSemaforo(ap, threshold) {
+  const occ = ap.currentOccupation ?? ap.ocupacionActual ?? 0
+  const cap = ap.warehouseCapacity ?? ap.capacidadAlmacen ?? 600
+  const pct = cap > 0 ? (occ / cap) * 100 : 0
+  if (pct === 0)          return 'vacio'
+  if (pct >= threshold)   return 'rojo'
+  if (pct >= threshold - 20) return 'ambar'
+  return 'verde'
+}
+
+function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport, onAirportFilterChange, onFocusMapLocation }) {
+  const [pattern,       setPattern]       = useState('')
+  const [continent,     setContinent]     = useState('')
+  const [sortField,     setSortField]     = useState('occupation')
+  const [sortDir,       setSortDir]       = useState('desc')
+  const [semaforoFilt,  setSemaforoFilt]  = useState([])
   const list = airports || []
 
   const isDark = theme !== 'light'
   const selBg  = isDark ? '#1e2130' : '#f1f5f9'
+
+  // Propagate filters to map whenever they change
+  useEffect(() => {
+    onAirportFilterChange?.({ continent, pattern: pattern.trim(), semaforo: semaforoFilt })
+  }, [continent, pattern, semaforoFilt]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const continents = useMemo(() =>
     [...new Set(list.map(a => a.continente || a.continent || '').filter(Boolean))].sort()
@@ -287,8 +473,9 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport }) {
     })() : null
     const filtered = list.filter(ap => {
       if (continent && (ap.continente || ap.continent || '') !== continent) return false
-      if (re) return re.test(ap.codigoIATA || ap.id || '')
-      if (patRaw && !patRaw.includes('*')) return (ap.codigoIATA || ap.id || '').toLowerCase().includes(patRaw.toLowerCase())
+      if (re && !re.test(ap.codigoIATA || ap.id || '')) return false
+      if (patRaw && !patRaw.includes('*') && !(ap.codigoIATA || ap.id || '').toLowerCase().includes(patRaw.toLowerCase())) return false
+      if (semaforoFilt.length > 0 && !semaforoFilt.includes(apSemaforo(ap, threshold))) return false
       return true
     })
     return [...filtered].sort((a, b) => {
@@ -299,7 +486,10 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport }) {
       const diff = (bOcc / bCap) - (aOcc / aCap)
       return sortDir === 'desc' ? diff : -diff
     })
-  }, [list, pattern, continent, sortField, sortDir])
+  }, [list, pattern, continent, semaforoFilt, threshold, sortDir])
+
+  const toggleSemaforo = (key) =>
+    setSemaforoFilt(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px 12px', overflow: 'hidden' }}>
@@ -308,7 +498,7 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport }) {
         placeholder="Buscar almacén..."
         style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '5px 8px', borderRadius: 2, outline: 'none', marginBottom: 6 }}
       />
-      <div style={{ display: 'flex', gap: 5, marginBottom: 8, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 5, marginBottom: 6, alignItems: 'center' }}>
         <select value={continent} onChange={e => setContinent(e.target.value)}
           style={{ flex: 1, background: selBg, border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '4px 5px', borderRadius: 2 }}>
           <option value="">Continente</option>
@@ -319,6 +509,17 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport }) {
           {sortDir === 'desc' ? '↓' : '↑'}
         </button>
       </div>
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+        {SEMAFORO_AP.map(({ key, label, color }) => {
+          const active = semaforoFilt.includes(key)
+          return (
+            <button key={key} onClick={() => toggleSemaforo(key)}
+              style={{ fontFamily: 'var(--mono)', fontSize: 10, padding: '2px 7px', borderRadius: 3, border: `1px solid ${active ? `${color}88` : 'var(--border)'}`, background: active ? `${color}18` : 'transparent', color: active ? color : 'var(--muted)', cursor: 'pointer' }}>
+              {label}
+            </button>
+          )
+        })}
+      </div>
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {shown.map(ap => {
           const color = warehouseColor(ap, threshold, theme)
@@ -326,7 +527,10 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport }) {
           const cap   = ap.warehouseCapacity  ?? ap.capacidadAlmacen ?? 600
           const pct   = cap > 0 ? (occ / cap) * 100 : 0
           return (
-            <div key={ap.id} style={{ marginBottom: 10, cursor: 'pointer' }} onClick={() => setMapSelectedAirport?.(ap)}>
+            <div key={ap.id} style={{ marginBottom: 10, cursor: 'pointer' }} onClick={() => {
+              setMapSelectedAirport?.(ap)
+              if (ap.lat && ap.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng })
+            }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>{ap.id} — {ap.name}</span>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color }}>{pct.toFixed(2)}%</span>
@@ -651,10 +855,15 @@ export default function SidePanel({
   setMapSelectedAirport,
   // Envíos
   simState,
+  onShowEnvioRoute,
   // Almacén
   airports,
   threshold,
   setThreshold,
+  // Vinculación mapa
+  onVueloFilterChange,
+  onAirportFilterChange,
+  onFocusMapLocation,
   // Configuración
   onSimulationStarted,
   // Filtros
@@ -724,9 +933,9 @@ export default function SidePanel({
           </div>
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} cancelledFlights={cancelledFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} />}
-            {activeSection === 'envios'  && <EnviosSection  simState={simState} />}
-            {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} />}
+            {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} cancelledFlights={cancelledFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} onVueloFilterChange={onVueloFilterChange} />}
+            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} />}
+            {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} onAirportFilterChange={onAirportFilterChange} onFocusMapLocation={onFocusMapLocation} />}
             {activeSection === 'config'  && <ConfigSection  onSimulationStarted={onSimulationStarted} onClose={() => onSectionChange(null)} theme={theme} />}
             {activeSection === 'filtros' && <FiltrosSection airports={airports} originIds={originIds} setOriginIds={setOriginIds} destIds={destIds} setDestIds={setDestIds} threshold={threshold} setThreshold={setThreshold} />}
             {activeSection === 'ops-ingress' && <OpsIngressSection airports={opsIngressAirports} onEnviosChanged={onOpsEnviosChanged} opsBase={opsBase} />}
