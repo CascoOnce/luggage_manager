@@ -100,7 +100,11 @@ export default function App() {
 
   function parseTimeToMinutes(value) {
     if (!value || typeof value !== 'string' || !value.includes(':')) return null
-    const [hh, mm] = value.split(':').map((v) => Number(v))
+    // If it's a LocalDateTime, split by 'T' and take the time part
+    const timePart = value.includes('T') ? value.split('T')[1] : value
+    const parts = timePart.split(':')
+    const hh = Number(parts[0])
+    const mm = Number(parts[1])
     if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
     return hh * 60 + mm
   }
@@ -160,6 +164,16 @@ export default function App() {
 
         // Ignore stale responses if this polling session was stopped or restarted
         if (pollingRef.current !== id) return
+
+        // Fetch envios en segundo plano para mantener la tabla de envíos actualizada en tiempo real
+        if (state && (state.enEjecucion || state.finalizada)) {
+          try {
+            const envios = await api.getEnvios()
+            state.envios = envios
+          } catch (e) {
+            console.error('Error fetching envios during polling:', e)
+          }
+        }
 
         pollingErrorsRef.current = 0
         setPollingError(null)
@@ -416,18 +430,76 @@ export default function App() {
 
   const displayState = (backendState?.finalizada && prevSimStateRef.current) ? prevSimStateRef.current : backendState;
 
-  const simState = displayState ?? {
-    currentDay: 0, totalDays: 0,
-    elapsedSeconds: 0, algorithm: ALGORITHM,
-    kpis: {
-      bagsInTransit: 0, bagsDelivered: 0,
-      slaCompliance: 0, activeFlights: 0,
-      slaViolated: 0,
-    },
-    airports: staticAirports,
-    flights: [], routes: [],
-    throughputHistory: [], logOperaciones: [],
-  }
+  const clockedEnviosForState = useMemo(() => {
+    const rawEnvios = displayState?.envios || []
+    if (!displayState?.vuelos) return rawEnvios
+
+    const flightTimes = {}
+    for (const v of displayState.vuelos) {
+       flightTimes[v.codigoVuelo] = {
+          depMin: parseTimeToMinutes(v.horaSalida),
+          arrMin: parseTimeToMinutes(v.horaLlegada),
+          destino: v.destino,
+          husOrigen: v.husOrigen,
+          husDestino: v.husDestino
+       }
+    }
+
+    return rawEnvios.map((envio, index) => {
+      const bEstado = envio.estado?.toUpperCase()
+      if (['RETRASADO', 'CANCELADO'].includes(bEstado)) return envio
+      
+      const vAsig = (envio.vuelosAsignados || []).filter(v => v != null)
+      if (vAsig.length === 0) return envio
+      
+      const firstFlight = flightTimes[vAsig[0]]
+      const lastFlight = flightTimes[vAsig[vAsig.length - 1]]
+      
+      if (envio.fechaSalidaPrimerVuelo && envio.fechaLlegadaUltimoVuelo) {
+        const baseDate = displayState?.fechaSimulada ? new Date(displayState.fechaSimulada) : new Date()
+        
+        // currentSimTime represents the exact UTC equivalent time in the simulation.
+        const currentSimTime = new Date(baseDate.getTime() + simClockMinutes * 60000)
+        
+        // The simulation's start time for today (based on the user's start minute)
+        const simStartTime = new Date(baseDate.getTime() + simStartMinuteRef.current * 60000)
+        
+        const firstDepartureTime = new Date(envio.fechaSalidaPrimerVuelo)
+        const lastArrivalTime = new Date(envio.fechaLlegadaUltimoVuelo)
+        
+        // Validation requested: the plane must depart at or after the simulation's daily start time
+        const hasDeparted = currentSimTime >= firstDepartureTime && firstDepartureTime >= simStartTime
+        const hasArrived = currentSimTime >= lastArrivalTime
+        
+        if (hasArrived) {
+            return { ...envio, estado: 'ENTREGADO' }
+        }
+        
+        if (hasDeparted) {
+            return { ...envio, estado: 'EN_TRANSITO' }
+        }
+        
+        return { ...envio, estado: 'PLANIFICADO' }
+      }
+      return envio
+    })
+  }, [displayState?.envios, displayState?.vuelos, simClockMinutes])
+
+  const simState = useMemo(() => {
+    if (!displayState) return {
+      currentDay: 0, totalDays: 0,
+      elapsedSeconds: 0, algorithm: ALGORITHM,
+      kpis: {
+        bagsInTransit: 0, bagsDelivered: 0,
+        slaCompliance: 0, activeFlights: 0,
+        slaViolated: 0,
+      },
+      airports: staticAirports,
+      flights: [], routes: [],
+      throughputHistory: [], logOperaciones: [],
+    }
+    return { ...displayState, envios: clockedEnviosForState }
+  }, [displayState, clockedEnviosForState, staticAirports])
 
   const normalizedAirports = useMemo(() => {
     const airports = simState?.aeropuertos || simState?.airports || []
@@ -993,6 +1065,7 @@ export default function App() {
   function refreshOps() {
     const now = new Date()
     getOpsState(toUtcISO(now)).then(setOpsState).catch((err) => console.error('Ops refresh error:', err))
+    refreshOpsViewData()
   }
 
   // Fast path: refresh only airport occupancy, merging into the existing state.

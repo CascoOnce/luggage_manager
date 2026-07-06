@@ -21,8 +21,11 @@ public class EnvioDTO {
     private String estado;
     private int sla;
     private String fechaHoraIngreso;
+    private String fechaSalidaPrimerVuelo;
+    private String fechaLlegadaUltimoVuelo;
     private String planResumen;
     private String tiempoRestante;
     private PlanDeViaje planDetalle;
     private List<EscalaResumenDTO> escalasResumen;
+    private List<String> vuelosAsignados;
 }

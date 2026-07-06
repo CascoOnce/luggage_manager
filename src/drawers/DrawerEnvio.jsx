@@ -115,7 +115,7 @@ function fmtDwell(min) {
 }
 
 
-export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio = api.getEnvioById }) {
+export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio = api.getEnvioById, currentEstado }) {
   const [envio, setEnvio]   = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]   = useState(null)
@@ -136,7 +136,7 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
       .finally(() => { if (active) setLoading(false) })
 
     return () => { active = false }
-  }, [envioId])
+  }, [envioId, fetchEnvio])
 
   useEffect(() => {
     if (!envioId) return
@@ -147,7 +147,8 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
 
   if (!envioId) return null
 
-  const eColor = estadoColor(envio?.estado)
+  const displayEstado = currentEstado || envio?.estado
+  const eColor = estadoColor(displayEstado)
   const escalas = envio?.planDetalle?.escalas || []
 
   return (

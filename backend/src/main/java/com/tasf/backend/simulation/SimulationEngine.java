@@ -1517,17 +1517,36 @@ public class SimulationEngine {
         // /state payload). Only the per-envio detail fetch needs it; the polled live
         // state omits it. EnviosScreen falls back to the backend estado when absent.
         List<EscalaResumenDTO> escalasResumen = List.of();
-        if (includePlanDetail && plan != null && plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
+        List<String> vuelosAsignados = List.of();
+        String fechaSalidaPrimerVuelo = null;
+        String fechaLlegadaUltimoVuelo = null;
+        if (plan != null && plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
             List<Escala> escalas = plan.getEscalas();
-            int last = escalas.size() - 1;
-            escalasResumen = new java.util.ArrayList<>();
-            for (int i = 0; i <= last; i++) {
-                Escala e = escalas.get(i);
-                escalasResumen.add(EscalaResumenDTO.builder()
-                    .horaSalidaEst(e.getHoraSalidaEst() != null ? e.getHoraSalidaEst().format(TS_FORMAT) : null)
-                    .horaLlegadaEst(e.getHoraLlegadaEst() != null ? e.getHoraLlegadaEst().format(TS_FORMAT) : null)
-                    .esUltima(i == last)
-                    .build());
+            
+            if (escalas.get(0).getHoraSalidaEst() != null) {
+                fechaSalidaPrimerVuelo = escalas.get(0).getHoraSalidaEst().format(TS_FORMAT);
+            }
+            if (escalas.get(escalas.size() - 1).getHoraLlegadaEst() != null) {
+                fechaLlegadaUltimoVuelo = escalas.get(escalas.size() - 1).getHoraLlegadaEst().format(TS_FORMAT);
+            }
+            
+            // Siempre enviamos los códigos de vuelo, es muy liviano y permite al frontend
+            // calcular el estado EN_TRANSITO reactivamente
+            vuelosAsignados = escalas.stream()
+                .map(Escala::getCodigoVuelo)
+                .collect(Collectors.toList());
+
+            if (includePlanDetail) {
+                int last = escalas.size() - 1;
+                escalasResumen = new java.util.ArrayList<>();
+                for (int i = 0; i <= last; i++) {
+                    Escala e = escalas.get(i);
+                    escalasResumen.add(EscalaResumenDTO.builder()
+                        .horaSalidaEst(e.getHoraSalidaEst() != null ? e.getHoraSalidaEst().format(TS_FORMAT) : null)
+                        .horaLlegadaEst(e.getHoraLlegadaEst() != null ? e.getHoraLlegadaEst().format(TS_FORMAT) : null)
+                        .esUltima(i == last)
+                        .build());
+                }
             }
         }
 
@@ -1540,10 +1559,13 @@ public class SimulationEngine {
             .estado(envio.getEstado().name())
             .sla(envio.getSla())
             .fechaHoraIngreso(envio.getFechaHoraIngreso().format(TS_FORMAT))
+            .fechaSalidaPrimerVuelo(fechaSalidaPrimerVuelo)
+            .fechaLlegadaUltimoVuelo(fechaLlegadaUltimoVuelo)
             .planResumen(buildPlanResumen(envio, plan))
             .tiempoRestante(formatRemainingTime(deadline))
             .planDetalle(includePlanDetail ? plan : null)
             .escalasResumen(escalasResumen)
+            .vuelosAsignados(vuelosAsignados)
             .build();
     }
 

@@ -428,6 +428,7 @@ export default function EnviosScreen({ simState, onShowInMap, onCancelFlight, si
         onClose={() => setSelectedEnvioId(null)}
         onShowInMap={onShowInMap}
         fetchEnvio={fetchEnvio}
+        currentEstado={envios.find(e => e.idEnvio === selectedEnvioId)?.estado}
       />
     </div>
       )}
