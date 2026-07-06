@@ -349,6 +349,19 @@ public class OpsService {
             if (plan == null) {
                 plan = loadPlanFromDb(idPedido);
             }
+            
+            String fechaSalidaPrimerVuelo = null;
+            String fechaLlegadaUltimoVuelo = null;
+            if (plan != null && plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
+                List<Escala> escalas = plan.getEscalas();
+                if (escalas.get(0).getHoraSalidaEst() != null) {
+                    fechaSalidaPrimerVuelo = escalas.get(0).getHoraSalidaEst().toString();
+                }
+                if (escalas.get(escalas.size() - 1).getHoraLlegadaEst() != null) {
+                    fechaLlegadaUltimoVuelo = escalas.get(escalas.size() - 1).getHoraLlegadaEst().toString();
+                }
+            }
+            
             return EnvioDTO.builder()
                 .idEnvio(ent.getIdPedido())
                 .codigoAerolinea(ent.getCodigoAerolinea())
@@ -358,6 +371,8 @@ public class OpsService {
                 .estado(ent.getEstado())
                 .sla(ent.getSla())
                 .fechaHoraIngreso(ent.getFechaHoraIngreso() != null ? ent.getFechaHoraIngreso().toString() : null)
+                .fechaSalidaPrimerVuelo(fechaSalidaPrimerVuelo)
+                .fechaLlegadaUltimoVuelo(fechaLlegadaUltimoVuelo)
                 .planDetalle(plan)
                 .build();
         });

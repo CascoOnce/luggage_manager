@@ -124,14 +124,20 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
       )
     })
 
+    const adjustToSimStart = (minutes) => {
+      if (minutes == null) return null;
+      const start = parseInt(localStorage.getItem('simHoraInicio') || '0', 10);
+      return (minutes - start + 1440) % 1440;
+    }
+
     // sorting
     const sorted = [...filtered].sort((a, b) => {
       let av, bv
       switch (sortField) {
         case 'departureTime':
-          av = a.depMin ?? null; bv = b.depMin ?? null; break
+          av = adjustToSimStart(a.depMin); bv = adjustToSimStart(b.depMin); break
         case 'arrivalTime':
-          av = a.arrMin ?? null; bv = b.arrMin ?? null; break
+          av = adjustToSimStart(a.arrMin); bv = adjustToSimStart(b.arrMin); break
         case 'origin':
           av = (a.origin || '').toLowerCase(); bv = (b.origin || '').toLowerCase(); break
         case 'destination':
@@ -178,10 +184,10 @@ export default function RightPanel({ flights, airports, threshold, selectedFligh
       const bOcc = b.currentOccupation ?? b.ocupacionActual ?? 0
       const bCap = b.warehouseCapacity ?? b.capacidadAlmacen ?? 600
       if (airportSortField === 'nextDeparture' || airportSortField === 'nextArrival') {
-        const aVal = Date.parse(a[airportSortField])
-        const bVal = Date.parse(b[airportSortField])
-        const aNull = Number.isNaN(aVal)
-        const bNull = Number.isNaN(bVal)
+        const aVal = airportSortField === 'nextDeparture' ? a.nextDepartureWait : a.nextArrivalWait
+        const bVal = airportSortField === 'nextDeparture' ? b.nextDepartureWait : b.nextArrivalWait
+        const aNull = aVal === Infinity || aVal == null
+        const bNull = bVal === Infinity || bVal == null
         if (aNull && bNull) return 0
         if (aNull) return 1
         if (bNull) return -1

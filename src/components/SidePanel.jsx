@@ -103,14 +103,17 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
     const parseHHMM = s => {
       if (!s || !s.includes(':')) return null
       const [h, m] = s.split(':').map(Number)
-      return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null
+      if (!Number.isFinite(h) || !Number.isFinite(m)) return null
+      const raw = h * 60 + m
+      const start = parseInt(localStorage.getItem('simHoraInicio') || '0', 10)
+      return (raw - start + 1440) % 1440
     }
     return [...filtered].sort((a, b) => {
       let av, bv
       if (sortField === 'origin')           { av = (a.origin || '').toLowerCase();      bv = (b.origin || '').toLowerCase() }
       else if (sortField === 'dest')        { av = (a.destination || '').toLowerCase(); bv = (b.destination || '').toLowerCase() }
-      else if (sortField === 'departureTime') { av = a.depMin ?? parseHHMM(a.horaSalida); bv = b.depMin ?? parseHHMM(b.horaSalida) }
-      else if (sortField === 'arrivalTime')   { av = a.arrMin ?? parseHHMM(a.horaLlegada); bv = b.arrMin ?? parseHHMM(b.horaLlegada) }
+      else if (sortField === 'departureTime') { av = parseHHMM(a.horaSalida); bv = parseHHMM(b.horaSalida) }
+      else if (sortField === 'arrivalTime')   { av = parseHHMM(a.horaLlegada); bv = parseHHMM(b.horaLlegada) }
       else                                  { av = occ(a); bv = occ(b) }
       if (av == null && bv == null) return 0
       if (av == null) return 1; if (bv == null) return -1
@@ -552,6 +555,22 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport, onA
                   )}
                   {sortField === 'nextArrival' && ap.nextArrivalWait !== Infinity && (
                     <span style={{ color: 'var(--blue)', marginLeft: 8, fontSize: 11 }}>Llega en {ap.nextArrivalWait}m</span>
+                  )}
+                  {sortField === 'nextDeparture' && ap.debugDep && ap.debugDep.length > 0 && ap.nextDepartureWait !== Infinity && (
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+                      {(() => {
+                         const d = ap.debugDep.find(x => x.wait === ap.nextDepartureWait)
+                         return d ? <div key={d.id}>{d.id}: Sale a {d.time} (Esp={d.wait}m)</div> : null
+                      })()}
+                    </div>
+                  )}
+                  {sortField === 'nextArrival' && ap.debugArr && ap.debugArr.length > 0 && ap.nextArrivalWait !== Infinity && (
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+                      {(() => {
+                         const d = ap.debugArr.find(x => x.wait === ap.nextArrivalWait)
+                         return d ? <div key={d.id}>{d.id}: Llega a {d.time} (Esp={d.wait}m)</div> : null
+                      })()}
+                    </div>
                   )}
                 </span>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color }}>{pct.toFixed(2)}%</span>
