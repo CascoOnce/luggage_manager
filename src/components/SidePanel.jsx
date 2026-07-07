@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState, useEffect } from 'react'
 import { api, startSimulation } from '../services/api.js'
 import AirportFilterPanel from './AirportFilterPanel.jsx'
 import OpsEnviosIngress from './OpsEnviosIngress.jsx'
+import DrawerEnvio from '../drawers/DrawerEnvio.jsx'
 
 const FILE_PATTERN = /_envios_[A-Za-z]{4}_\.txt$/i
 
@@ -431,15 +432,21 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
       })
   }, [mode, opsData, simState, nowMin, horas])
 
-  const list = useMemo(() => {
-    const o = filterOrig.trim().toUpperCase()
-    const d = filterDest.trim().toUpperCase()
-    return baseList.filter(e => {
-      if (o && !(e.aeropuertoOrigen || '').toUpperCase().includes(o)) return false
-      if (d && !(e.aeropuertoDestino || '').toUpperCase().includes(d)) return false
+  const origOpts = useMemo(() =>
+    [...new Set(baseList.map(e => e.aeropuertoOrigen).filter(Boolean))].sort()
+  , [baseList])
+
+  const destOpts = useMemo(() =>
+    [...new Set(baseList.map(e => e.aeropuertoDestino).filter(Boolean))].sort()
+  , [baseList])
+
+  const list = useMemo(() =>
+    baseList.filter(e => {
+      if (filterOrig && e.aeropuertoOrigen !== filterOrig) return false
+      if (filterDest && e.aeropuertoDestino !== filterDest) return false
       return true
     })
-  }, [baseList, filterOrig, filterDest])
+  , [baseList, filterOrig, filterDest])
 
   const fmtUT = (ingreso, entrega) => {
     if (!ingreso || !entrega) return '—'
@@ -450,7 +457,7 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
     return `${h}h ${String(m).padStart(2, '0')}m`
   }
 
-  const inputStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '3px 6px', borderRadius: 2, outline: 'none', width: '100%', boxSizing: 'border-box', textTransform: 'uppercase' }
+  const selStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '3px 4px', borderRadius: 2, outline: 'none', width: '100%', appearance: 'none', WebkitAppearance: 'none' }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -474,11 +481,17 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 6 }}>
         <div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>ORIGEN</div>
-          <input value={filterOrig} onChange={e => setFilterOrig(e.target.value)} placeholder="Ej: SPIM" style={inputStyle} />
+          <select value={filterOrig} onChange={e => setFilterOrig(e.target.value)} style={selStyle}>
+            <option value="">Todos</option>
+            {origOpts.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
         </div>
         <div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>DESTINO</div>
-          <input value={filterDest} onChange={e => setFilterDest(e.target.value)} placeholder="Ej: LIME" style={inputStyle} />
+          <select value={filterDest} onChange={e => setFilterDest(e.target.value)} style={selStyle}>
+            <option value="">Todos</option>
+            {destOpts.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
         </div>
       </div>
 
@@ -528,14 +541,24 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
 }
 
 function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation, onSelectFlight, mode, nowMin }) {
-  const [view,   setView]   = useState('lista')
-  const [query,  setQuery]  = useState('')
-  const [estado, setEstado] = useState('')
+  const [view,          setView]          = useState('lista')
+  const [query,         setQuery]         = useState('')
+  const [estado,        setEstado]        = useState('')
+  const [filterOrig,    setFilterOrig]    = useState('')
+  const [filterDest,    setFilterDest]    = useState('')
+  const [selectedEnvio, setSelectedEnvio] = useState(null) // { id, estado }
+
+  const apMap = useMemo(() => {
+    const m = {}
+    for (const a of (airports || [])) m[a.id || a.codigoIATA] = a
+    return m
+  }, [airports])
 
   const handleEnvioClick = (e) => {
+    setSelectedEnvio({ id: e.idEnvio, estado: e.estado })
     if (e.estado === 'ENTREGADO') {
-      const ap = (airports || []).find(a => (a.id || a.codigoIATA) === e.aeropuertoDestino)
-      if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng })
+      const ap = apMap[e.aeropuertoDestino]
+      if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng, zoom: 7, duration: 1.2 })
     } else if (e.estado === 'EN_TRANSITO') {
       const escalas = e.planDetalle?.escalas || []
       const now = mode === 'ops'
@@ -545,27 +568,47 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
             if (!fs) return new Date()
             return new Date(new Date(fs).getTime() + (nowMin || 0) * 60000)
           })()
-      const currentEscala = escalas.find(esc =>
+      const sorted = [...escalas].sort((a, b) => a.orden - b.orden)
+      const currentIdx = sorted.findIndex(esc =>
         esc.horaSalidaEst && esc.horaLlegadaEst &&
         new Date(esc.horaSalidaEst) <= now &&
         new Date(esc.horaLlegadaEst) > now
       )
-      if (currentEscala?.codigoVuelo) {
-        onSelectFlight?.(currentEscala.codigoVuelo)
+      if (currentIdx >= 0) {
+        const arrAp  = apMap[sorted[currentIdx].codigoAeropuerto]
+        const prevAp = currentIdx > 0 ? apMap[sorted[currentIdx - 1].codigoAeropuerto] : null
+        if (arrAp && prevAp) {
+          onFocusMapLocation?.({ lat: (arrAp.lat + prevAp.lat) / 2, lng: (arrAp.lng + prevAp.lng) / 2, zoom: 4, duration: 1.2 })
+        } else if (arrAp) {
+          onFocusMapLocation?.({ lat: arrAp.lat, lng: arrAp.lng, zoom: 5, duration: 1.2 })
+        }
+        onSelectFlight?.(sorted[currentIdx].codigoVuelo)
       } else {
-        const ap = (airports || []).find(a => (a.id || a.codigoIATA) === e.aeropuertoOrigen)
-        if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng })
+        const ap = apMap[e.aeropuertoOrigen]
+        if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng, zoom: 5, duration: 1.2 })
       }
     } else {
-      const ap = (airports || []).find(a => (a.id || a.codigoIATA) === e.aeropuertoOrigen)
-      if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng })
+      const ap = apMap[e.aeropuertoOrigen]
+      if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng, zoom: 7, duration: 1.2 })
     }
   }
 
+  const allEnvios = simState?.envios || []
+
+  const origOptions = useMemo(() =>
+    [...new Set(allEnvios.map(e => e.aeropuertoOrigen).filter(Boolean))].sort()
+  , [allEnvios])
+
+  const destOptions = useMemo(() =>
+    [...new Set(allEnvios.map(e => e.aeropuertoDestino).filter(Boolean))].sort()
+  , [allEnvios])
+
   const list = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return (simState?.envios || []).filter(e => {
+    return allEnvios.filter(e => {
       if (estado && e.estado !== estado) return false
+      if (filterOrig && e.aeropuertoOrigen !== filterOrig) return false
+      if (filterDest && e.aeropuertoDestino !== filterDest) return false
       if (!q) return true
       return (
         (e.idEnvio || '').toLowerCase().includes(q) ||
@@ -573,12 +616,27 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
         (e.aeropuertoDestino || '').toLowerCase().includes(q)
       )
     })
-  }, [simState?.envios, query, estado])
+  }, [allEnvios, query, estado, filterOrig, filterDest])
 
   const ESTADOS = ['PENDIENTE', 'EN_TRANSITO', 'ENTREGADO', 'RETRASADO']
 
+  const selectStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '3px 4px', borderRadius: 2, outline: 'none', width: '100%', appearance: 'none', WebkitAppearance: 'none' }
+
+  const fetchEnvioFn = mode === 'ops' ? api.getOpsEnvioById : api.getEnvioById
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px 12px', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px 12px', overflow: 'hidden', position: 'relative' }}>
+      {/* Envío detail drawer inline */}
+      {selectedEnvio && (
+        <DrawerEnvio
+          envioId={selectedEnvio.id}
+          currentEstado={selectedEnvio.estado}
+          fetchEnvio={fetchEnvioFn}
+          onClose={() => setSelectedEnvio(null)}
+          onShowInMap={onShowEnvioRoute}
+        />
+      )}
+
       <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
         {[{ key: 'lista', label: 'Lista' }, { key: 'entregados', label: 'Entregados' }].map(({ key, label }) => (
           <button key={key} onClick={() => setView(key)}
@@ -598,6 +656,23 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
             placeholder="Buscar ID, origen, destino…"
             style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '5px 8px', borderRadius: 2, outline: 'none', marginBottom: 6 }}
           />
+          {/* Origen / Destino dropdowns */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 6 }}>
+            <div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>ORIGEN</div>
+              <select value={filterOrig} onChange={e => setFilterOrig(e.target.value)} style={selectStyle}>
+                <option value="">Todos</option>
+                {origOptions.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>DESTINO</div>
+              <select value={filterDest} onChange={e => setFilterDest(e.target.value)} style={selectStyle}>
+                <option value="">Todos</option>
+                {destOptions.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          </div>
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
             <button onClick={() => setEstado('')}
               style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 8px', borderRadius: 3, border: `1px solid ${!estado ? '#3d8bff88' : 'var(--border)'}`, background: !estado ? 'rgba(61,139,255,0.1)' : 'transparent', color: !estado ? 'var(--blue)' : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.5 }}>
@@ -633,7 +708,7 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
               )
             })}
             {list.length === 0 && (
-              <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin envíos{query || estado ? ' (filtro activo)' : ''}</div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin envíos{query || estado || filterOrig || filterDest ? ' (filtro activo)' : ''}</div>
             )}
           </div>
         </>

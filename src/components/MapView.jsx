@@ -86,7 +86,9 @@ function FlyToTarget({ target }) {
     if (!target || !target.lat || !target.lng) return
     if (prevRef.current === target) return
     prevRef.current = target
-    map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 5), { animate: true, duration: 0.7 })
+    const zoom     = target.zoom     ?? Math.max(map.getZoom(), 5)
+    const duration = target.duration ?? 0.7
+    map.flyTo([target.lat, target.lng], zoom, { animate: true, duration })
   }, [map, target])
   return null
 }
