@@ -82,6 +82,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
   const [originIds, setOriginIds] = useState(null)
   const [destIds, setDestIds] = useState(null)
   const [selectedAirport, setSelectedAirport] = useState(null)
+  const [mapFlyTo, setMapFlyTo] = useState(null)
   const [threshold, setThreshold] = useState(80)
   const [activeSideSection, setActiveSideSection] = useState(null)
   const [highlightedRoute, setHighlightedRoute] = useState(null)
@@ -428,7 +429,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
             selectedFlight={selectedFlight}
             setSelectedFlight={setSelectedFlight}
             selectedFlightData={selectedFlightData}
-            onAirportClick={setSelectedAirport}
+            onAirportClick={(ap) => { setSelectedAirport(ap); setMapFlyTo(ap) }}
             onMapClick={() => {
               setSelectedAirport(null)
               setSelectedFlight(null)
@@ -436,6 +437,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
             }}
             theme="dark"
             highlightedRoute={highlightedRoute}
+            flyToTarget={mapFlyTo}
           />
         </div>
 
@@ -464,6 +466,8 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
               onOpsEnviosChanged={onRefreshOps || (() => {})}
               opsBase={opsBase}
               onShowEnvioRoute={handleShowEnvioRoute}
+              onFocusMapLocation={setMapFlyTo}
+              setMapSelectedAirport={(ap) => { setSelectedAirport(ap); setMapFlyTo(ap) }}
             />
           </div>
 
