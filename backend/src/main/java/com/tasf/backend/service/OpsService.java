@@ -150,12 +150,16 @@ public class OpsService {
             PlanDeViaje plan = plans.get(0);
             if (plan.getEscalas() == null) continue;
             int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
+            int husoEnvio = husoPorEnvio.getOrDefault(envio.getIdPedido(), 0);
             plan.getEscalas().stream()
                     .filter(e -> e.getOrden() == orden && e.getCodigoVuelo() != null)
                     .findFirst()
                     .ifPresent(e -> {
                         LocalDate expected = expectedDateByFlight.get(e.getCodigoVuelo());
-                        if (expected != null && e.getHoraSalidaEst() != null && e.getHoraSalidaEst().toLocalDate().equals(expected)) {
+                        // expectedDate is computed in origin-local time; convert UTC horaSalidaEst likewise.
+                        LocalDate salidaLocal = e.getHoraSalidaEst() != null
+                                ? e.getHoraSalidaEst().plusHours(husoEnvio).toLocalDate() : null;
+                        if (expected != null && salidaLocal != null && salidaLocal.equals(expected)) {
                             cargaPorVuelo.merge(e.getCodigoVuelo(), envio.getCantidadMaletas(), Integer::sum);
                         }
                     });
@@ -375,8 +379,15 @@ public class OpsService {
     // -------------------------------------------------------------------------
 
     @Transactional(value = "opsTransactionManager", readOnly = true)
-    public List<EnvioEntity> getEnvios() {
-        return opsEnvioRepository.findAllByOrderByFechaHoraIngresoDesc();
+    public List<EnvioDTO> getEnvios() {
+        return opsEnvioRepository.findAllByOrderByFechaHoraIngresoDesc().stream()
+                .map(e -> {
+                    List<PlanDeViaje> plans = planesPorEnvio.get(e.getIdPedido());
+                    PlanDeViaje plan = (plans != null && !plans.isEmpty()) ? plans.get(0) : null;
+                    if (plan == null) plan = loadPlanFromDb(e.getIdPedido());
+                    return toDto(e, plan);
+                })
+                .toList();
     }
 
     // -------------------------------------------------------------------------
@@ -404,7 +415,8 @@ public class OpsService {
         // Find expected departure date for this flight (same logic as getLiveState)
         LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
         LocalDate expectedDate = null;
-        
+        int flightOriginHuso = 0;
+
         Optional<Vuelo> optVuelo = dataLoaderService.getVuelos().stream()
             .filter(v -> v.getCodigoVuelo().equals(codigoVuelo))
             .findFirst();
@@ -431,6 +443,7 @@ public class OpsService {
             
             int nowLocalMin = Math.floorMod(nowMin + husoOrigenVuelo * 60, 1440);
             
+            flightOriginHuso = husoOrigenVuelo;
             expectedDate = nowUtc.plusHours(husoOrigenVuelo).toLocalDate();
             boolean overnightLocal = depLocalMin > arrLocalMin;
             if (inFlight && overnightLocal && nowLocalMin <= arrLocalMin) {
@@ -443,9 +456,13 @@ public class OpsService {
             if (planes.isEmpty()) continue;
             PlanDeViaje p = planes.get(0);
             if (p.getEscalas() == null) continue;
+            int husoEnvio = husoPorEnvio.getOrDefault(p.getIdEnvio(), flightOriginHuso);
             for (Escala e : p.getEscalas()) {
                 if (codigoVuelo.equals(e.getCodigoVuelo())) {
-                    if (expectedDate != null && e.getHoraSalidaEst() != null && e.getHoraSalidaEst().toLocalDate().equals(expectedDate)) {
+                    // expectedDate is in origin-local time; convert UTC horaSalidaEst likewise.
+                    LocalDate salidaLocal = e.getHoraSalidaEst() != null
+                            ? e.getHoraSalidaEst().plusHours(husoEnvio).toLocalDate() : null;
+                    if (expectedDate != null && salidaLocal != null && salidaLocal.equals(expectedDate)) {
                         envioIds.add(p.getIdEnvio());
                     }
                     break;
@@ -463,6 +480,25 @@ public class OpsService {
             });
         }
         return result;
+    }
+
+    // -------------------------------------------------------------------------
+    // 6b. getEnviosEntregados — envíos delivered in the last N hours (real UTC).
+    // -------------------------------------------------------------------------
+
+    @Transactional(value = "opsTransactionManager", readOnly = true)
+    public List<EnvioDTO> getEnviosEntregados(int horas) {
+        int clampedHoras = Math.min(Math.max(horas, 1), 24);
+        LocalDateTime since = LocalDateTime.now(ZoneOffset.UTC).minusHours(clampedHoras);
+        return opsEnvioRepository
+                .findByEstadoAndFechaEntregaAfterOrderByFechaEntregaDesc("ENTREGADO", since)
+                .stream()
+                .map(e -> {
+                    List<PlanDeViaje> plans = planesPorEnvio.get(e.getIdPedido());
+                    PlanDeViaje plan = (plans != null && !plans.isEmpty()) ? plans.get(0) : loadPlanFromDb(e.getIdPedido());
+                    return toDto(e, plan);
+                })
+                .toList();
     }
 
     private EnvioDTO toDto(EnvioEntity ent, PlanDeViaje plan) {
@@ -489,6 +525,8 @@ public class OpsService {
             .fechaHoraIngreso(ent.getFechaHoraIngreso() != null ? ent.getFechaHoraIngreso().toString() : null)
             .fechaSalidaPrimerVuelo(fechaSalidaPrimerVuelo)
             .fechaLlegadaUltimoVuelo(fechaLlegadaUltimoVuelo)
+            .planResumen(buildPlanResumen(ent.getIataOrigen(), ent.getIataDestino(), plan))
+            .fechaEntrega(ent.getFechaEntrega() != null ? ent.getFechaEntrega().toString() : null)
             .planDetalle(plan)
             .build();
     }
@@ -760,7 +798,7 @@ public class OpsService {
 
     // -------------------------------------------------------------------------
     // 9. procesarSalidas — called by OpsScheduler every ~30s.
-    //    Transitions PENDIENTE envíos to EN_VUELO when horaSalidaEst <= now.
+    //    Transitions PENDIENTE envíos to EN_TRANSITO when horaSalidaEst <= now.
     // -------------------------------------------------------------------------
 
     @Transactional("opsTransactionManager")
@@ -775,16 +813,17 @@ public class OpsService {
             if (plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
 
             int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
-            // Planner builds timestamps in origin-airport local time; compare in kind.
-            int huso = husoPorEnvio.getOrDefault(envio.getIdPedido(), 0);
-            LocalDateTime nowLocal = nowUtc.plusHours(huso);
 
             plan.getEscalas().stream()
                     .filter(e -> e.getOrden() == orden)
                     .findFirst()
                     .ifPresent(escala -> {
-                        if (!escala.getHoraSalidaEst().isAfter(nowLocal)) {
-                            envio.setEstado("EN_VUELO");
+                        // horaSalidaEst is UTC (built by the planner from UTC inputs); compare directly.
+                        if (!escala.getHoraSalidaEst().isAfter(nowUtc)) {
+                            // Must match EstadoEnvio.EN_TRANSITO — the frontend (SidePanel,
+                            // EnviosScreen) and the enum itself key off this exact string to
+                            // color/filter/route in-transit envíos.
+                            envio.setEstado("EN_TRANSITO");
                             opsEnvioRepository.save(envio);
                             log.info("Salida: {} en vuelo {} (escala {})",
                                     envio.getIdPedido(), escala.getCodigoVuelo(), orden);
@@ -795,7 +834,7 @@ public class OpsService {
 
     // -------------------------------------------------------------------------
     // 10. procesarLlegadas — called by OpsScheduler every ~30s (after salidas).
-    //     Transitions EN_VUELO envíos: intermediate stop → PENDIENTE at new iataOrigen,
+    //     Transitions EN_TRANSITO envíos: intermediate stop → PENDIENTE at new iataOrigen,
     //     or final destination → ENTREGADO.
     // -------------------------------------------------------------------------
 
@@ -804,15 +843,13 @@ public class OpsService {
         if (planesPorEnvio.isEmpty()) return;
         LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
 
-        for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("EN_VUELO")) {
+        for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("EN_TRANSITO")) {
             List<PlanDeViaje> plans = planesPorEnvio.get(envio.getIdPedido());
             if (plans == null || plans.isEmpty()) continue;
             PlanDeViaje plan = plans.get(0);
             if (plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
 
             int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
-            int huso = husoPorEnvio.getOrDefault(envio.getIdPedido(), 0);
-            LocalDateTime nowLocal = nowUtc.plusHours(huso);
             List<Escala> escalas = plan.getEscalas().stream()
                     .sorted(Comparator.comparingInt(Escala::getOrden))
                     .toList();
@@ -821,7 +858,8 @@ public class OpsService {
                     .filter(e -> e.getOrden() == orden)
                     .findFirst()
                     .ifPresent(escala -> {
-                        if (!escala.getHoraLlegadaEst().isAfter(nowLocal)) {
+                        // horaSalidaEst/horaLlegadaEst are UTC; compare directly.
+                        if (!escala.getHoraLlegadaEst().isAfter(nowUtc)) {
                             boolean hayMasEscalas = escalas.stream()
                                     .anyMatch(e -> e.getOrden() == orden + 1);
                             if (hayMasEscalas) {
@@ -833,12 +871,32 @@ public class OpsService {
                                         envio.getIdPedido(), escala.getCodigoAeropuerto(), orden + 1);
                             } else {
                                 envio.setEstado("ENTREGADO");
+                                envio.setFechaEntrega(nowUtc);
                                 log.info("Entregado: {}", envio.getIdPedido());
                             }
                             opsEnvioRepository.save(envio);
                         }
                     });
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Helper: buildPlanResumen
+    // -------------------------------------------------------------------------
+
+    private String buildPlanResumen(String origen, String destino, PlanDeViaje plan) {
+        if (plan == null || plan.getEscalas() == null || plan.getEscalas().isEmpty()) {
+            return null;
+        }
+        List<String> hubs = plan.getEscalas().stream()
+                .map(Escala::getCodigoAeropuerto)
+                .filter(code -> !code.equals(destino))
+                .distinct()
+                .toList();
+        if (hubs.isEmpty()) {
+            return origen + " → " + destino;
+        }
+        return origen + " → " + String.join(" → ", hubs) + " → " + destino;
     }
 
     // -------------------------------------------------------------------------

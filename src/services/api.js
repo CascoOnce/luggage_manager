@@ -286,4 +286,7 @@ export const api = {
   planificarOps: async () => planificarOps(),
   getOpsEnvios: async () => getOpsEnvios(),
   getOpsReporte: async () => getOpsReporte(),
+  getOpsEnviosEntregados: async (horas = 4) => withHandling('getOpsEnviosEntregados', () =>
+    request(`/ops/envios/entregados?horas=${horas}`)
+  ),
 }

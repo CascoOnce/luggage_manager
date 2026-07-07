@@ -82,6 +82,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
   const [originIds, setOriginIds] = useState(null)
   const [destIds, setDestIds] = useState(null)
   const [selectedAirport, setSelectedAirport] = useState(null)
+  const [mapFlyTo, setMapFlyTo] = useState(null)
   const [threshold, setThreshold] = useState(80)
   const [activeSideSection, setActiveSideSection] = useState(null)
   const [highlightedRoute, setHighlightedRoute] = useState(null)
@@ -89,14 +90,21 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
   const handleShowEnvioRoute = async (envioId) => {
     try {
       const envio = await api.getOpsEnvioById(envioId)
-      const escalas = envio?.planDetalle?.escalas || []
-      if (escalas.length < 2) return
+      // Each escala represents a LEG, keyed by its destination airport (see
+      // RouteCandidate.toPlan on the backend) — escalas[i].codigoAeropuerto is
+      // where leg i ARRIVES, not a waypoint. The leg's origin is the envío's
+      // origin for i=0, or the previous escala's airport otherwise.
+      const escalas = [...(envio?.planDetalle?.escalas || [])].sort((a, b) => a.orden - b.orden)
+      if (escalas.length === 0) return
       const apMap = Object.fromEntries(airports.map((a) => [a.id, a]))
       const legs = []
-      for (let i = 0; i < escalas.length - 1; i++) {
-        const o = apMap[escalas[i].codigoAeropuerto]
-        const d = apMap[escalas[i + 1].codigoAeropuerto]
-        if (o && d) legs.push({ originIata: escalas[i].codigoAeropuerto, destIata: escalas[i + 1].codigoAeropuerto, originLat: o.lat, originLng: o.lng, destLat: d.lat, destLng: d.lng })
+      let originIata = envio.aeropuertoOrigen
+      for (let i = 0; i < escalas.length; i++) {
+        const destIata = escalas[i].codigoAeropuerto
+        const o = apMap[originIata]
+        const d = apMap[destIata]
+        if (o && d) legs.push({ originIata, destIata, originLat: o.lat, originLng: o.lng, destLat: d.lat, destLng: d.lng })
+        originIata = destIata
       }
       if (legs.length > 0) {
         setHighlightedRoute({ envioId, legs })
@@ -362,12 +370,15 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
 
   const opsSideState = useMemo(() => ({
     envios: (opsEnvios || []).map((e) => ({
-      idEnvio: e.idPedido,
-      aeropuertoOrigen: e.iataOrigen,
-      aeropuertoDestino: e.iataDestino,
+      idEnvio: e.idEnvio ?? e.idPedido,
+      aeropuertoOrigen: e.aeropuertoOrigen ?? e.iataOrigen,
+      aeropuertoDestino: e.aeropuertoDestino ?? e.iataDestino,
+      codigoAerolinea: e.codigoAerolinea ?? '--',
       estado: e.estado,
       cantidadMaletas: e.cantidadMaletas,
       sla: e.sla,
+      planResumen: e.planResumen ?? null,
+      planDetalle: e.planDetalle ?? null,
     })),
   }), [opsEnvios])
 
@@ -425,7 +436,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
             selectedFlight={selectedFlight}
             setSelectedFlight={setSelectedFlight}
             selectedFlightData={selectedFlightData}
-            onAirportClick={setSelectedAirport}
+            onAirportClick={(ap) => { setSelectedAirport(ap); setMapFlyTo(ap) }}
             onMapClick={() => {
               setSelectedAirport(null)
               setSelectedFlight(null)
@@ -433,6 +444,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
             }}
             theme="dark"
             highlightedRoute={highlightedRoute}
+            flyToTarget={mapFlyTo}
           />
         </div>
 
@@ -461,6 +473,8 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
               onOpsEnviosChanged={onRefreshOps || (() => {})}
               opsBase={opsBase}
               onShowEnvioRoute={handleShowEnvioRoute}
+              onFocusMapLocation={setMapFlyTo}
+              setMapSelectedAirport={(ap) => { setSelectedAirport(ap); setMapFlyTo(ap) }}
             />
           </div>
 

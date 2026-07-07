@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState, useEffect } from 'react'
 import { api, startSimulation } from '../services/api.js'
 import AirportFilterPanel from './AirportFilterPanel.jsx'
 import OpsEnviosIngress from './OpsEnviosIngress.jsx'
+import DrawerEnvio from '../drawers/DrawerEnvio.jsx'
 
 const FILE_PATTERN = /_envios_[A-Za-z]{4}_\.txt$/i
 
@@ -23,6 +24,17 @@ function parseTimeStr2(t) {
   if (!t || !t.includes(':')) return null
   const [h, m] = t.split(':').map(Number)
   return h * 60 + m
+}
+
+// Backend serializes LocalDateTime (escala horaSalidaEst/horaLlegadaEst) as a
+// naive string with no zone suffix, e.g. "2026-07-08T14:30:00" — but the value
+// is always UTC. `new Date(...)` on a string like that is parsed as LOCAL time
+// by JS, silently shifting it by the browser's UTC offset. Force UTC here.
+function parseUtcDateTime(str) {
+  if (!str) return null
+  const iso = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(str) ? str : `${str}Z`
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : d
 }
 
 function minutesToHHMM2(totalMin) {
@@ -380,77 +392,318 @@ function BuscarRutaPanel({ simState, onShowEnvioRoute, appMode }) {
   )
 }
 
-function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation, mode }) {
-  const [query,  setQuery]  = useState('')
-  const [estado, setEstado] = useState('')
+function EntregadosPanel({ mode, simState, nowMin, airports }) {
+  const [horas,      setHoras]      = useState(4)
+  const [filterOrig, setFilterOrig] = useState('')
+  const [filterDest, setFilterDest] = useState('')
+  const [opsData,    setOpsData]    = useState(null)
+  const [loading,    setLoading]    = useState(false)
+  const [error,      setError]      = useState(null)
+  const [tick,       setTick]       = useState(0)
 
-  const handleEnvioClick = (e) => {
-    const iata = e.aeropuertoOrigen
-    const ap = (airports || []).find(a => (a.id || a.codigoIATA) === iata)
-    if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng })
+  useEffect(() => {
+    if (mode !== 'ops') return
+    let cancelled = false
+    async function load() {
+      setLoading(true); setError(null)
+      try {
+        const result = await api.getOpsEnviosEntregados(horas)
+        if (!cancelled) setOpsData(result)
+      } catch {
+        if (!cancelled) setError('Error al cargar datos')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    const id = setInterval(load, 30000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [mode, horas, tick])
+
+  const baseList = useMemo(() => {
+    if (mode === 'ops') return opsData || []
+    const fechaSimulada = simState?.fechaSimulada
+    if (!fechaSimulada) return []
+    const base = new Date(fechaSimulada)
+    if (Number.isNaN(base.getTime())) return []
+    const effectiveNow = new Date(base.getTime() + (nowMin || 0) * 60000)
+    const cutoff = new Date(effectiveNow.getTime() - horas * 3600000)
+    return (simState?.envios || [])
+      .filter(e => {
+        if (e.estado !== 'ENTREGADO') return false
+        const deliveryStr = e.fechaEntrega || e.fechaLlegadaUltimoVuelo
+        if (!deliveryStr) return false
+        const dt = new Date(deliveryStr)
+        return dt >= cutoff && dt <= effectiveNow
+      })
+      .sort((a, b) => {
+        const da = new Date(a.fechaEntrega || a.fechaLlegadaUltimoVuelo || 0)
+        const db = new Date(b.fechaEntrega || b.fechaLlegadaUltimoVuelo || 0)
+        return db - da
+      })
+  }, [mode, opsData, simState, nowMin, horas])
+
+  const origOpts = useMemo(() =>
+    [...new Set(baseList.map(e => e.aeropuertoOrigen).filter(Boolean))].sort()
+  , [baseList])
+
+  const destOpts = useMemo(() =>
+    [...new Set(baseList.map(e => e.aeropuertoDestino).filter(Boolean))].sort()
+  , [baseList])
+
+  const list = useMemo(() =>
+    baseList.filter(e => {
+      if (filterOrig && e.aeropuertoOrigen !== filterOrig) return false
+      if (filterDest && e.aeropuertoDestino !== filterDest) return false
+      return true
+    })
+  , [baseList, filterOrig, filterDest])
+
+  const fmtUT = (ingreso, entrega) => {
+    if (!ingreso || !entrega) return '—'
+    const ms = new Date(entrega) - new Date(ingreso)
+    if (ms <= 0) return '—'
+    const h = Math.floor(ms / 3600000)
+    const m = Math.floor((ms % 3600000) / 60000)
+    return `${h}h ${String(m).padStart(2, '0')}m`
   }
 
-  const list = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return (simState?.envios || []).filter(e => {
+  const selStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '3px 4px', borderRadius: 2, outline: 'none', width: '100%', appearance: 'none', WebkitAppearance: 'none' }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Horas picker */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>Últimas</span>
+        <input
+          type="number" min={1} max={24} value={horas}
+          onChange={e => setHoras(Math.min(24, Math.max(1, Number(e.target.value) || 4)))}
+          style={{ width: 44, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '3px 5px', borderRadius: 2, outline: 'none', textAlign: 'center' }}
+        />
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', flex: 1 }}>h (máx. 24)</span>
+        {mode === 'ops' && (
+          <button onClick={() => setTick(t => t + 1)} disabled={loading}
+            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px', lineHeight: 1 }}
+            title="Actualizar">↻</button>
+        )}
+      </div>
+
+      {/* Airport filters */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 6 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>ORIGEN</div>
+          <select value={filterOrig} onChange={e => setFilterOrig(e.target.value)} style={selStyle}>
+            <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Todos</option>
+            {origOpts.map(o => <option key={o} value={o} style={{ background: '#161b22', color: 'var(--text)' }}>{o}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>DESTINO</div>
+          <select value={filterDest} onChange={e => setFilterDest(e.target.value)} style={selStyle}>
+            <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Todos</option>
+            {destOpts.map(d => <option key={d} value={d} style={{ background: '#161b22', color: 'var(--text)' }}>{d}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#22d07a', marginBottom: 6 }}>
+        {list.length} / {baseList.length} envío{baseList.length !== 1 ? 's' : ''} entregado{baseList.length !== 1 ? 's' : ''}
+        {loading && <span style={{ color: 'var(--muted)', marginLeft: 8 }}>actualizando…</span>}
+      </div>
+      {error && <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)', marginBottom: 6 }}>{error}</div>}
+
+      <div style={{ flex: 1, overflowY: 'auto', margin: '0 -12px' }}>
+        {list.length === 0 && !loading && (
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', padding: '12px 12px' }}>
+            {baseList.length === 0 ? `Sin entregas en las últimas ${horas} h.` : 'Sin resultados para ese filtro.'}
+          </div>
+        )}
+        {list.length > 0 && (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--mono)', fontSize: 11 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(99,152,255,0.2)', position: 'sticky', top: 0, background: 'var(--panel, #1a1a1a)' }}>
+                <th style={{ color: 'var(--muted)', textAlign: 'left',  padding: '4px 4px 4px 12px', fontWeight: 400, letterSpacing: 1 }}>ID</th>
+                <th style={{ color: 'var(--muted)', textAlign: 'left',  padding: '4px',              fontWeight: 400, letterSpacing: 1 }}>ORIG</th>
+                <th style={{ color: 'var(--muted)', textAlign: 'left',  padding: '4px',              fontWeight: 400, letterSpacing: 1 }}>DEST</th>
+                <th style={{ color: 'var(--muted)', textAlign: 'right', padding: '4px',              fontWeight: 400, letterSpacing: 1 }}>MAL</th>
+                <th style={{ color: 'var(--muted)', textAlign: 'right', padding: '4px 12px 4px 4px', fontWeight: 400, letterSpacing: 1 }}>UT</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((e, i) => {
+                const delivery = e.fechaEntrega || e.fechaLlegadaUltimoVuelo
+                return (
+                  <tr key={e.idEnvio || i} style={{ borderBottom: '1px solid rgba(99,152,255,0.06)' }}>
+                    <td style={{ padding: '5px 4px 5px 12px', color: '#22d07a', whiteSpace: 'nowrap' }}>{e.idEnvio}</td>
+                    <td style={{ padding: '5px 4px', color: 'var(--text-bright)' }}>{e.aeropuertoOrigen || '—'}</td>
+                    <td style={{ padding: '5px 4px', color: 'var(--text-bright)' }}>{e.aeropuertoDestino || '—'}</td>
+                    <td style={{ padding: '5px 4px', color: 'var(--text)', textAlign: 'right' }}>{e.cantidadMaletas}</td>
+                    <td style={{ padding: '5px 12px 5px 4px', color: '#f5a623', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtUT(e.fechaHoraIngreso, delivery)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation, onSelectFlight, onEnvioSelect, mode, nowMin }) {
+  const [view,       setView]       = useState('lista')
+  const [estado,     setEstado]     = useState('')
+  const [filterOrig, setFilterOrig] = useState('')
+  const [filterDest, setFilterDest] = useState('')
+
+  const apMap = useMemo(() => {
+    const m = {}
+    for (const a of (airports || [])) m[a.id || a.codigoIATA] = a
+    return m
+  }, [airports])
+
+  const handleEnvioClick = (e) => {
+    onEnvioSelect?.({ id: e.idEnvio, estado: e.estado })
+    if (e.estado === 'ENTREGADO') {
+      const ap = apMap[e.aeropuertoDestino]
+      if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng, zoom: 7, duration: 1.2 })
+    } else if (e.estado === 'EN_TRANSITO') {
+      onShowEnvioRoute?.(e.idEnvio)
+      const escalas = e.planDetalle?.escalas || []
+      const now = mode === 'ops'
+        ? new Date()
+        : (() => {
+            const fs = simState?.fechaSimulada
+            if (!fs) return new Date()
+            return new Date(new Date(fs).getTime() + (nowMin || 0) * 60000)
+          })()
+      const sorted = [...escalas].sort((a, b) => a.orden - b.orden)
+      const currentIdx = sorted.findIndex(esc => {
+        const sal = parseUtcDateTime(esc.horaSalidaEst)
+        const lleg = parseUtcDateTime(esc.horaLlegadaEst)
+        return sal && lleg && sal <= now && lleg > now
+      })
+      if (currentIdx >= 0) {
+        const arrAp  = apMap[sorted[currentIdx].codigoAeropuerto]
+        // Leg 0's "previous" stop is the envío's own origin, not null — otherwise
+        // the very first leg (or a direct flight) always falls through to the
+        // airport-only branch below instead of the mid-route view.
+        const prevAp = currentIdx > 0 ? apMap[sorted[currentIdx - 1].codigoAeropuerto] : apMap[e.aeropuertoOrigen]
+        if (arrAp && prevAp) {
+          onFocusMapLocation?.({ lat: (arrAp.lat + prevAp.lat) / 2, lng: (arrAp.lng + prevAp.lng) / 2, zoom: 4, duration: 1.2 })
+        } else if (arrAp) {
+          onFocusMapLocation?.({ lat: arrAp.lat, lng: arrAp.lng, zoom: 5, duration: 1.2 })
+        }
+        onSelectFlight?.(sorted[currentIdx].codigoVuelo)
+      } else {
+        const ap = apMap[e.aeropuertoOrigen]
+        if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng, zoom: 5, duration: 1.2 })
+      }
+    } else {
+      const ap = apMap[e.aeropuertoOrigen]
+      if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng, zoom: 7, duration: 1.2 })
+    }
+  }
+
+  const allEnvios = simState?.envios || []
+
+  const origOptions = useMemo(() =>
+    [...new Set(allEnvios.map(e => e.aeropuertoOrigen).filter(Boolean))].sort()
+  , [allEnvios])
+
+  const destOptions = useMemo(() =>
+    [...new Set(allEnvios.map(e => e.aeropuertoDestino).filter(Boolean))].sort()
+  , [allEnvios])
+
+  const list = useMemo(() =>
+    allEnvios.filter(e => {
       if (estado && e.estado !== estado) return false
-      if (!q) return true
-      return (
-        (e.idEnvio || '').toLowerCase().includes(q) ||
-        (e.aeropuertoOrigen || '').toLowerCase().includes(q) ||
-        (e.aeropuertoDestino || '').toLowerCase().includes(q)
-      )
+      if (filterOrig && e.aeropuertoOrigen !== filterOrig) return false
+      if (filterDest && e.aeropuertoDestino !== filterDest) return false
+      return true
     })
-  }, [simState?.envios, query, estado])
+  , [allEnvios, estado, filterOrig, filterDest])
 
   const ESTADOS = ['PENDIENTE', 'EN_TRANSITO', 'ENTREGADO', 'RETRASADO']
 
+  const selectStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '3px 4px', borderRadius: 2, outline: 'none', width: '100%', appearance: 'none', WebkitAppearance: 'none' }
+
+  const fetchEnvioFn = mode === 'ops' ? api.getOpsEnvioById : api.getEnvioById
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px 12px', overflow: 'hidden' }}>
-      <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} appMode={mode} />
-      <input
-        value={query} onChange={e => setQuery(e.target.value)}
-        placeholder="Buscar ID, origen, destino…"
-        style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '5px 8px', borderRadius: 2, outline: 'none', marginBottom: 6 }}
-      />
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
-        <button onClick={() => setEstado('')}
-          style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 8px', borderRadius: 3, border: `1px solid ${!estado ? '#3d8bff88' : 'var(--border)'}`, background: !estado ? 'rgba(61,139,255,0.1)' : 'transparent', color: !estado ? 'var(--blue)' : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.5 }}>
-          TODOS
-        </button>
-        {ESTADOS.map(s => (
-          <button key={s} onClick={() => setEstado(estado === s ? '' : s)}
-            style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 8px', borderRadius: 3, border: `1px solid ${estado === s ? `${ESTADO_COLOR[s]}88` : 'var(--border)'}`, background: estado === s ? `${ESTADO_COLOR[s]}18` : 'transparent', color: estado === s ? ESTADO_COLOR[s] : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.3 }}>
-            {s.replace('_', ' ')}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+        {[{ key: 'lista', label: 'Lista' }, { key: 'entregados', label: 'Entregados' }].map(({ key, label }) => (
+          <button key={key} onClick={() => setView(key)}
+            style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 11, padding: '4px 0', borderRadius: 3, border: `1px solid ${view === key ? (key === 'entregados' ? '#22d07a55' : '#3d8bff55') : 'var(--border)'}`, background: view === key ? (key === 'entregados' ? 'rgba(34,208,122,0.1)' : 'rgba(61,139,255,0.1)') : 'transparent', color: view === key ? (key === 'entregados' ? '#22d07a' : 'var(--blue)') : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+            {label}
           </button>
         ))}
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', margin: '0 -12px' }}>
-        {list.map((e, i) => {
-          const color = ESTADO_COLOR[e.estado] || 'var(--muted)'
-          return (
-            <div key={e.idEnvio || i}
-              onClick={() => handleEnvioClick(e)}
-              style={{ padding: '8px 12px', borderBottom: '1px solid rgba(99,152,255,0.07)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-              <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: color }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {e.aeropuertoOrigen} → {e.aeropuertoDestino}
-                </div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                  {e.idEnvio} · {e.cantidadMaletas} 🧳
-                </div>
-              </div>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 6px', borderRadius: 3, background: `${color}18`, color, border: `1px solid ${color}40`, flexShrink: 0 }}>
-                {(e.estado || '—').replace('_', ' ')}
-              </span>
+
+      {view === 'entregados' ? (
+        <EntregadosPanel mode={mode} simState={simState} nowMin={nowMin} airports={airports} />
+      ) : (
+        <>
+          <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} appMode={mode} />
+          {/* Origen / Destino dropdowns */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 6 }}>
+            <div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>ORIGEN</div>
+              <select value={filterOrig} onChange={e => setFilterOrig(e.target.value)} style={selectStyle}>
+                <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Todos</option>
+                {origOptions.map(o => <option key={o} value={o} style={{ background: '#161b22', color: 'var(--text)' }}>{o}</option>)}
+              </select>
             </div>
-          )
-        })}
-        {list.length === 0 && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin envíos{query || estado ? ' (filtro activo)' : ''}</div>
-        )}
-      </div>
+            <div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>DESTINO</div>
+              <select value={filterDest} onChange={e => setFilterDest(e.target.value)} style={selectStyle}>
+                <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Todos</option>
+                {destOptions.map(d => <option key={d} value={d} style={{ background: '#161b22', color: 'var(--text)' }}>{d}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+            <button onClick={() => setEstado('')}
+              style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 8px', borderRadius: 3, border: `1px solid ${!estado ? '#3d8bff88' : 'var(--border)'}`, background: !estado ? 'rgba(61,139,255,0.1)' : 'transparent', color: !estado ? 'var(--blue)' : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.5 }}>
+              TODOS
+            </button>
+            {ESTADOS.map(s => (
+              <button key={s} onClick={() => setEstado(estado === s ? '' : s)}
+                style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 8px', borderRadius: 3, border: `1px solid ${estado === s ? `${ESTADO_COLOR[s]}88` : 'var(--border)'}`, background: estado === s ? `${ESTADO_COLOR[s]}18` : 'transparent', color: estado === s ? ESTADO_COLOR[s] : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.3 }}>
+                {s.replace('_', ' ')}
+              </button>
+            ))}
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', margin: '0 -12px' }}>
+            {list.map((e, i) => {
+              const color = ESTADO_COLOR[e.estado] || 'var(--muted)'
+              return (
+                <div key={e.idEnvio || i}
+                  onClick={() => handleEnvioClick(e)}
+                  style={{ padding: '8px 12px', borderBottom: '1px solid rgba(99,152,255,0.07)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: color }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {e.aeropuertoOrigen} → {e.aeropuertoDestino}
+                    </div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                      {e.idEnvio} · {e.cantidadMaletas} 🧳
+                    </div>
+                  </div>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 6px', borderRadius: 3, background: `${color}18`, color, border: `1px solid ${color}40`, flexShrink: 0 }}>
+                    {(e.estado || '—').replace('_', ' ')}
+                  </span>
+                </div>
+              )
+            })}
+            {list.length === 0 && (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin envíos{estado || filterOrig || filterDest ? ' (filtro activo)' : ''}</div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -946,9 +1199,20 @@ export default function SidePanel({
   nowMin = null,
 }) {
   const sections = mode === 'ops' ? OPS_SECTIONS : SIM_SECTIONS
+  const [selectedEnvio, setSelectedEnvio] = useState(null)
+  const fetchEnvioFn = mode === 'ops' ? api.getOpsEnvioById : api.getEnvioById
 
   return (
-    <div style={{ display: 'flex', height: '100%', background: 'var(--panel)', borderRight: '1px solid var(--border)' }}>
+    <div style={{ display: 'flex', height: '100%', background: 'var(--panel)', borderRight: '1px solid var(--border)', position: 'relative' }}>
+      {selectedEnvio && (
+        <DrawerEnvio
+          envioId={selectedEnvio.id}
+          currentEstado={selectedEnvio.estado}
+          fetchEnvio={fetchEnvioFn}
+          onClose={() => setSelectedEnvio(null)}
+          onShowInMap={onShowEnvioRoute}
+        />
+      )}
       {/* Icon strip */}
       <div style={{ width: 52, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, flexShrink: 0, borderRight: activeSection ? '1px solid var(--border)' : 'none' }}>
         {sections.map(({ id, Icon, label, action }) => {
@@ -1000,7 +1264,7 @@ export default function SidePanel({
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} cancelledFlights={cancelledFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} onVueloFilterChange={onVueloFilterChange} nowMin={nowMin} />}
-            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} />}
+            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} onSelectFlight={setSelectedFlight} onEnvioSelect={setSelectedEnvio} mode={mode} nowMin={nowMin} />}
             {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} onAirportFilterChange={onAirportFilterChange} onFocusMapLocation={onFocusMapLocation} />}
             {activeSection === 'config'  && <ConfigSection  onSimulationStarted={onSimulationStarted} onClose={() => onSectionChange(null)} theme={theme} />}
             {activeSection === 'filtros' && <FiltrosSection airports={airports} originIds={originIds} setOriginIds={setOriginIds} destIds={destIds} setDestIds={setDestIds} threshold={threshold} setThreshold={setThreshold} />}
