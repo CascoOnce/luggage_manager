@@ -150,12 +150,16 @@ public class OpsService {
             PlanDeViaje plan = plans.get(0);
             if (plan.getEscalas() == null) continue;
             int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
+            int husoEnvio = husoPorEnvio.getOrDefault(envio.getIdPedido(), 0);
             plan.getEscalas().stream()
                     .filter(e -> e.getOrden() == orden && e.getCodigoVuelo() != null)
                     .findFirst()
                     .ifPresent(e -> {
                         LocalDate expected = expectedDateByFlight.get(e.getCodigoVuelo());
-                        if (expected != null && e.getHoraSalidaEst() != null && e.getHoraSalidaEst().toLocalDate().equals(expected)) {
+                        // expectedDate is computed in origin-local time; convert UTC horaSalidaEst likewise.
+                        LocalDate salidaLocal = e.getHoraSalidaEst() != null
+                                ? e.getHoraSalidaEst().plusHours(husoEnvio).toLocalDate() : null;
+                        if (expected != null && salidaLocal != null && salidaLocal.equals(expected)) {
                             cargaPorVuelo.merge(e.getCodigoVuelo(), envio.getCantidadMaletas(), Integer::sum);
                         }
                     });
@@ -375,8 +379,15 @@ public class OpsService {
     // -------------------------------------------------------------------------
 
     @Transactional(value = "opsTransactionManager", readOnly = true)
-    public List<EnvioEntity> getEnvios() {
-        return opsEnvioRepository.findAllByOrderByFechaHoraIngresoDesc();
+    public List<EnvioDTO> getEnvios() {
+        return opsEnvioRepository.findAllByOrderByFechaHoraIngresoDesc().stream()
+                .map(e -> {
+                    List<PlanDeViaje> plans = planesPorEnvio.get(e.getIdPedido());
+                    PlanDeViaje plan = (plans != null && !plans.isEmpty()) ? plans.get(0) : null;
+                    if (plan == null) plan = loadPlanFromDb(e.getIdPedido());
+                    return toDto(e, plan);
+                })
+                .toList();
     }
 
     // -------------------------------------------------------------------------
@@ -404,7 +415,8 @@ public class OpsService {
         // Find expected departure date for this flight (same logic as getLiveState)
         LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
         LocalDate expectedDate = null;
-        
+        int flightOriginHuso = 0;
+
         Optional<Vuelo> optVuelo = dataLoaderService.getVuelos().stream()
             .filter(v -> v.getCodigoVuelo().equals(codigoVuelo))
             .findFirst();
@@ -431,6 +443,7 @@ public class OpsService {
             
             int nowLocalMin = Math.floorMod(nowMin + husoOrigenVuelo * 60, 1440);
             
+            flightOriginHuso = husoOrigenVuelo;
             expectedDate = nowUtc.plusHours(husoOrigenVuelo).toLocalDate();
             boolean overnightLocal = depLocalMin > arrLocalMin;
             if (inFlight && overnightLocal && nowLocalMin <= arrLocalMin) {
@@ -443,9 +456,13 @@ public class OpsService {
             if (planes.isEmpty()) continue;
             PlanDeViaje p = planes.get(0);
             if (p.getEscalas() == null) continue;
+            int husoEnvio = husoPorEnvio.getOrDefault(p.getIdEnvio(), flightOriginHuso);
             for (Escala e : p.getEscalas()) {
                 if (codigoVuelo.equals(e.getCodigoVuelo())) {
-                    if (expectedDate != null && e.getHoraSalidaEst() != null && e.getHoraSalidaEst().toLocalDate().equals(expectedDate)) {
+                    // expectedDate is in origin-local time; convert UTC horaSalidaEst likewise.
+                    LocalDate salidaLocal = e.getHoraSalidaEst() != null
+                            ? e.getHoraSalidaEst().plusHours(husoEnvio).toLocalDate() : null;
+                    if (expectedDate != null && salidaLocal != null && salidaLocal.equals(expectedDate)) {
                         envioIds.add(p.getIdEnvio());
                     }
                     break;
@@ -489,6 +506,7 @@ public class OpsService {
             .fechaHoraIngreso(ent.getFechaHoraIngreso() != null ? ent.getFechaHoraIngreso().toString() : null)
             .fechaSalidaPrimerVuelo(fechaSalidaPrimerVuelo)
             .fechaLlegadaUltimoVuelo(fechaLlegadaUltimoVuelo)
+            .planResumen(buildPlanResumen(ent.getIataOrigen(), ent.getIataDestino(), plan))
             .planDetalle(plan)
             .build();
     }
@@ -775,15 +793,13 @@ public class OpsService {
             if (plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
 
             int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
-            // Planner builds timestamps in origin-airport local time; compare in kind.
-            int huso = husoPorEnvio.getOrDefault(envio.getIdPedido(), 0);
-            LocalDateTime nowLocal = nowUtc.plusHours(huso);
 
             plan.getEscalas().stream()
                     .filter(e -> e.getOrden() == orden)
                     .findFirst()
                     .ifPresent(escala -> {
-                        if (!escala.getHoraSalidaEst().isAfter(nowLocal)) {
+                        // horaSalidaEst is UTC (built by the planner from UTC inputs); compare directly.
+                        if (!escala.getHoraSalidaEst().isAfter(nowUtc)) {
                             envio.setEstado("EN_VUELO");
                             opsEnvioRepository.save(envio);
                             log.info("Salida: {} en vuelo {} (escala {})",
@@ -811,8 +827,6 @@ public class OpsService {
             if (plan.getEscalas() == null || plan.getEscalas().isEmpty()) continue;
 
             int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
-            int huso = husoPorEnvio.getOrDefault(envio.getIdPedido(), 0);
-            LocalDateTime nowLocal = nowUtc.plusHours(huso);
             List<Escala> escalas = plan.getEscalas().stream()
                     .sorted(Comparator.comparingInt(Escala::getOrden))
                     .toList();
@@ -821,7 +835,8 @@ public class OpsService {
                     .filter(e -> e.getOrden() == orden)
                     .findFirst()
                     .ifPresent(escala -> {
-                        if (!escala.getHoraLlegadaEst().isAfter(nowLocal)) {
+                        // horaSalidaEst/horaLlegadaEst are UTC; compare directly.
+                        if (!escala.getHoraLlegadaEst().isAfter(nowUtc)) {
                             boolean hayMasEscalas = escalas.stream()
                                     .anyMatch(e -> e.getOrden() == orden + 1);
                             if (hayMasEscalas) {
@@ -839,6 +854,25 @@ public class OpsService {
                         }
                     });
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Helper: buildPlanResumen
+    // -------------------------------------------------------------------------
+
+    private String buildPlanResumen(String origen, String destino, PlanDeViaje plan) {
+        if (plan == null || plan.getEscalas() == null || plan.getEscalas().isEmpty()) {
+            return null;
+        }
+        List<String> hubs = plan.getEscalas().stream()
+                .map(Escala::getCodigoAeropuerto)
+                .filter(code -> !code.equals(destino))
+                .distinct()
+                .toList();
+        if (hubs.isEmpty()) {
+            return origen + " → " + destino;
+        }
+        return origen + " → " + String.join(" → ", hubs) + " → " + destino;
     }
 
     // -------------------------------------------------------------------------

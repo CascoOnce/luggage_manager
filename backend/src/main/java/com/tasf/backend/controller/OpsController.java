@@ -78,7 +78,7 @@ public class OpsController {
     }
 
     @GetMapping("/envios")
-    public ResponseEntity<List<EnvioEntity>> getEnvios() {
+    public ResponseEntity<List<EnvioDTO>> getEnvios() {
         return ResponseEntity.ok(opsService.getEnvios());
     }
 

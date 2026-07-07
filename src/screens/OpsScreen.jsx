@@ -362,12 +362,15 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
 
   const opsSideState = useMemo(() => ({
     envios: (opsEnvios || []).map((e) => ({
-      idEnvio: e.idPedido,
-      aeropuertoOrigen: e.iataOrigen,
-      aeropuertoDestino: e.iataDestino,
+      idEnvio: e.idEnvio ?? e.idPedido,
+      aeropuertoOrigen: e.aeropuertoOrigen ?? e.iataOrigen,
+      aeropuertoDestino: e.aeropuertoDestino ?? e.iataDestino,
+      codigoAerolinea: e.codigoAerolinea ?? '--',
       estado: e.estado,
       cantidadMaletas: e.cantidadMaletas,
       sla: e.sla,
+      planResumen: e.planResumen ?? null,
+      planDetalle: e.planDetalle ?? null,
     })),
   }), [opsEnvios])
 

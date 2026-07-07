@@ -890,14 +890,16 @@ export default function App() {
     })
 
     const envios = opsEnvios.map((e) => ({
-      idEnvio: e.idPedido,
-      aeropuertoOrigen: e.iataOrigen,
-      aeropuertoDestino: e.iataDestino,
+      idEnvio: e.idEnvio ?? e.idPedido,
+      aeropuertoOrigen: e.aeropuertoOrigen ?? e.iataOrigen,
+      aeropuertoDestino: e.aeropuertoDestino ?? e.iataDestino,
+      codigoAerolinea: e.codigoAerolinea ?? '--',
       estado: e.estado,
       cantidadMaletas: e.cantidadMaletas,
       sla: e.sla,
       escalas: [],
-      planResumen: e.estado !== 'PENDIENTE' ? `${e.iataOrigen} → ${e.iataDestino}` : null,
+      planResumen: e.planResumen ?? null,
+      planDetalle: e.planDetalle ?? null,
     }))
     const vuelos = (opsState.vuelos || [])
       .filter((v) => v.estado !== 'cancelado')
