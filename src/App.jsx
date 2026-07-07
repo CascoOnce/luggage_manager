@@ -181,15 +181,15 @@ export default function App() {
         // Prevents empty post-reset state from overwriting a valid finalizada snapshot.
         if (state && (state.enEjecucion || state.finalizada) && !stepInProgressRef.current) {
           if (!wasSimRunningRef.current) {
-            // New simulation detected while B had no simulation — sync ownership and clock
+            // New simulation detected while B had no simulation — sync ownership and clock.
+            // Clock sync uses the server-provided diaInicioTimestampUtc anchor (not
+            // localStorage) so it works across different browsers/machines, not just tabs.
             const owned = localStorage.getItem('simOwner') === '1'
             setIsOwner(owned || Boolean(state.finalizada))
-            const storedHoraInicio = parseInt(localStorage.getItem('simHoraInicio') || '0', 10)
-            simStartMinuteRef.current = storedHoraInicio
-            const dayStartedAt   = parseInt(localStorage.getItem('simDayStartedAt')  || '0', 10)
-            const dayStartMinute = parseInt(localStorage.getItem('simDayStartMinute') || '0', 10)
-            if (dayStartedAt > 0 && state.enEjecucion && !state.finalizada) {
-              const elapsed = ((Date.now() - dayStartedAt) / 1000) * SIM_MIN_PER_REAL_SEC
+            simStartMinuteRef.current = state.horaInicioMin || 0
+            if (state.diaInicioTimestampUtc && state.enEjecucion && !state.finalizada) {
+              const dayStartMinute = state.diaActual <= 1 ? (state.horaInicioMin || 0) : 0
+              const elapsed = ((Date.now() - state.diaInicioTimestampUtc) / 1000) * SIM_MIN_PER_REAL_SEC
               setSimClockMinutes(Math.min(dayStartMinute + elapsed, 1439))
             }
           }
@@ -216,9 +216,6 @@ export default function App() {
           setActiveSideSection(null)
           setScreen('main')
           localStorage.removeItem('simOwner')
-          localStorage.removeItem('simHoraInicio')
-          localStorage.removeItem('simDayStartedAt')
-          localStorage.removeItem('simDayStartMinute')
           setIsOwner(false)
           // Refresh airport data to reflect post-reset warehouse occupancy
           refreshStaticAirports()
@@ -281,14 +278,13 @@ export default function App() {
         const owned = localStorage.getItem('simOwner') === '1'
         setIsOwner(owned || Boolean(state.finalizada))
         // Restore horaInicio so day-1 flight filter works correctly
-        const storedHoraInicio = parseInt(localStorage.getItem('simHoraInicio') || '0', 10)
-        simStartMinuteRef.current = storedHoraInicio
-        // Estimate current simulated minute from localStorage timestamps
-        const dayStartedAt  = parseInt(localStorage.getItem('simDayStartedAt')  || '0', 10)
-        const dayStartMinute = parseInt(localStorage.getItem('simDayStartMinute') || '0', 10)
-        if (dayStartedAt > 0 && state.enEjecucion && !state.finalizada) {
-          const elapsedRealSec = (Date.now() - dayStartedAt) / 1000
-          const elapsedSimMin  = elapsedRealSec * SIM_MIN_PER_REAL_SEC
+        simStartMinuteRef.current = state.horaInicioMin || 0
+        // Estimate current simulated minute from the server's day-start anchor —
+        // works for a fresh browser/machine joining mid-simulation (B), unlike
+        // localStorage which is only visible to the browser that started it (A).
+        if (state.diaInicioTimestampUtc && state.enEjecucion && !state.finalizada) {
+          const dayStartMinute = state.diaActual <= 1 ? (state.horaInicioMin || 0) : 0
+          const elapsedSimMin  = ((Date.now() - state.diaInicioTimestampUtc) / 1000) * SIM_MIN_PER_REAL_SEC
           const estimated = Math.min(dayStartMinute + elapsedSimMin, 1439)
           setSimClockMinutes(estimated)
         }
@@ -415,8 +411,6 @@ export default function App() {
         setTimeout(() => setScreen('resultados'), 3000)
       } else {
         // Reset clock to midnight simultaneously with new day data ONLY if continuing
-        localStorage.setItem('simDayStartedAt',  String(Date.now()))
-        localStorage.setItem('simDayStartMinute', '0')
         setSimClockMinutes(0)
       }
     }).catch((err) => {
@@ -1190,10 +1184,6 @@ export default function App() {
     const startMin = h * 60 + m
     simStartMinuteRef.current = startMin
     setSimClockMinutes(startMin)
-    // Persist clock anchor so other tabs can sync to the correct simulated minute
-    localStorage.setItem('simHoraInicio',    String(startMin))
-    localStorage.setItem('simDayStartedAt',  String(Date.now()))
-    localStorage.setItem('simDayStartMinute', String(startMin))
     // Capture wall-clock start for real elapsed timer in FloatingClocks
     setSimStartedAt(Date.now())
     setScreen('main')

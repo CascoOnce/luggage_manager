@@ -16,6 +16,8 @@ public class SimulationStateDTO {
     private int diaActual;
     private int totalDias;
     private String fechaSimulada;
+    private long diaInicioTimestampUtc;
+    private int horaInicioMin;
     private String algoritmo;
     private MetricaAlgoritmo metrica;
     private boolean enEjecucion;
