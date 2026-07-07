@@ -67,7 +67,7 @@ function headingStyle() {
 
 function deriveEstado(envio, effectiveNow) {
   const backend = envio.estado ?? 'PENDIENTE'
-  if (backend === 'CANCELADO' || backend === 'PENDIENTE') return backend
+  if (backend === 'CANCELADO') return backend
   const escalas = envio.escalasResumen
   if (!escalas || escalas.length === 0 || !effectiveNow) return backend
 

@@ -86,8 +86,8 @@ const s = {
 }
 
 function loadColor(pct) {
-  if (pct >= 90) return 'var(--red)'
-  if (pct >= 70) return 'var(--amber)'
+  if (pct >= 85) return 'var(--red)'
+  if (pct >= 60) return 'var(--amber)'
   return 'var(--green)'
 }
 
@@ -119,8 +119,10 @@ function toLocalTime(utcHHMM, huso) {
   return minutesToHHMM(localMin)
 }
 
-export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMinutes = null }) {
+export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvios = api.getEnviosByFlight, simClockMinutes = null }) {
+  const [activeTab, setActiveTab] = useState('INFO')
   const [enviosAsignados, setEnviosAsignados] = useState([])
+  const [search, setSearch] = useState('')
   const [showConfirmCancel, setShowConfirmCancel] = useState(false)
 
   useEffect(() => {
@@ -134,10 +136,10 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, simClockMi
     if (!vuelo) { setEnviosAsignados([]); return }
     const code = vuelo.id || vuelo.codigoVuelo
     if (!code) return
-    api.getEnviosByFlight(code)
+    fetchEnvios(code)
       .then((data) => setEnviosAsignados(Array.isArray(data) ? data : []))
       .catch(() => setEnviosAsignados([]))
-  }, [vuelo])
+  }, [vuelo, fetchEnvios])
 
   if (!vuelo) return null
 

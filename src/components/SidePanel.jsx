@@ -19,6 +19,25 @@ const ConfigIcon  = () => <MdSettings size={20} />
 const FiltrosIcon = () => <MdTune size={20} />
 const OpsDiaIcon  = () => <MdDateRange size={20} />
 
+function parseTimeStr2(t) {
+  if (!t || !t.includes(':')) return null
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
+
+function minutesToHHMM2(totalMin) {
+  const m = ((totalMin % 1440) + 1440) % 1440
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+}
+
+export function toLocalTime(utcHHMM, huso) {
+  if (!utcHHMM || huso == null) return null
+  const utcMin = parseTimeStr2(utcHHMM)
+  if (utcMin == null) return null
+  const localMin = utcMin + huso * 60
+  return minutesToHHMM2(localMin)
+}
+
 const SIM_SECTIONS = [
   { id: 'ops-dia', Icon: OpsDiaIcon,  label: 'OPERACIONES DÍA A DÍA', action: 'ops' },
   { id: 'vuelos',  Icon: VuelosIcon,  label: 'VUELOS'        },
@@ -63,7 +82,7 @@ function vuSemaforo(f) {
   return 'verde'
 }
 
-function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlight, setSelectedFlight, setMapSelectedVuelo, theme, onVueloFilterChange }) {
+function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlight, setSelectedFlight, setMapSelectedVuelo, theme, onVueloFilterChange, nowMin }) {
   const [tab,          setTab]          = useState('activos')
   const [query,        setQuery]        = useState('')
   const [sortField,    setSortField]    = useState('occupancy')
@@ -100,20 +119,20 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
       )
     })
     const occ = f => f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
-    const parseHHMM = s => {
-      if (!s || !s.includes(':')) return null
-      const [h, m] = s.split(':').map(Number)
+    const parseLocalTime = (utcStr, huso) => {
+      const localStr = toLocalTime(utcStr, huso) ?? utcStr
+      if (!localStr || !localStr.includes(':')) return null
+      const [h, m] = localStr.split(':').map(Number)
       if (!Number.isFinite(h) || !Number.isFinite(m)) return null
-      const raw = h * 60 + m
-      const start = parseInt(localStorage.getItem('simHoraInicio') || '0', 10)
-      return (raw - start + 1440) % 1440
+      return h * 60 + m
     }
+    
     return [...filtered].sort((a, b) => {
       let av, bv
       if (sortField === 'origin')           { av = (a.origin || '').toLowerCase();      bv = (b.origin || '').toLowerCase() }
       else if (sortField === 'dest')        { av = (a.destination || '').toLowerCase(); bv = (b.destination || '').toLowerCase() }
-      else if (sortField === 'departureTime') { av = parseHHMM(a.horaSalida); bv = parseHHMM(b.horaSalida) }
-      else if (sortField === 'arrivalTime')   { av = parseHHMM(a.horaLlegada); bv = parseHHMM(b.horaLlegada) }
+      else if (sortField === 'departureTime') { av = parseLocalTime(a.horaSalida, a.husOrigen); bv = parseLocalTime(b.horaSalida, b.husOrigen) }
+      else if (sortField === 'arrivalTime')   { av = parseLocalTime(a.horaLlegada, a.husDestino); bv = parseLocalTime(b.horaLlegada, b.husDestino) }
       else                                  { av = occ(a); bv = occ(b) }
       if (av == null && bv == null) return 0
       if (av == null) return 1; if (bv == null) return -1
@@ -133,7 +152,7 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
           ACTIVOS
         </button>
         <button onClick={() => setTab('planificados')} style={{ flex: 1, padding: '4px 0', border: 'none', background: tab === 'planificados' ? 'rgba(61,139,255,0.15)' : 'transparent', color: tab === 'planificados' ? 'var(--blue)' : 'var(--muted)', borderRadius: 3, fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer', transition: 'all 0.15s' }}>
-          PLANIFICADOS
+          PRÓXIMOS
         </button>
         <button onClick={() => setTab('cancelados')} style={{ flex: 1, padding: '4px 0', border: 'none', background: tab === 'cancelados' ? 'rgba(240,75,75,0.15)' : 'transparent', color: tab === 'cancelados' ? 'var(--red)' : 'var(--muted)', borderRadius: 3, fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer', transition: 'all 0.15s' }}>
           CANCELADOS
@@ -215,7 +234,11 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--text-bright)', fontWeight: 500 }}>{f.origin} → {f.destination}</div>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                   {f.currentLoad}/{f.capacity} · {f.type === 'continental' ? 'CONT' : 'INT'}
-                  {f.horaSalida && <span style={{ marginLeft: 6 }}>· ✈ {f.horaSalida}{f.horaLlegada ? `→${f.horaLlegada}` : ''}</span>}
+                  {f.horaSalida && (() => {
+                    const sal = toLocalTime(f.horaSalida, f.husOrigen) ?? f.horaSalida
+                    const lleg = f.horaLlegada ? (toLocalTime(f.horaLlegada, f.husDestino) ?? f.horaLlegada) : ''
+                    return <span style={{ marginLeft: 6 }}>· ✈ {sal}{lleg ? `→${lleg}` : ''}</span>
+                  })()}
                 </div>
                 <div style={{ height: 2, background: 'rgba(255,255,255,0.07)', borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: color, transition: 'width 0.4s' }} />
@@ -228,7 +251,7 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
           )
         })}
         {shown.length === 0 && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin vuelos {tab === 'activos' ? 'activos' : tab === 'planificados' ? 'planificados' : 'cancelados'}</div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin vuelos {tab === 'activos' ? 'activos' : tab === 'planificados' ? 'próximos' : 'cancelados'}</div>
         )}
       </div>
     </div>
@@ -287,8 +310,8 @@ function EscalasDetalle({ escalas }) {
   )
 }
 
-function BuscarRutaPanel({ simState, onShowEnvioRoute }) {
-  const [mode,     setMode]     = useState('envio')   // 'maleta' | 'envio'
+function BuscarRutaPanel({ simState, onShowEnvioRoute, appMode }) {
+  const [searchMode, setSearchMode] = useState('envio')   // 'maleta' | 'envio'
   const [inputId,  setInputId]  = useState('')
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState(null)
@@ -300,11 +323,13 @@ function BuscarRutaPanel({ simState, onShowEnvioRoute }) {
     setLoading(true); setError(null); setResult(null)
     try {
       let envioId = id
-      if (mode === 'maleta') {
+      if (searchMode === 'maleta') {
         const parsed = parseEnvioIdFromMaletaId(id)
         if (parsed) envioId = parsed
       }
-      const envio = await api.getEnvioById(envioId)
+      const envio = appMode === 'ops' 
+        ? await api.getOpsEnvioById(envioId) 
+        : await api.getEnvioById(envioId)
       const escalas = envio?.planDetalle?.escalas || []
       setResult({ envioId: envio.idEnvio, escalas, origen: envio.aeropuertoOrigen, destino: envio.aeropuertoDestino })
       onShowEnvioRoute?.(envioId)
@@ -322,8 +347,8 @@ function BuscarRutaPanel({ simState, onShowEnvioRoute }) {
       <span style={{ fontFamily: 'var(--mono)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--blue)', display: 'block', marginBottom: 8 }}>Buscar ruta en mapa</span>
       <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
         {[{ key: 'maleta', label: 'Por maleta' }, { key: 'envio', label: 'Por envío' }].map(({ key, label }) => (
-          <button key={key} onClick={() => { setMode(key); setResult(null); setError(null) }}
-            style={{ flex: 1, padding: '4px 0', border: `1px solid ${mode === key ? '#3d8bff88' : 'var(--border)'}`, background: mode === key ? selBg : 'transparent', color: mode === key ? 'var(--blue)' : 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11, borderRadius: 3, cursor: 'pointer', letterSpacing: 0.5 }}>
+          <button key={key} onClick={() => { setSearchMode(key); setResult(null); setError(null) }}
+            style={{ flex: 1, padding: '4px 0', border: `1px solid ${searchMode === key ? '#3d8bff88' : 'var(--border)'}`, background: searchMode === key ? selBg : 'transparent', color: searchMode === key ? 'var(--blue)' : 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11, borderRadius: 3, cursor: 'pointer', letterSpacing: 0.5 }}>
             {label}
           </button>
         ))}
@@ -332,7 +357,7 @@ function BuscarRutaPanel({ simState, onShowEnvioRoute }) {
         <input
           value={inputId} onChange={e => setInputId(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleBuscar()}
-          placeholder={mode === 'maleta' ? 'ID maleta (ej: ENV001-3)' : 'ID envío (ej: ENV001)'}
+          placeholder={searchMode === 'maleta' ? 'ID maleta (ej: ENV001-3)' : 'ID envío (ej: ENV001)'}
           style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '5px 7px', borderRadius: 2, outline: 'none', minWidth: 0 }}
         />
         <button onClick={handleBuscar} disabled={loading || !inputId.trim()}
@@ -355,7 +380,7 @@ function BuscarRutaPanel({ simState, onShowEnvioRoute }) {
   )
 }
 
-function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation }) {
+function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation, mode }) {
   const [query,  setQuery]  = useState('')
   const [estado, setEstado] = useState('')
 
@@ -382,7 +407,7 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px 12px', overflow: 'hidden' }}>
-      <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} />
+      <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} appMode={mode} />
       <input
         value={query} onChange={e => setQuery(e.target.value)}
         placeholder="Buscar ID, origen, destino…"
@@ -918,6 +943,7 @@ export default function SidePanel({
   opsBase,
   isOwner = true,
   hasSimulation = false,
+  nowMin = null,
 }) {
   const sections = mode === 'ops' ? OPS_SECTIONS : SIM_SECTIONS
 
@@ -973,7 +999,7 @@ export default function SidePanel({
           </div>
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} cancelledFlights={cancelledFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} onVueloFilterChange={onVueloFilterChange} />}
+            {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} cancelledFlights={cancelledFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} onVueloFilterChange={onVueloFilterChange} nowMin={nowMin} />}
             {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} />}
             {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} onAirportFilterChange={onAirportFilterChange} onFocusMapLocation={onFocusMapLocation} />}
             {activeSection === 'config'  && <ConfigSection  onSimulationStarted={onSimulationStarted} onClose={() => onSectionChange(null)} theme={theme} />}

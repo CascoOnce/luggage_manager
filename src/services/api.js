@@ -248,6 +248,10 @@ export const api = {
     return request(`/flights/${code}/envios`)
   }),
 
+  getOpsEnviosByFlight: async (code) => withHandling('getOpsEnviosByFlight', async () => {
+    return request(`/ops/flights/${code}/envios`)
+  }),
+
   getAirportInventory: async (iata) => withHandling('getAirportInventory', async () => {
     return request(`/airports/${iata}/inventory`)
   }),

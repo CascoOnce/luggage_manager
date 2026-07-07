@@ -840,26 +840,36 @@ export default function App() {
 
   const opsNowMinutes = useMemo(() => {
     const now = new Date()
-    return now.getHours() * 60 + now.getMinutes()
+    return now.getUTCHours() * 60 + now.getUTCMinutes()
   }, [opsState?.vuelos])
 
   const opsActiveFlights = useMemo(() => {
     if (!opsState?.vuelos) return []
     return opsState.vuelos
       .filter((v) => v.estado !== 'cancelado')
-      .map((v) => ({
-        id: v.codigoVuelo,
-        origin: v.origen,
-        destination: v.destino,
-        currentLoad: v.cargaActual,
-        capacity: v.capacidadTotal,
-        type: v.tipo === 'continental' ? 'continental' : 'intercontinental',
-        status: v.enUso ? 'activo' : 'planificado',
-        horaSalida: v.horaSalida,
-        horaLlegada: v.horaLlegada,
-        depMin: parseTimeToMinutes(v.horaSalida),
-        arrMin: parseTimeToMinutes(v.horaLlegada),
-      }))
+      .map((v) => {
+        const depMin = parseTimeToMinutes(v.horaSalida)
+        const arrMin = parseTimeToMinutes(v.horaLlegada)
+        
+        // Use the exact inFlight status computed timezone-accurately by the backend
+        const inFlight = v.inFlight ?? false
+        
+        return {
+          id: v.codigoVuelo,
+          origin: v.origen,
+          destination: v.destino,
+          currentLoad: v.cargaActual,
+          capacity: v.capacidadTotal,
+          type: v.tipo === 'continental' ? 'continental' : 'intercontinental',
+          status: inFlight ? 'activo' : 'planificado',
+          horaSalida: v.horaSalida,
+          horaLlegada: v.horaLlegada,
+          husOrigen: v.husOrigen ?? null,
+          husDestino: v.husDestino ?? null,
+          depMin,
+          arrMin,
+        }
+      })
   }, [opsState?.vuelos])
 
   const opsAsSimState = useMemo(() => {
@@ -1329,6 +1339,7 @@ export default function App() {
               vuelo={mapSelectedVuelo}
               onClose={handleCloseVuelo}
               onCancelFlight={isOwner ? handleCancelFlight : null}
+              fetchEnvios={isOpsActive ? api.getOpsEnviosByFlight : api.getEnviosByFlight}
             />
           </div>
         )}

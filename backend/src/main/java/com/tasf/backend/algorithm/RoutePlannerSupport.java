@@ -108,7 +108,7 @@ abstract class RoutePlannerSupport {
             .toList();
 
         List<RouteCandidate> allDirect = directFlights.stream()
-            .map(flight -> buildDirectCandidate(envio, flight, params))
+            .map(flight -> buildDirectCandidate(envio, flight, params, airportByCode))
             .flatMap(Optional::stream)
             .toList();
         routes.addAll(allDirect.stream().filter(r -> isWithinSla(r, deadline, params)).toList());
@@ -123,7 +123,7 @@ abstract class RoutePlannerSupport {
             .flatMap(first -> flightsByOrigin.getOrDefault(first.getDestino(), List.of()).stream()
                 .filter(second -> second.getOrigen().equals(first.getDestino()))
                 .filter(second -> second.getDestino().equals(envio.getAeropuertoDestino()))
-                .map(second -> buildOneStopCandidate(envio, first, second, params)))
+                .map(second -> buildOneStopCandidate(envio, first, second, params, airportByCode)))
             .flatMap(Optional::stream)
             .toList();
         routes.addAll(allOneStop.stream().filter(r -> isWithinSla(r, deadline, params)).toList());
@@ -145,18 +145,31 @@ abstract class RoutePlannerSupport {
             .toList();
     }
 
-    protected Optional<RouteCandidate> buildDirectCandidate(Envio envio, Vuelo flight, ParametrosSimulacion params) {
+    protected Optional<RouteCandidate> buildDirectCandidate(Envio envio, Vuelo flight, ParametrosSimulacion params, Map<String, Aeropuerto> airportByCode) {
         // Enforce origin pickup time: bag must be collected before boarding.
         LocalDateTime earliestDeparture = envio.getFechaHoraIngreso()
             .plusMinutes(params.getMinutosRecogidaDestino());
+            
+        // envio.getFechaHoraIngreso() and flight schedule times are both UTC (see
+        // OpsService.toDomain / getLiveState) — compare directly, no huso shift.
+        if (params.getCurrentTimeUtc() != null && earliestDeparture.isBefore(params.getCurrentTimeUtc())) {
+            earliestDeparture = params.getCurrentTimeUtc();
+        }
         LocalDateTime departure = nextDateTimeForFlight(earliestDeparture, flight.getHoraSalida());
         LocalDateTime arrival = arrivalDateTime(departure, flight.getHoraSalida(), flight.getHoraLlegada());
         return Optional.of(new RouteCandidate(List.of(new RouteCandidate.Leg(flight, departure, arrival))));
     }
 
-    protected Optional<RouteCandidate> buildOneStopCandidate(Envio envio, Vuelo first, Vuelo second, ParametrosSimulacion params) {
+    protected Optional<RouteCandidate> buildOneStopCandidate(Envio envio, Vuelo first, Vuelo second, ParametrosSimulacion params, Map<String, Aeropuerto> airportByCode) {
         LocalDateTime earliestDeparture = envio.getFechaHoraIngreso()
             .plusMinutes(params.getMinutosRecogidaDestino());
+            
+        // envio.getFechaHoraIngreso() and flight schedule times are both UTC (see
+        // OpsService.toDomain / getLiveState) — compare directly, no huso shift.
+        if (params.getCurrentTimeUtc() != null && earliestDeparture.isBefore(params.getCurrentTimeUtc())) {
+            earliestDeparture = params.getCurrentTimeUtc();
+        }
+        
         LocalDateTime firstDeparture = nextDateTimeForFlight(earliestDeparture, first.getHoraSalida());
         LocalDateTime firstArrival = arrivalDateTime(firstDeparture, first.getHoraSalida(), first.getHoraLlegada());
         LocalDateTime secondEarliest = firstArrival.plusMinutes(params.getMinutosEscalaMinima());
@@ -182,13 +195,21 @@ abstract class RoutePlannerSupport {
         Map<String, Envio> envioById,
         ParametrosSimulacion params
     ) {
-        long slaViolations = assignment.entrySet().stream()
-            .filter(entry -> {
-                Envio envio = envioById.get(entry.getKey());
-                LocalDateTime deadline = envio.getFechaHoraIngreso().plusDays(envio.getSla());
-                return entry.getValue().getFinalArrival().plusMinutes(params.getMinutosRecogidaDestino()).isAfter(deadline);
-            })
-            .count();
+        double slaViolations = 0.0;
+        double transitTimePenalty = 0.0;
+
+        for (Map.Entry<String, RouteCandidate> entry : assignment.entrySet()) {
+            Envio envio = envioById.get(entry.getKey());
+            LocalDateTime deadline = envio.getFechaHoraIngreso().plusDays(envio.getSla());
+            if (entry.getValue().getFinalArrival().plusMinutes(params.getMinutosRecogidaDestino()).isAfter(deadline)) {
+                slaViolations += 1.0;
+            }
+
+            // Secondary objective: minimize transit time (tie-breaker for routes within SLA)
+            // Penalty of 0.0001 per minute (~0.144 per day) ensuring it never overrides SLA violations or capacity overload.
+            long minutes = Duration.between(envio.getFechaHoraIngreso(), entry.getValue().getFinalArrival()).toMinutes();
+            transitTimePenalty += (Math.max(0, minutes) * 0.0001);
+        }
 
         AirportTimeline timeline = buildTimeline(assignment, envioById);
         int fallbackCapacity = airportCapacityCache.values().stream().mapToInt(v -> v).max().orElse(Integer.MAX_VALUE / 2);
@@ -200,7 +221,7 @@ abstract class RoutePlannerSupport {
             })
             .sum();
 
-        return slaViolations + (overload * 10.0d);
+        return slaViolations + (overload * 10.0d) + transitTimePenalty;
     }
 
     protected boolean respectsHardConstraints(

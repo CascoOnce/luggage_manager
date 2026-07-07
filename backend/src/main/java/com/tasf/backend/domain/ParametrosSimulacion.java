@@ -1,6 +1,7 @@
 package com.tasf.backend.domain;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -26,6 +27,9 @@ public class ParametrosSimulacion {
     private int umbralSemaforoAmbar = 85;
     private LocalDate fechaInicio;
     private String horaInicio; // HH:mm format, e.g. "08:30"
+    
+    // For Ops Mode: Current time to prevent scheduling flights in the past
+    private LocalDateTime currentTimeUtc;
     @Builder.Default
     private double umbralColapsoPorcentajeSlaVencido = 50.0;
     @Builder.Default

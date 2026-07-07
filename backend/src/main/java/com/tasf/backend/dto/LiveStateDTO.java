@@ -49,5 +49,6 @@ public class LiveStateDTO {
         private Integer husOrigen;
         private Integer husDestino;
         private boolean enUso;
+        private boolean inFlight;
     }
 }

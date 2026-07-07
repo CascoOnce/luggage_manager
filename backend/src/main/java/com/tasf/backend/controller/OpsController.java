@@ -89,6 +89,11 @@ public class OpsController {
             .orElse(ResponseEntity.notFound().build());
     }
 
+    @GetMapping("/flights/{code}/envios")
+    public ResponseEntity<List<EnvioDTO>> getEnviosByFlight(@PathVariable String code) {
+        return ResponseEntity.ok(opsService.getEnviosByFlight(code));
+    }
+
     @GetMapping("/reporte")
     public ResponseEntity<OpsReporteDTO> getReporte() {
         return ResponseEntity.ok(opsService.getReporte());

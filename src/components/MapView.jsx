@@ -137,6 +137,15 @@ function trafficLightColor(pct, threshold, theme) {
   return '#22d07a'
 }
 
+// Flight load semaphore uses fixed 60/85 thresholds, independent of the
+// airport-warehouse threshold slider — matches SidePanel's flight list/filter.
+function flightTrafficLightColor(pct, theme) {
+  if (pct === 0) return theme === 'light' ? '#1a6fd4' : '#4d9fff'
+  if (pct >= 85) return '#f04b4b'
+  if (pct >= 60) return '#f5a623'
+  return '#22d07a'
+}
+
 function makeAirportIcon(pct, threshold, theme) {
   const pinColor = trafficLightColor(pct, threshold, theme)
   const warehouseSvg = renderToStaticMarkup(React.createElement(MdWarehouse, { size: 16, color: '#fff' }))
@@ -162,8 +171,8 @@ function lerpPos(originAp, destAp, fraction) {
 
 const PLANE_SIZE = 30  // change this one value to resize the plane icon
 
-function makeDivIcon(selected, angle, theme, flightPct, threshold) {
-  const color = trafficLightColor(flightPct ?? 0, threshold, theme)
+function makeDivIcon(selected, angle, theme, flightPct) {
+  const color = flightTrafficLightColor(flightPct ?? 0, theme)
   const shadow = selected ? `drop-shadow(0 0 6px ${color})` : 'none'
   const s = PLANE_SIZE
   // Body centerline of this SVG path is at x=11.5/24 of viewBox (not perfectly centered).
@@ -308,7 +317,7 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
         const flightBucket = flightPct === 0 ? 0 : flightPct >= 85 ? 85 : flightPct >= 60 ? 60 : 1
         const cacheKey = `${isSelected ? 1 : 0}-${Math.round(angle)}-${theme}-${flightBucket}`
         if (!iconCache.current.has(cacheKey)) {
-          iconCache.current.set(cacheKey, makeDivIcon(isSelected, angle, theme, flightPct, threshold))
+          iconCache.current.set(cacheKey, makeDivIcon(isSelected, angle, theme, flightPct))
         }
         const icon = iconCache.current.get(cacheKey)
         return (
@@ -426,10 +435,19 @@ export default function MapView({
   // Only show active (non-cancelled) flights on map
   const activeFlights = flightList.filter((f) => {
     if (f.status !== 'active') return false
-    
+
     const flightPct = f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
     const tl = getTrafficLight(flightPct)
-    return fltFilters[tl]
+    if (!fltFilters[tl]) return false
+
+    // Endpoint airports hidden by aptFilters must hide the flight too —
+    // otherwise it renders as flying to/from a nonexistent airport.
+    const originAp = apIdx[f.origin]
+    const destAp = apIdx[f.destination]
+    if (originAp && !aptFilters[getTrafficLight(occupancyPct(originAp))]) return false
+    if (destAp && !aptFilters[getTrafficLight(occupancyPct(destAp))]) return false
+
+    return true
   })
 
   const PillBtn = ({ active, color, onClick }) => (

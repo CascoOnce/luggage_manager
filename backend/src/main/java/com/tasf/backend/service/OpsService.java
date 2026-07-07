@@ -112,9 +112,39 @@ public class OpsService {
             }
         }
 
-        // 2c. Compute actual bag load per flight from EN_VUELO envíos
+        Map<String, LocalDate> expectedDateByFlight = new HashMap<>();
+        for (Vuelo v : dataLoaderService.getVuelos()) {
+            if (dataLoaderService.isFlightCancelledForSession(v.getCodigoVuelo())) continue;
+            
+            int husoOrigenVuelo = husoByIata.getOrDefault(v.getOrigen(), 0);
+            int husoDestinoVuelo = husoByIata.getOrDefault(v.getDestino(), 0);
+            int depUtcMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
+            int arrUtcMin = v.getHoraLlegada().getHour() * 60 + v.getHoraLlegada().getMinute();
+            int depLocalMin = Math.floorMod(depUtcMin + husoOrigenVuelo * 60, 1440);
+            int arrLocalMin = Math.floorMod(arrUtcMin + husoDestinoVuelo * 60, 1440);
+            
+            boolean overnightUtc = depUtcMin > arrUtcMin;
+            boolean inFlight = overnightUtc
+                    ? (depUtcMin <= nowMin || nowMin <= arrUtcMin)
+                    : (depUtcMin <= nowMin && nowMin <= arrUtcMin);
+            
+            int nowLocalMin = Math.floorMod(nowMin + husoOrigenVuelo * 60, 1440);
+            boolean isUpcoming = nowLocalMin < depLocalMin;
+
+            if (inFlight || isUpcoming) {
+                LocalDate expectedDate = from.plusHours(husoOrigenVuelo).toLocalDate();
+                boolean overnightLocal = depLocalMin > arrLocalMin;
+                if (inFlight && overnightLocal && nowLocalMin <= arrLocalMin) {
+                    // It departed yesterday before midnight
+                    expectedDate = expectedDate.minusDays(1);
+                }
+                expectedDateByFlight.put(v.getCodigoVuelo(), expectedDate);
+            }
+        }
+
         Map<String, Integer> cargaPorVuelo = new HashMap<>();
-        for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("EN_VUELO")) {
+        for (EnvioEntity envio : opsEnvioRepository.findAll()) {
+            if (envio.getEstado().equals("ENTREGADO") || envio.getEstado().equals("CANCELADO")) continue;
             List<PlanDeViaje> plans = planesPorEnvio.get(envio.getIdPedido());
             if (plans == null || plans.isEmpty()) continue;
             PlanDeViaje plan = plans.get(0);
@@ -123,8 +153,12 @@ public class OpsService {
             plan.getEscalas().stream()
                     .filter(e -> e.getOrden() == orden && e.getCodigoVuelo() != null)
                     .findFirst()
-                    .ifPresent(e -> cargaPorVuelo.merge(e.getCodigoVuelo(),
-                            envio.getCantidadMaletas(), Integer::sum));
+                    .ifPresent(e -> {
+                        LocalDate expected = expectedDateByFlight.get(e.getCodigoVuelo());
+                        if (expected != null && e.getHoraSalidaEst() != null && e.getHoraSalidaEst().toLocalDate().equals(expected)) {
+                            cargaPorVuelo.merge(e.getCodigoVuelo(), envio.getCantidadMaletas(), Integer::sum);
+                        }
+                    });
         }
 
         // 3. Show only flights currently airborne. Flight times are a daily-repeating
@@ -135,25 +169,35 @@ public class OpsService {
             if (dataLoaderService.isFlightCancelledForSession(v.getCodigoVuelo())) {
                 continue;
             }
-            int depLocal = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
-            int arrLocal = v.getHoraLlegada().getHour() * 60 + v.getHoraLlegada().getMinute();
-            int depMin = Math.floorMod(depLocal - husoByIata.getOrDefault(v.getOrigen(), 0) * 60, 1440);
-            int arrMin = Math.floorMod(arrLocal - husoByIata.getOrDefault(v.getDestino(), 0) * 60, 1440);
+            int husoOrigenVuelo = husoByIata.getOrDefault(v.getOrigen(), 0);
+            int husoDestinoVuelo = husoByIata.getOrDefault(v.getDestino(), 0);
+            
+            int depUtcMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
+            int arrUtcMin = v.getHoraLlegada().getHour() * 60 + v.getHoraLlegada().getMinute();
+            int depLocalMin = Math.floorMod(depUtcMin + husoOrigenVuelo * 60, 1440);
+            int arrLocalMin = Math.floorMod(arrUtcMin + husoDestinoVuelo * 60, 1440);
+            
+            boolean overnight = depUtcMin > arrUtcMin;
 
-            boolean overnight = depMin > arrMin;
-
-            // Currently airborne. Overnight flights wrap past midnight.
+            // Currently airborne based on UTC times
             boolean inFlight = overnight
-                    ? (depMin <= nowMin || nowMin <= arrMin)
-                    : (depMin <= nowMin && nowMin <= arrMin);
-            if (!inFlight) {
+                    ? (depUtcMin <= nowMin || nowMin <= arrUtcMin)
+                    : (depUtcMin <= nowMin && nowMin <= arrUtcMin);
+            
+            int nowLocalMin = Math.floorMod(nowMin + husoOrigenVuelo * 60, 1440);
+            boolean isUpcoming = nowLocalMin < depLocalMin;
+            
+            boolean enUso = flightsInUso.contains(v.getCodigoVuelo());
+
+            // Solo enviar vuelos que están volando AHORA (inFlight) o que van a salir después (isUpcoming)
+            if (!inFlight && !isUpcoming) {
                 continue;
             }
 
-            int duration = (arrMin - depMin + 1440) % 1440;
+            int duration = (arrUtcMin - depUtcMin + 1440) % 1440;
             double fraction = 0.0;
             if (duration > 0 && inFlight) {
-                int elapsed = (nowMin - depMin + 1440) % 1440;
+                int elapsed = (nowMin - depUtcMin + 1440) % 1440;
                 fraction = Math.max(0.0, Math.min(1.0, (double) elapsed / duration));
             }
 
@@ -169,7 +213,8 @@ public class OpsService {
                     .fraction(fraction)
                     .husOrigen(husoByIata.get(v.getOrigen()))
                     .husDestino(husoByIata.get(v.getDestino()))
-                    .enUso(flightsInUso.contains(v.getCodigoVuelo()))
+                    .enUso(enUso)
+                    .inFlight(inFlight)
                     .build());
         }
 
@@ -286,7 +331,7 @@ public class OpsService {
             husoByIata.put(a.getCodigoIATA(), a.getHuso());
         }
         List<Envio> domainEnvios = pendientes.stream()
-                .map(e -> toDomain(e, husoByIata))
+                .map(this::toDomain)
                 .toList();
 
         ParametrosSimulacion params = ParametrosSimulacion.builder()
@@ -295,7 +340,8 @@ public class OpsService {
                 .minutosRecogidaDestino(10)
                 .umbralSemaforoVerde(60)
                 .umbralSemaforoAmbar(85)
-                .fechaInicio(LocalDate.now())
+                .fechaInicio(LocalDate.now(ZoneOffset.UTC))
+                .currentTimeUtc(LocalDateTime.now(ZoneOffset.UTC))
                 .build();
 
         PlanningResult result = planningService.planificar(
@@ -349,33 +395,102 @@ public class OpsService {
             if (plan == null) {
                 plan = loadPlanFromDb(idPedido);
             }
+            return toDto(ent, plan);
+        });
+    }
+
+    @Transactional(value = "opsTransactionManager", readOnly = true)
+    public List<EnvioDTO> getEnviosByFlight(String codigoVuelo) {
+        // Find expected departure date for this flight (same logic as getLiveState)
+        LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
+        LocalDate expectedDate = null;
+        
+        Optional<Vuelo> optVuelo = dataLoaderService.getVuelos().stream()
+            .filter(v -> v.getCodigoVuelo().equals(codigoVuelo))
+            .findFirst();
             
-            String fechaSalidaPrimerVuelo = null;
-            String fechaLlegadaUltimoVuelo = null;
-            if (plan != null && plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
-                List<Escala> escalas = plan.getEscalas();
-                if (escalas.get(0).getHoraSalidaEst() != null) {
-                    fechaSalidaPrimerVuelo = escalas.get(0).getHoraSalidaEst().toString();
-                }
-                if (escalas.get(escalas.size() - 1).getHoraLlegadaEst() != null) {
-                    fechaLlegadaUltimoVuelo = escalas.get(escalas.size() - 1).getHoraLlegadaEst().toString();
+        if (optVuelo.isPresent()) {
+            Vuelo v = optVuelo.get();
+            Map<String, Integer> husoByIata = new HashMap<>();
+            for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
+                husoByIata.put(a.getCodigoIATA(), a.getHuso());
+            }
+            int husoOrigenVuelo = husoByIata.getOrDefault(v.getOrigen(), 0);
+            int husoDestinoVuelo = husoByIata.getOrDefault(v.getDestino(), 0);
+            
+            int nowMin = nowUtc.toLocalTime().getHour() * 60 + nowUtc.toLocalTime().getMinute();
+            int depUtcMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
+            int arrUtcMin = v.getHoraLlegada().getHour() * 60 + v.getHoraLlegada().getMinute();
+            int depLocalMin = Math.floorMod(depUtcMin + husoOrigenVuelo * 60, 1440);
+            int arrLocalMin = Math.floorMod(arrUtcMin + husoDestinoVuelo * 60, 1440);
+            
+            boolean overnightUtc = depUtcMin > arrUtcMin;
+            boolean inFlight = overnightUtc
+                    ? (depUtcMin <= nowMin || nowMin <= arrUtcMin)
+                    : (depUtcMin <= nowMin && nowMin <= arrUtcMin);
+            
+            int nowLocalMin = Math.floorMod(nowMin + husoOrigenVuelo * 60, 1440);
+            
+            expectedDate = nowUtc.plusHours(husoOrigenVuelo).toLocalDate();
+            boolean overnightLocal = depLocalMin > arrLocalMin;
+            if (inFlight && overnightLocal && nowLocalMin <= arrLocalMin) {
+                expectedDate = expectedDate.minusDays(1);
+            }
+        }
+
+        Set<String> envioIds = new java.util.HashSet<>();
+        for (List<PlanDeViaje> planes : planesPorEnvio.values()) {
+            if (planes.isEmpty()) continue;
+            PlanDeViaje p = planes.get(0);
+            if (p.getEscalas() == null) continue;
+            for (Escala e : p.getEscalas()) {
+                if (codigoVuelo.equals(e.getCodigoVuelo())) {
+                    if (expectedDate != null && e.getHoraSalidaEst() != null && e.getHoraSalidaEst().toLocalDate().equals(expectedDate)) {
+                        envioIds.add(p.getIdEnvio());
+                    }
+                    break;
                 }
             }
-            
-            return EnvioDTO.builder()
-                .idEnvio(ent.getIdPedido())
-                .codigoAerolinea(ent.getCodigoAerolinea())
-                .aeropuertoOrigen(ent.getIataOrigen())
-                .aeropuertoDestino(ent.getIataDestino())
-                .cantidadMaletas(ent.getCantidadMaletas())
-                .estado(ent.getEstado())
-                .sla(ent.getSla())
-                .fechaHoraIngreso(ent.getFechaHoraIngreso() != null ? ent.getFechaHoraIngreso().toString() : null)
-                .fechaSalidaPrimerVuelo(fechaSalidaPrimerVuelo)
-                .fechaLlegadaUltimoVuelo(fechaLlegadaUltimoVuelo)
-                .planDetalle(plan)
-                .build();
-        });
+        }
+        
+        if (envioIds.isEmpty()) return java.util.Collections.emptyList();
+        
+        List<EnvioDTO> result = new ArrayList<>();
+        for (String idPedido : envioIds) {
+            opsEnvioRepository.findByIdPedido(idPedido).ifPresent(ent -> {
+                PlanDeViaje plan = planesPorEnvio.get(ent.getIdPedido()).get(0);
+                result.add(toDto(ent, plan));
+            });
+        }
+        return result;
+    }
+
+    private EnvioDTO toDto(EnvioEntity ent, PlanDeViaje plan) {
+        String fechaSalidaPrimerVuelo = null;
+        String fechaLlegadaUltimoVuelo = null;
+        if (plan != null && plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
+            List<Escala> escalas = plan.getEscalas();
+            if (escalas.get(0).getHoraSalidaEst() != null) {
+                fechaSalidaPrimerVuelo = escalas.get(0).getHoraSalidaEst().toString();
+            }
+            if (escalas.get(escalas.size() - 1).getHoraLlegadaEst() != null) {
+                fechaLlegadaUltimoVuelo = escalas.get(escalas.size() - 1).getHoraLlegadaEst().toString();
+            }
+        }
+        
+        return EnvioDTO.builder()
+            .idEnvio(ent.getIdPedido())
+            .codigoAerolinea(ent.getCodigoAerolinea())
+            .aeropuertoOrigen(ent.getIataOrigen())
+            .aeropuertoDestino(ent.getIataDestino())
+            .cantidadMaletas(ent.getCantidadMaletas())
+            .estado(ent.getEstado())
+            .sla(ent.getSla())
+            .fechaHoraIngreso(ent.getFechaHoraIngreso() != null ? ent.getFechaHoraIngreso().toString() : null)
+            .fechaSalidaPrimerVuelo(fechaSalidaPrimerVuelo)
+            .fechaLlegadaUltimoVuelo(fechaLlegadaUltimoVuelo)
+            .planDetalle(plan)
+            .build();
     }
 
     private PlanDeViaje loadPlanFromDb(String idPedido) {
@@ -730,18 +845,16 @@ public class OpsService {
     // Helper: toDomain
     // -------------------------------------------------------------------------
 
-    private Envio toDomain(EnvioEntity e, Map<String, Integer> husoByIata) {
-        // fechaHoraIngreso is stored as UTC. The planning algorithm compares it
-        // directly against local flight times, so convert to origin airport local time.
-        int huso = husoByIata.getOrDefault(e.getIataOrigen(), 0);
-        LocalDateTime fechaLocal = e.getFechaHoraIngreso().plusHours(huso);
-
+    private Envio toDomain(EnvioEntity e) {
+        // fechaHoraIngreso is stored as UTC, matching Vuelo.horaSalida/horaLlegada
+        // (also UTC, see getLiveState). The planner compares them directly, so no
+        // huso conversion here — converting to local would desync it from flight times.
         return Envio.builder()
                 .idEnvio(e.getIdPedido())
                 .aeropuertoOrigen(e.getIataOrigen())
                 .aeropuertoDestino(e.getIataDestino())
                 .cantidadMaletas(e.getCantidadMaletas())
-                .fechaHoraIngreso(fechaLocal)
+                .fechaHoraIngreso(e.getFechaHoraIngreso())
                 .sla(e.getSla())
                 .estado(EstadoEnvio.valueOf(e.getEstado()))
                 .build();

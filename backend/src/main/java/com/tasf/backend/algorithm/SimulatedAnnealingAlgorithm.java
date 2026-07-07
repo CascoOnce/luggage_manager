@@ -234,6 +234,12 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                     .plusMinutes(params.getMinutosRecogidaDestino()).isAfter(deadline);
                 double slaDelta = (newViolates ? 1.0 : 0.0) - (oldViolates ? 1.0 : 0.0);
 
+                double oldTransit = oldParts.stream().mapToDouble(pa ->
+                    Math.max(0, java.time.Duration.between(e.getFechaHoraIngreso(), pa.route().getFinalArrival()).toMinutes()) * 0.0001
+                ).sum();
+                double newTransit = Math.max(0, java.time.Duration.between(e.getFechaHoraIngreso(), newRoute.getFinalArrival()).toMinutes()) * 0.0001;
+                double transitDelta = newTransit - oldTransit;
+
                 // Collect only airports touched by this swap — delta for unaffected airports cancels out
                 Set<String> swapAirports = new HashSet<>();
                 for (PartialAssignment pa : oldParts) {
@@ -276,7 +282,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
                         return Math.max(0.0, timeline.globalPeak(ap) - softCap);
                     }).sum();
 
-                double neighborCost = currentCost + slaDelta + (overloadAfter - overloadBefore) * 10.0d;
+                double neighborCost = currentCost + slaDelta + (overloadAfter - overloadBefore) * 10.0d + transitDelta;
                 double delta = neighborCost - currentCost;
                 boolean accept = delta < 0 || Math.exp(-delta / temperature) > random.nextDouble();
 
@@ -382,16 +388,20 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
         Map<String, Integer> capacityCache,
         int fallback
     ) {
-        long slaViolations = assignments.entrySet().stream()
-            .mapToLong(entry -> {
-                Envio envio = envioById.get(entry.getKey());
-                LocalDateTime deadline = envio.getFechaHoraIngreso().plusDays(envio.getSla());
-                return entry.getValue().stream()
-                    .filter(pa -> pa.route().getFinalArrival()
-                        .plusMinutes(params.getMinutosRecogidaDestino()).isAfter(deadline))
-                    .count();
-            })
-            .sum();
+        double slaViolations = 0.0;
+        double transitTimePenalty = 0.0;
+
+        for (Map.Entry<String, List<PartialAssignment>> entry : assignments.entrySet()) {
+            Envio envio = envioById.get(entry.getKey());
+            LocalDateTime deadline = envio.getFechaHoraIngreso().plusDays(envio.getSla());
+            for (PartialAssignment pa : entry.getValue()) {
+                if (pa.route().getFinalArrival().plusMinutes(params.getMinutosRecogidaDestino()).isAfter(deadline)) {
+                    slaViolations += 1.0;
+                }
+                long minutes = java.time.Duration.between(envio.getFechaHoraIngreso(), pa.route().getFinalArrival()).toMinutes();
+                transitTimePenalty += (Math.max(0, minutes) * 0.0001);
+            }
+        }
 
         double softFactor = params.getCapacidadBlandaFactor();
         double overload = timeline.affectedAirports().stream()
@@ -401,7 +411,7 @@ public class SimulatedAnnealingAlgorithm extends RoutePlannerSupport implements 
             })
             .sum();
 
-        return slaViolations + (overload * 10.0d);
+        return slaViolations + (overload * 10.0d) + transitTimePenalty;
     }
 
     private List<PlanDeViaje> toPlans(

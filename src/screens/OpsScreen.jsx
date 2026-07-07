@@ -84,6 +84,27 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
   const [selectedAirport, setSelectedAirport] = useState(null)
   const [threshold, setThreshold] = useState(80)
   const [activeSideSection, setActiveSideSection] = useState(null)
+  const [highlightedRoute, setHighlightedRoute] = useState(null)
+  
+  const handleShowEnvioRoute = async (envioId) => {
+    try {
+      const envio = await api.getOpsEnvioById(envioId)
+      const escalas = envio?.planDetalle?.escalas || []
+      if (escalas.length < 2) return
+      const apMap = Object.fromEntries(airports.map((a) => [a.id, a]))
+      const legs = []
+      for (let i = 0; i < escalas.length - 1; i++) {
+        const o = apMap[escalas[i].codigoAeropuerto]
+        const d = apMap[escalas[i + 1].codigoAeropuerto]
+        if (o && d) legs.push({ originIata: escalas[i].codigoAeropuerto, destIata: escalas[i + 1].codigoAeropuerto, originLat: o.lat, originLng: o.lng, destLat: d.lat, destLng: d.lng })
+      }
+      if (legs.length > 0) {
+        setHighlightedRoute({ envioId, legs })
+      }
+    } catch (e) {
+      console.error('handleShowEnvioRoute', e)
+    }
+  }
   
   // Modal filters
   const [modalSearch, setModalSearch] = useState('')
@@ -145,9 +166,10 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
           arrMin,
           fraction: flightFractionAtMinute(liveNowMinutes, depMin, arrMin),
           enUso: v.enUso ?? false,
+          inFlight: v.inFlight ?? false,
         }
       })
-      .filter((v) => isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
+      .filter((v) => v.inFlight)
   }, [opsState?.vuelos, liveNowMinutes])
 
   const plannedFlights = useMemo(() => {
@@ -176,9 +198,10 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
           arrMin,
           fraction: 0,
           enUso: v.enUso ?? false,
+          inFlight: v.inFlight ?? false,
         }
       })
-      .filter((v) => !isActiveAtMinute(liveNowMinutes, v.depMin, v.arrMin))
+      .filter((v) => !v.inFlight)
   }, [opsState?.vuelos, liveNowMinutes])
 
   const originSet = useMemo(() => originIds ? new Set(originIds) : null, [originIds])
@@ -330,6 +353,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
   function handleCloseVuelo() {
     setSelectedFlight(null)
     setSelectedVueloData(null)
+    setHighlightedRoute(null)
   }
 
   useEffect(() => {
@@ -405,8 +429,10 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
             onMapClick={() => {
               setSelectedAirport(null)
               setSelectedFlight(null)
+              setHighlightedRoute(null)
             }}
             theme="dark"
+            highlightedRoute={highlightedRoute}
           />
         </div>
 
@@ -422,6 +448,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
               setSelectedFlight={setSelectedFlight}
               setMapSelectedVuelo={setSelectedVueloData}
               simState={opsSideState}
+              nowMin={liveNowMinutes}
               airports={airports}
               threshold={threshold}
               setThreshold={setThreshold}
@@ -433,6 +460,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
               opsIngressAirports={ingressAirports}
               onOpsEnviosChanged={onRefreshOps || (() => {})}
               opsBase={opsBase}
+              onShowEnvioRoute={handleShowEnvioRoute}
             />
           </div>
 
@@ -440,6 +468,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
             vuelo={selectedVueloData}
             onClose={handleCloseVuelo}
             onCancelFlight={onCancelFlight}
+            fetchEnvios={api.getOpsEnviosByFlight}
           />
           <DrawerAeropuerto
             airport={selectedAirport}
