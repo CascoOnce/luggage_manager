@@ -26,6 +26,17 @@ function parseTimeStr2(t) {
   return h * 60 + m
 }
 
+// Backend serializes LocalDateTime (escala horaSalidaEst/horaLlegadaEst) as a
+// naive string with no zone suffix, e.g. "2026-07-08T14:30:00" — but the value
+// is always UTC. `new Date(...)` on a string like that is parsed as LOCAL time
+// by JS, silently shifting it by the browser's UTC offset. Force UTC here.
+function parseUtcDateTime(str) {
+  if (!str) return null
+  const iso = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(str) ? str : `${str}Z`
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 function minutesToHHMM2(totalMin) {
   const m = ((totalMin % 1440) + 1440) % 1440
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
@@ -568,14 +579,17 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
             return new Date(new Date(fs).getTime() + (nowMin || 0) * 60000)
           })()
       const sorted = [...escalas].sort((a, b) => a.orden - b.orden)
-      const currentIdx = sorted.findIndex(esc =>
-        esc.horaSalidaEst && esc.horaLlegadaEst &&
-        new Date(esc.horaSalidaEst) <= now &&
-        new Date(esc.horaLlegadaEst) > now
-      )
+      const currentIdx = sorted.findIndex(esc => {
+        const sal = parseUtcDateTime(esc.horaSalidaEst)
+        const lleg = parseUtcDateTime(esc.horaLlegadaEst)
+        return sal && lleg && sal <= now && lleg > now
+      })
       if (currentIdx >= 0) {
         const arrAp  = apMap[sorted[currentIdx].codigoAeropuerto]
-        const prevAp = currentIdx > 0 ? apMap[sorted[currentIdx - 1].codigoAeropuerto] : null
+        // Leg 0's "previous" stop is the envío's own origin, not null — otherwise
+        // the very first leg (or a direct flight) always falls through to the
+        // airport-only branch below instead of the mid-route view.
+        const prevAp = currentIdx > 0 ? apMap[sorted[currentIdx - 1].codigoAeropuerto] : apMap[e.aeropuertoOrigen]
         if (arrAp && prevAp) {
           onFocusMapLocation?.({ lat: (arrAp.lat + prevAp.lat) / 2, lng: (arrAp.lng + prevAp.lng) / 2, zoom: 4, duration: 1.2 })
         } else if (arrAp) {

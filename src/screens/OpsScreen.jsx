@@ -90,14 +90,21 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
   const handleShowEnvioRoute = async (envioId) => {
     try {
       const envio = await api.getOpsEnvioById(envioId)
-      const escalas = envio?.planDetalle?.escalas || []
-      if (escalas.length < 2) return
+      // Each escala represents a LEG, keyed by its destination airport (see
+      // RouteCandidate.toPlan on the backend) — escalas[i].codigoAeropuerto is
+      // where leg i ARRIVES, not a waypoint. The leg's origin is the envío's
+      // origin for i=0, or the previous escala's airport otherwise.
+      const escalas = [...(envio?.planDetalle?.escalas || [])].sort((a, b) => a.orden - b.orden)
+      if (escalas.length === 0) return
       const apMap = Object.fromEntries(airports.map((a) => [a.id, a]))
       const legs = []
-      for (let i = 0; i < escalas.length - 1; i++) {
-        const o = apMap[escalas[i].codigoAeropuerto]
-        const d = apMap[escalas[i + 1].codigoAeropuerto]
-        if (o && d) legs.push({ originIata: escalas[i].codigoAeropuerto, destIata: escalas[i + 1].codigoAeropuerto, originLat: o.lat, originLng: o.lng, destLat: d.lat, destLng: d.lng })
+      let originIata = envio.aeropuertoOrigen
+      for (let i = 0; i < escalas.length; i++) {
+        const destIata = escalas[i].codigoAeropuerto
+        const o = apMap[originIata]
+        const d = apMap[destIata]
+        if (o && d) legs.push({ originIata, destIata, originLat: o.lat, originLng: o.lng, destLat: d.lat, destLng: d.lng })
+        originIata = destIata
       }
       if (legs.length > 0) {
         setHighlightedRoute({ envioId, legs })
