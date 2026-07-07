@@ -35,4 +35,6 @@ public interface OpsEnvioRepository extends JpaRepository<EnvioEntity, Long> {
     List<EnvioEntity> findAllByEstadoAndIataOrigen(String estado, String iataOrigen);
 
     List<EnvioEntity> findAllByEstado(String estado);
+
+    List<EnvioEntity> findByEstadoAndFechaEntregaAfterOrderByFechaEntregaDesc(String estado, LocalDateTime since);
 }

@@ -380,12 +380,14 @@ function BuscarRutaPanel({ simState, onShowEnvioRoute, appMode }) {
   )
 }
 
-function EntregadosPanel({ mode, simState, nowMin }) {
-  const [horas, setHoras] = useState(4)
-  const [opsData, setOpsData] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState(null)
-  const [tick, setTick] = useState(0)
+function EntregadosPanel({ mode, simState, nowMin, airports }) {
+  const [horas,      setHoras]      = useState(4)
+  const [filterOrig, setFilterOrig] = useState('')
+  const [filterDest, setFilterDest] = useState('')
+  const [opsData,    setOpsData]    = useState(null)
+  const [loading,    setLoading]    = useState(false)
+  const [error,      setError]      = useState(null)
+  const [tick,       setTick]       = useState(0)
 
   useEffect(() => {
     if (mode !== 'ops') return
@@ -406,8 +408,8 @@ function EntregadosPanel({ mode, simState, nowMin }) {
     return () => { cancelled = true; clearInterval(id) }
   }, [mode, horas, tick])
 
-  const simFiltered = useMemo(() => {
-    if (mode === 'ops') return []
+  const baseList = useMemo(() => {
+    if (mode === 'ops') return opsData || []
     const fechaSimulada = simState?.fechaSimulada
     if (!fechaSimulada) return []
     const base = new Date(fechaSimulada)
@@ -427,9 +429,17 @@ function EntregadosPanel({ mode, simState, nowMin }) {
         const db = new Date(b.fechaEntrega || b.fechaLlegadaUltimoVuelo || 0)
         return db - da
       })
-  }, [mode, simState, nowMin, horas])
+  }, [mode, opsData, simState, nowMin, horas])
 
-  const list = mode === 'ops' ? (opsData || []) : simFiltered
+  const list = useMemo(() => {
+    const o = filterOrig.trim().toUpperCase()
+    const d = filterDest.trim().toUpperCase()
+    return baseList.filter(e => {
+      if (o && !(e.aeropuertoOrigen || '').toUpperCase().includes(o)) return false
+      if (d && !(e.aeropuertoDestino || '').toUpperCase().includes(d)) return false
+      return true
+    })
+  }, [baseList, filterOrig, filterDest])
 
   const fmtUT = (ingreso, entrega) => {
     if (!ingreso || !entrega) return '—'
@@ -440,9 +450,12 @@ function EntregadosPanel({ mode, simState, nowMin }) {
     return `${h}h ${String(m).padStart(2, '0')}m`
   }
 
+  const inputStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '3px 6px', borderRadius: 2, outline: 'none', width: '100%', boxSizing: 'border-box', textTransform: 'uppercase' }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+      {/* Horas picker */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>Últimas</span>
         <input
           type="number" min={1} max={24} value={horas}
@@ -457,8 +470,21 @@ function EntregadosPanel({ mode, simState, nowMin }) {
         )}
       </div>
 
+      {/* Airport filters */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 6 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>ORIGEN</div>
+          <input value={filterOrig} onChange={e => setFilterOrig(e.target.value)} placeholder="Ej: SPIM" style={inputStyle} />
+        </div>
+        <div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>DESTINO</div>
+          <input value={filterDest} onChange={e => setFilterDest(e.target.value)} placeholder="Ej: LIME" style={inputStyle} />
+        </div>
+      </div>
+
+      {/* Summary */}
       <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#22d07a', marginBottom: 6 }}>
-        {list.length} envío{list.length !== 1 ? 's' : ''} entregado{list.length !== 1 ? 's' : ''}
+        {list.length} / {baseList.length} envío{baseList.length !== 1 ? 's' : ''} entregado{baseList.length !== 1 ? 's' : ''}
         {loading && <span style={{ color: 'var(--muted)', marginLeft: 8 }}>actualizando…</span>}
       </div>
       {error && <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)', marginBottom: 6 }}>{error}</div>}
@@ -466,7 +492,7 @@ function EntregadosPanel({ mode, simState, nowMin }) {
       <div style={{ flex: 1, overflowY: 'auto', margin: '0 -12px' }}>
         {list.length === 0 && !loading && (
           <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', padding: '12px 12px' }}>
-            Sin entregas en las últimas {horas} h.
+            {baseList.length === 0 ? `Sin entregas en las últimas ${horas} h.` : 'Sin resultados para ese filtro.'}
           </div>
         )}
         {list.length > 0 && (
@@ -476,7 +502,7 @@ function EntregadosPanel({ mode, simState, nowMin }) {
                 <th style={{ color: 'var(--muted)', textAlign: 'left',  padding: '4px 4px 4px 12px', fontWeight: 400, letterSpacing: 1 }}>ID</th>
                 <th style={{ color: 'var(--muted)', textAlign: 'left',  padding: '4px',              fontWeight: 400, letterSpacing: 1 }}>ORIG</th>
                 <th style={{ color: 'var(--muted)', textAlign: 'left',  padding: '4px',              fontWeight: 400, letterSpacing: 1 }}>DEST</th>
-                <th style={{ color: 'var(--muted)', textAlign: 'right', padding: '4px',              fontWeight: 400, letterSpacing: 1 }}>MALETAS</th>
+                <th style={{ color: 'var(--muted)', textAlign: 'right', padding: '4px',              fontWeight: 400, letterSpacing: 1 }}>MAL</th>
                 <th style={{ color: 'var(--muted)', textAlign: 'right', padding: '4px 12px 4px 4px', fontWeight: 400, letterSpacing: 1 }}>UT</th>
               </tr>
             </thead>
@@ -501,15 +527,39 @@ function EntregadosPanel({ mode, simState, nowMin }) {
   )
 }
 
-function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation, mode, nowMin }) {
+function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation, onSelectFlight, mode, nowMin }) {
   const [view,   setView]   = useState('lista')
   const [query,  setQuery]  = useState('')
   const [estado, setEstado] = useState('')
 
   const handleEnvioClick = (e) => {
-    const iata = e.aeropuertoOrigen
-    const ap = (airports || []).find(a => (a.id || a.codigoIATA) === iata)
-    if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng })
+    if (e.estado === 'ENTREGADO') {
+      const ap = (airports || []).find(a => (a.id || a.codigoIATA) === e.aeropuertoDestino)
+      if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng })
+    } else if (e.estado === 'EN_TRANSITO') {
+      const escalas = e.planDetalle?.escalas || []
+      const now = mode === 'ops'
+        ? new Date()
+        : (() => {
+            const fs = simState?.fechaSimulada
+            if (!fs) return new Date()
+            return new Date(new Date(fs).getTime() + (nowMin || 0) * 60000)
+          })()
+      const currentEscala = escalas.find(esc =>
+        esc.horaSalidaEst && esc.horaLlegadaEst &&
+        new Date(esc.horaSalidaEst) <= now &&
+        new Date(esc.horaLlegadaEst) > now
+      )
+      if (currentEscala?.codigoVuelo) {
+        onSelectFlight?.(currentEscala.codigoVuelo)
+      } else {
+        const ap = (airports || []).find(a => (a.id || a.codigoIATA) === e.aeropuertoOrigen)
+        if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng })
+      }
+    } else {
+      const ap = (airports || []).find(a => (a.id || a.codigoIATA) === e.aeropuertoOrigen)
+      if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng })
+    }
   }
 
   const list = useMemo(() => {
@@ -539,7 +589,7 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
       </div>
 
       {view === 'entregados' ? (
-        <EntregadosPanel mode={mode} simState={simState} nowMin={nowMin} />
+        <EntregadosPanel mode={mode} simState={simState} nowMin={nowMin} airports={airports} />
       ) : (
         <>
           <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} appMode={mode} />
@@ -1137,7 +1187,7 @@ export default function SidePanel({
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} cancelledFlights={cancelledFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} onVueloFilterChange={onVueloFilterChange} nowMin={nowMin} />}
-            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} mode={mode} nowMin={nowMin} />}
+            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} onSelectFlight={setSelectedFlight} mode={mode} nowMin={nowMin} />}
             {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} onAirportFilterChange={onAirportFilterChange} onFocusMapLocation={onFocusMapLocation} />}
             {activeSection === 'config'  && <ConfigSection  onSimulationStarted={onSimulationStarted} onClose={() => onSectionChange(null)} theme={theme} />}
             {activeSection === 'filtros' && <FiltrosSection airports={airports} originIds={originIds} setOriginIds={setOriginIds} destIds={destIds} setDestIds={setDestIds} threshold={threshold} setThreshold={setThreshold} />}

@@ -490,10 +490,9 @@ public class OpsService {
     public List<EnvioDTO> getEnviosEntregados(int horas) {
         int clampedHoras = Math.min(Math.max(horas, 1), 24);
         LocalDateTime since = LocalDateTime.now(ZoneOffset.UTC).minusHours(clampedHoras);
-        return opsEnvioRepository.findAll().stream()
-                .filter(e -> "ENTREGADO".equals(e.getEstado()))
-                .filter(e -> e.getFechaEntrega() != null && e.getFechaEntrega().isAfter(since))
-                .sorted(Comparator.comparing(EnvioEntity::getFechaEntrega).reversed())
+        return opsEnvioRepository
+                .findByEstadoAndFechaEntregaAfterOrderByFechaEntregaDesc("ENTREGADO", since)
+                .stream()
                 .map(e -> {
                     List<PlanDeViaje> plans = planesPorEnvio.get(e.getIdPedido());
                     PlanDeViaje plan = (plans != null && !plans.isEmpty()) ? plans.get(0) : loadPlanFromDb(e.getIdPedido());
