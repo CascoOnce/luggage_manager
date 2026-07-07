@@ -798,7 +798,7 @@ public class OpsService {
 
     // -------------------------------------------------------------------------
     // 9. procesarSalidas — called by OpsScheduler every ~30s.
-    //    Transitions PENDIENTE envíos to EN_VUELO when horaSalidaEst <= now.
+    //    Transitions PENDIENTE envíos to EN_TRANSITO when horaSalidaEst <= now.
     // -------------------------------------------------------------------------
 
     @Transactional("opsTransactionManager")
@@ -820,7 +820,10 @@ public class OpsService {
                     .ifPresent(escala -> {
                         // horaSalidaEst is UTC (built by the planner from UTC inputs); compare directly.
                         if (!escala.getHoraSalidaEst().isAfter(nowUtc)) {
-                            envio.setEstado("EN_VUELO");
+                            // Must match EstadoEnvio.EN_TRANSITO — the frontend (SidePanel,
+                            // EnviosScreen) and the enum itself key off this exact string to
+                            // color/filter/route in-transit envíos.
+                            envio.setEstado("EN_TRANSITO");
                             opsEnvioRepository.save(envio);
                             log.info("Salida: {} en vuelo {} (escala {})",
                                     envio.getIdPedido(), escala.getCodigoVuelo(), orden);
@@ -831,7 +834,7 @@ public class OpsService {
 
     // -------------------------------------------------------------------------
     // 10. procesarLlegadas — called by OpsScheduler every ~30s (after salidas).
-    //     Transitions EN_VUELO envíos: intermediate stop → PENDIENTE at new iataOrigen,
+    //     Transitions EN_TRANSITO envíos: intermediate stop → PENDIENTE at new iataOrigen,
     //     or final destination → ENTREGADO.
     // -------------------------------------------------------------------------
 
@@ -840,7 +843,7 @@ public class OpsService {
         if (planesPorEnvio.isEmpty()) return;
         LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
 
-        for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("EN_VUELO")) {
+        for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("EN_TRANSITO")) {
             List<PlanDeViaje> plans = planesPorEnvio.get(envio.getIdPedido());
             if (plans == null || plans.isEmpty()) continue;
             PlanDeViaje plan = plans.get(0);

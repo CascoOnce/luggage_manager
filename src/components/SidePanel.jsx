@@ -482,15 +482,15 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
         <div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>ORIGEN</div>
           <select value={filterOrig} onChange={e => setFilterOrig(e.target.value)} style={selStyle}>
-            <option value="">Todos</option>
-            {origOpts.map(o => <option key={o} value={o}>{o}</option>)}
+            <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Todos</option>
+            {origOpts.map(o => <option key={o} value={o} style={{ background: '#161b22', color: 'var(--text)' }}>{o}</option>)}
           </select>
         </div>
         <div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>DESTINO</div>
           <select value={filterDest} onChange={e => setFilterDest(e.target.value)} style={selStyle}>
-            <option value="">Todos</option>
-            {destOpts.map(d => <option key={d} value={d}>{d}</option>)}
+            <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Todos</option>
+            {destOpts.map(d => <option key={d} value={d} style={{ background: '#161b22', color: 'var(--text)' }}>{d}</option>)}
           </select>
         </div>
       </div>
@@ -638,15 +638,15 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
             <div>
               <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>ORIGEN</div>
               <select value={filterOrig} onChange={e => setFilterOrig(e.target.value)} style={selectStyle}>
-                <option value="">Todos</option>
-                {origOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Todos</option>
+                {origOptions.map(o => <option key={o} value={o} style={{ background: '#161b22', color: 'var(--text)' }}>{o}</option>)}
               </select>
             </div>
             <div>
               <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 2, letterSpacing: 1 }}>DESTINO</div>
               <select value={filterDest} onChange={e => setFilterDest(e.target.value)} style={selectStyle}>
-                <option value="">Todos</option>
-                {destOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                <option value="" style={{ background: '#161b22', color: 'var(--text)' }}>Todos</option>
+                {destOptions.map(d => <option key={d} value={d} style={{ background: '#161b22', color: 'var(--text)' }}>{d}</option>)}
               </select>
             </div>
           </div>

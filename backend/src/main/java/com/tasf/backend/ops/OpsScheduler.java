@@ -19,8 +19,8 @@ public class OpsScheduler {
 
     /**
      * Two-phase departure/arrival tick for ops mode.
-     * Phase 1 (salidas): PENDIENTE → EN_VUELO when horaSalidaEst <= now.
-     * Phase 2 (llegadas): EN_VUELO → PENDIENTE (intermediate) or ENTREGADO (final).
+     * Phase 1 (salidas): PENDIENTE → EN_TRANSITO when horaSalidaEst <= now.
+     * Phase 2 (llegadas): EN_TRANSITO → PENDIENTE (intermediate) or ENTREGADO (final).
      * fixedDelay ensures phases run sequentially with no overlap between ticks.
      */
     @Scheduled(fixedDelay = 30_000)

@@ -96,6 +96,17 @@ function toMinutes(str) {
   return parts.length >= 2 ? parts[0] * 60 + parts[1] : null
 }
 
+function fmtIngreso(str) {
+  if (!str) return '—'
+  const d = new Date(str.endsWith('Z') || str.includes('+') ? str : `${str}Z`)
+  if (Number.isNaN(d.getTime())) return '—'
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const hh = String(d.getUTCHours()).padStart(2, '0')
+  const mi = String(d.getUTCMinutes()).padStart(2, '0')
+  return `${dd}/${mm} ${hh}:${mi} UTC`
+}
+
 function dwellMinutes(llegada, salida) {
   const l = toMinutes(llegada)
   const s = toMinutes(salida)
@@ -193,6 +204,10 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
               <div style={s.row}>
                 <span style={s.rowLabel}>Destino</span>
                 <span style={s.rowVal}>{envio.aeropuertoDestino || '—'}</span>
+              </div>
+              <div style={s.row}>
+                <span style={s.rowLabel}>Hora ingreso</span>
+                <span style={s.rowVal}>{fmtIngreso(envio.fechaHoraIngreso)}</span>
               </div>
               <div style={s.row}>
                 <span style={s.rowLabel}>Maletas</span>
