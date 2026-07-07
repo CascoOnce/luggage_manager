@@ -380,7 +380,129 @@ function BuscarRutaPanel({ simState, onShowEnvioRoute, appMode }) {
   )
 }
 
-function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation, mode }) {
+function EntregadosPanel({ mode, simState, nowMin }) {
+  const [horas, setHoras] = useState(4)
+  const [opsData, setOpsData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState(null)
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    if (mode !== 'ops') return
+    let cancelled = false
+    async function load() {
+      setLoading(true); setError(null)
+      try {
+        const result = await api.getOpsEnviosEntregados(horas)
+        if (!cancelled) setOpsData(result)
+      } catch {
+        if (!cancelled) setError('Error al cargar datos')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    const id = setInterval(load, 30000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [mode, horas, tick])
+
+  const simFiltered = useMemo(() => {
+    if (mode === 'ops') return []
+    const fechaSimulada = simState?.fechaSimulada
+    if (!fechaSimulada) return []
+    const base = new Date(fechaSimulada)
+    if (Number.isNaN(base.getTime())) return []
+    const effectiveNow = new Date(base.getTime() + (nowMin || 0) * 60000)
+    const cutoff = new Date(effectiveNow.getTime() - horas * 3600000)
+    return (simState?.envios || [])
+      .filter(e => {
+        if (e.estado !== 'ENTREGADO') return false
+        const deliveryStr = e.fechaEntrega || e.fechaLlegadaUltimoVuelo
+        if (!deliveryStr) return false
+        const dt = new Date(deliveryStr)
+        return dt >= cutoff && dt <= effectiveNow
+      })
+      .sort((a, b) => {
+        const da = new Date(a.fechaEntrega || a.fechaLlegadaUltimoVuelo || 0)
+        const db = new Date(b.fechaEntrega || b.fechaLlegadaUltimoVuelo || 0)
+        return db - da
+      })
+  }, [mode, simState, nowMin, horas])
+
+  const list = mode === 'ops' ? (opsData || []) : simFiltered
+
+  const fmtUT = (ingreso, entrega) => {
+    if (!ingreso || !entrega) return '—'
+    const ms = new Date(entrega) - new Date(ingreso)
+    if (ms <= 0) return '—'
+    const h = Math.floor(ms / 3600000)
+    const m = Math.floor((ms % 3600000) / 60000)
+    return `${h}h ${String(m).padStart(2, '0')}m`
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>Últimas</span>
+        <input
+          type="number" min={1} max={24} value={horas}
+          onChange={e => setHoras(Math.min(24, Math.max(1, Number(e.target.value) || 4)))}
+          style={{ width: 44, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '3px 5px', borderRadius: 2, outline: 'none', textAlign: 'center' }}
+        />
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', flex: 1 }}>h (máx. 24)</span>
+        {mode === 'ops' && (
+          <button onClick={() => setTick(t => t + 1)} disabled={loading}
+            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px', lineHeight: 1 }}
+            title="Actualizar">↻</button>
+        )}
+      </div>
+
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#22d07a', marginBottom: 6 }}>
+        {list.length} envío{list.length !== 1 ? 's' : ''} entregado{list.length !== 1 ? 's' : ''}
+        {loading && <span style={{ color: 'var(--muted)', marginLeft: 8 }}>actualizando…</span>}
+      </div>
+      {error && <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)', marginBottom: 6 }}>{error}</div>}
+
+      <div style={{ flex: 1, overflowY: 'auto', margin: '0 -12px' }}>
+        {list.length === 0 && !loading && (
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', padding: '12px 12px' }}>
+            Sin entregas en las últimas {horas} h.
+          </div>
+        )}
+        {list.length > 0 && (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--mono)', fontSize: 11 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(99,152,255,0.2)', position: 'sticky', top: 0, background: 'var(--panel, #1a1a1a)' }}>
+                <th style={{ color: 'var(--muted)', textAlign: 'left',  padding: '4px 4px 4px 12px', fontWeight: 400, letterSpacing: 1 }}>ID</th>
+                <th style={{ color: 'var(--muted)', textAlign: 'left',  padding: '4px',              fontWeight: 400, letterSpacing: 1 }}>ORIG</th>
+                <th style={{ color: 'var(--muted)', textAlign: 'left',  padding: '4px',              fontWeight: 400, letterSpacing: 1 }}>DEST</th>
+                <th style={{ color: 'var(--muted)', textAlign: 'right', padding: '4px',              fontWeight: 400, letterSpacing: 1 }}>MALETAS</th>
+                <th style={{ color: 'var(--muted)', textAlign: 'right', padding: '4px 12px 4px 4px', fontWeight: 400, letterSpacing: 1 }}>UT</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((e, i) => {
+                const delivery = e.fechaEntrega || e.fechaLlegadaUltimoVuelo
+                return (
+                  <tr key={e.idEnvio || i} style={{ borderBottom: '1px solid rgba(99,152,255,0.06)' }}>
+                    <td style={{ padding: '5px 4px 5px 12px', color: '#22d07a', whiteSpace: 'nowrap' }}>{e.idEnvio}</td>
+                    <td style={{ padding: '5px 4px', color: 'var(--text-bright)' }}>{e.aeropuertoOrigen || '—'}</td>
+                    <td style={{ padding: '5px 4px', color: 'var(--text-bright)' }}>{e.aeropuertoDestino || '—'}</td>
+                    <td style={{ padding: '5px 4px', color: 'var(--text)', textAlign: 'right' }}>{e.cantidadMaletas}</td>
+                    <td style={{ padding: '5px 12px 5px 4px', color: '#f5a623', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtUT(e.fechaHoraIngreso, delivery)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation, mode, nowMin }) {
+  const [view,   setView]   = useState('lista')
   const [query,  setQuery]  = useState('')
   const [estado, setEstado] = useState('')
 
@@ -407,50 +529,65 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px 12px', overflow: 'hidden' }}>
-      <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} appMode={mode} />
-      <input
-        value={query} onChange={e => setQuery(e.target.value)}
-        placeholder="Buscar ID, origen, destino…"
-        style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '5px 8px', borderRadius: 2, outline: 'none', marginBottom: 6 }}
-      />
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
-        <button onClick={() => setEstado('')}
-          style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 8px', borderRadius: 3, border: `1px solid ${!estado ? '#3d8bff88' : 'var(--border)'}`, background: !estado ? 'rgba(61,139,255,0.1)' : 'transparent', color: !estado ? 'var(--blue)' : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.5 }}>
-          TODOS
-        </button>
-        {ESTADOS.map(s => (
-          <button key={s} onClick={() => setEstado(estado === s ? '' : s)}
-            style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 8px', borderRadius: 3, border: `1px solid ${estado === s ? `${ESTADO_COLOR[s]}88` : 'var(--border)'}`, background: estado === s ? `${ESTADO_COLOR[s]}18` : 'transparent', color: estado === s ? ESTADO_COLOR[s] : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.3 }}>
-            {s.replace('_', ' ')}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+        {[{ key: 'lista', label: 'Lista' }, { key: 'entregados', label: 'Entregados' }].map(({ key, label }) => (
+          <button key={key} onClick={() => setView(key)}
+            style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 11, padding: '4px 0', borderRadius: 3, border: `1px solid ${view === key ? (key === 'entregados' ? '#22d07a55' : '#3d8bff55') : 'var(--border)'}`, background: view === key ? (key === 'entregados' ? 'rgba(34,208,122,0.1)' : 'rgba(61,139,255,0.1)') : 'transparent', color: view === key ? (key === 'entregados' ? '#22d07a' : 'var(--blue)') : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+            {label}
           </button>
         ))}
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', margin: '0 -12px' }}>
-        {list.map((e, i) => {
-          const color = ESTADO_COLOR[e.estado] || 'var(--muted)'
-          return (
-            <div key={e.idEnvio || i}
-              onClick={() => handleEnvioClick(e)}
-              style={{ padding: '8px 12px', borderBottom: '1px solid rgba(99,152,255,0.07)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-              <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: color }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {e.aeropuertoOrigen} → {e.aeropuertoDestino}
+
+      {view === 'entregados' ? (
+        <EntregadosPanel mode={mode} simState={simState} nowMin={nowMin} />
+      ) : (
+        <>
+          <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} appMode={mode} />
+          <input
+            value={query} onChange={e => setQuery(e.target.value)}
+            placeholder="Buscar ID, origen, destino…"
+            style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '5px 8px', borderRadius: 2, outline: 'none', marginBottom: 6 }}
+          />
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+            <button onClick={() => setEstado('')}
+              style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 8px', borderRadius: 3, border: `1px solid ${!estado ? '#3d8bff88' : 'var(--border)'}`, background: !estado ? 'rgba(61,139,255,0.1)' : 'transparent', color: !estado ? 'var(--blue)' : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.5 }}>
+              TODOS
+            </button>
+            {ESTADOS.map(s => (
+              <button key={s} onClick={() => setEstado(estado === s ? '' : s)}
+                style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 8px', borderRadius: 3, border: `1px solid ${estado === s ? `${ESTADO_COLOR[s]}88` : 'var(--border)'}`, background: estado === s ? `${ESTADO_COLOR[s]}18` : 'transparent', color: estado === s ? ESTADO_COLOR[s] : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.3 }}>
+                {s.replace('_', ' ')}
+              </button>
+            ))}
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', margin: '0 -12px' }}>
+            {list.map((e, i) => {
+              const color = ESTADO_COLOR[e.estado] || 'var(--muted)'
+              return (
+                <div key={e.idEnvio || i}
+                  onClick={() => handleEnvioClick(e)}
+                  style={{ padding: '8px 12px', borderBottom: '1px solid rgba(99,152,255,0.07)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: color }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {e.aeropuertoOrigen} → {e.aeropuertoDestino}
+                    </div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                      {e.idEnvio} · {e.cantidadMaletas} 🧳
+                    </div>
+                  </div>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 6px', borderRadius: 3, background: `${color}18`, color, border: `1px solid ${color}40`, flexShrink: 0 }}>
+                    {(e.estado || '—').replace('_', ' ')}
+                  </span>
                 </div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                  {e.idEnvio} · {e.cantidadMaletas} 🧳
-                </div>
-              </div>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 6px', borderRadius: 3, background: `${color}18`, color, border: `1px solid ${color}40`, flexShrink: 0 }}>
-                {(e.estado || '—').replace('_', ' ')}
-              </span>
-            </div>
-          )
-        })}
-        {list.length === 0 && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin envíos{query || estado ? ' (filtro activo)' : ''}</div>
-        )}
-      </div>
+              )
+            })}
+            {list.length === 0 && (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin envíos{query || estado ? ' (filtro activo)' : ''}</div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -1000,7 +1137,7 @@ export default function SidePanel({
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} cancelledFlights={cancelledFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} onVueloFilterChange={onVueloFilterChange} nowMin={nowMin} />}
-            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} />}
+            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} mode={mode} nowMin={nowMin} />}
             {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} onAirportFilterChange={onAirportFilterChange} onFocusMapLocation={onFocusMapLocation} />}
             {activeSection === 'config'  && <ConfigSection  onSimulationStarted={onSimulationStarted} onClose={() => onSectionChange(null)} theme={theme} />}
             {activeSection === 'filtros' && <FiltrosSection airports={airports} originIds={originIds} setOriginIds={setOriginIds} destIds={destIds} setDestIds={setDestIds} threshold={threshold} setThreshold={setThreshold} />}

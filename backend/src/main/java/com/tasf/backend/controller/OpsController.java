@@ -82,6 +82,12 @@ public class OpsController {
         return ResponseEntity.ok(opsService.getEnvios());
     }
 
+    @GetMapping("/envios/entregados")
+    public ResponseEntity<List<EnvioDTO>> getEnviosEntregados(
+            @RequestParam(defaultValue = "4") int horas) {
+        return ResponseEntity.ok(opsService.getEnviosEntregados(horas));
+    }
+
     @GetMapping("/envios/{idPedido}")
     public ResponseEntity<EnvioDTO> getEnvioById(@PathVariable String idPedido) {
         return opsService.getEnvioById(idPedido)

@@ -482,6 +482,26 @@ public class OpsService {
         return result;
     }
 
+    // -------------------------------------------------------------------------
+    // 6b. getEnviosEntregados — envíos delivered in the last N hours (real UTC).
+    // -------------------------------------------------------------------------
+
+    @Transactional(value = "opsTransactionManager", readOnly = true)
+    public List<EnvioDTO> getEnviosEntregados(int horas) {
+        int clampedHoras = Math.min(Math.max(horas, 1), 24);
+        LocalDateTime since = LocalDateTime.now(ZoneOffset.UTC).minusHours(clampedHoras);
+        return opsEnvioRepository.findAll().stream()
+                .filter(e -> "ENTREGADO".equals(e.getEstado()))
+                .filter(e -> e.getFechaEntrega() != null && e.getFechaEntrega().isAfter(since))
+                .sorted(Comparator.comparing(EnvioEntity::getFechaEntrega).reversed())
+                .map(e -> {
+                    List<PlanDeViaje> plans = planesPorEnvio.get(e.getIdPedido());
+                    PlanDeViaje plan = (plans != null && !plans.isEmpty()) ? plans.get(0) : loadPlanFromDb(e.getIdPedido());
+                    return toDto(e, plan);
+                })
+                .toList();
+    }
+
     private EnvioDTO toDto(EnvioEntity ent, PlanDeViaje plan) {
         String fechaSalidaPrimerVuelo = null;
         String fechaLlegadaUltimoVuelo = null;
@@ -507,6 +527,7 @@ public class OpsService {
             .fechaSalidaPrimerVuelo(fechaSalidaPrimerVuelo)
             .fechaLlegadaUltimoVuelo(fechaLlegadaUltimoVuelo)
             .planResumen(buildPlanResumen(ent.getIataOrigen(), ent.getIataDestino(), plan))
+            .fechaEntrega(ent.getFechaEntrega() != null ? ent.getFechaEntrega().toString() : null)
             .planDetalle(plan)
             .build();
     }
@@ -848,6 +869,7 @@ public class OpsService {
                                         envio.getIdPedido(), escala.getCodigoAeropuerto(), orden + 1);
                             } else {
                                 envio.setEstado("ENTREGADO");
+                                envio.setFechaEntrega(nowUtc);
                                 log.info("Entregado: {}", envio.getIdPedido());
                             }
                             opsEnvioRepository.save(envio);

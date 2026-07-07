@@ -60,4 +60,7 @@ public class EnvioEntity {
     @Column(name = "estado", length = 20, nullable = false)
     @Builder.Default
     private String estado = "PENDIENTE";
+
+    @Column(name = "fecha_entrega")
+    private LocalDateTime fechaEntrega;
 }
