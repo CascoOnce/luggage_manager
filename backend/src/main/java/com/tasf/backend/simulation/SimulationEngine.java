@@ -71,6 +71,11 @@ public class SimulationEngine {
     private List<MetricaAlgoritmo> metricas = new ArrayList<>();
     private int diaActual;
     private LocalDateTime fechaSimulada;
+    // Wall-clock timestamp (epoch ms) when the current simulated day started animating.
+    // Server-side anchor so ANY client (including one that joins mid-simulation on a
+    // different browser/machine) can compute the correct intraday clock position —
+    // relying on client localStorage doesn't work since it isn't shared across browsers.
+    private long diaInicioTimestampUtc;
     private boolean enEjecucion;
     private boolean finalizada;
     private List<String> logOperaciones = new ArrayList<>();
@@ -177,6 +182,7 @@ public class SimulationEngine {
         }
 
         this.diaActual = 1;
+        this.diaInicioTimestampUtc = System.currentTimeMillis();
         this.enEjecucion = true;
         this.finalizada = false;
         // Day 1 warehouses START empty: envíos arrive throughout the day, so 0% at t=0 is correct.
@@ -325,6 +331,7 @@ public class SimulationEngine {
         // Advance to next simulated day. Background thread plans that day's batches
         // so this method returns fast and the frontend isn't frozen waiting for planning.
         diaActual++;
+        this.diaInicioTimestampUtc = System.currentTimeMillis();
         // Day 2+ always start at midnight — only day 1 uses horaInicio.
         this.fechaSimulada = params.getFechaInicio().plusDays(diaActual - 1).atStartOfDay();
 
@@ -397,6 +404,7 @@ public class SimulationEngine {
 
         // Reset simulation clock
         this.diaActual = 1;
+        this.diaInicioTimestampUtc = System.currentTimeMillis();
         this.fechaSimulada = params.getFechaInicio().atTime(parseHoraInicio(params.getHoraInicio()));
         this.enEjecucion = true;
         this.finalizada = false;
@@ -673,6 +681,8 @@ public class SimulationEngine {
             .diaActual(diaActual)
             .totalDias(params.getDiasSimulacion())
             .fechaSimulada(fechaSimulada.format(TS_FORMAT))
+            .diaInicioTimestampUtc(diaInicioTimestampUtc)
+            .horaInicioMin((int) parseHoraInicio(params.getHoraInicio()).toSecondOfDay() / 60)
             .algoritmo(params.getAlgoritmo())
             .metrica(metricas.isEmpty() ? null : metricas.get(metricas.size() - 1))
             .enEjecucion(enEjecucion)
