@@ -540,13 +540,11 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
   )
 }
 
-function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation, onSelectFlight, mode, nowMin }) {
-  const [view,          setView]          = useState('lista')
-  const [query,         setQuery]         = useState('')
-  const [estado,        setEstado]        = useState('')
-  const [filterOrig,    setFilterOrig]    = useState('')
-  const [filterDest,    setFilterDest]    = useState('')
-  const [selectedEnvio, setSelectedEnvio] = useState(null) // { id, estado }
+function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation, onSelectFlight, onEnvioSelect, mode, nowMin }) {
+  const [view,       setView]       = useState('lista')
+  const [estado,     setEstado]     = useState('')
+  const [filterOrig, setFilterOrig] = useState('')
+  const [filterDest, setFilterDest] = useState('')
 
   const apMap = useMemo(() => {
     const m = {}
@@ -555,11 +553,12 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
   }, [airports])
 
   const handleEnvioClick = (e) => {
-    setSelectedEnvio({ id: e.idEnvio, estado: e.estado })
+    onEnvioSelect?.({ id: e.idEnvio, estado: e.estado })
     if (e.estado === 'ENTREGADO') {
       const ap = apMap[e.aeropuertoDestino]
       if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng, zoom: 7, duration: 1.2 })
     } else if (e.estado === 'EN_TRANSITO') {
+      onShowEnvioRoute?.(e.idEnvio)
       const escalas = e.planDetalle?.escalas || []
       const now = mode === 'ops'
         ? new Date()
@@ -603,20 +602,14 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
     [...new Set(allEnvios.map(e => e.aeropuertoDestino).filter(Boolean))].sort()
   , [allEnvios])
 
-  const list = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return allEnvios.filter(e => {
+  const list = useMemo(() =>
+    allEnvios.filter(e => {
       if (estado && e.estado !== estado) return false
       if (filterOrig && e.aeropuertoOrigen !== filterOrig) return false
       if (filterDest && e.aeropuertoDestino !== filterDest) return false
-      if (!q) return true
-      return (
-        (e.idEnvio || '').toLowerCase().includes(q) ||
-        (e.aeropuertoOrigen || '').toLowerCase().includes(q) ||
-        (e.aeropuertoDestino || '').toLowerCase().includes(q)
-      )
+      return true
     })
-  }, [allEnvios, query, estado, filterOrig, filterDest])
+  , [allEnvios, estado, filterOrig, filterDest])
 
   const ESTADOS = ['PENDIENTE', 'EN_TRANSITO', 'ENTREGADO', 'RETRASADO']
 
@@ -625,18 +618,7 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
   const fetchEnvioFn = mode === 'ops' ? api.getOpsEnvioById : api.getEnvioById
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px 12px', overflow: 'hidden', position: 'relative' }}>
-      {/* Envío detail drawer inline */}
-      {selectedEnvio && (
-        <DrawerEnvio
-          envioId={selectedEnvio.id}
-          currentEstado={selectedEnvio.estado}
-          fetchEnvio={fetchEnvioFn}
-          onClose={() => setSelectedEnvio(null)}
-          onShowInMap={onShowEnvioRoute}
-        />
-      )}
-
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px 12px', overflow: 'hidden' }}>
       <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
         {[{ key: 'lista', label: 'Lista' }, { key: 'entregados', label: 'Entregados' }].map(({ key, label }) => (
           <button key={key} onClick={() => setView(key)}
@@ -651,11 +633,6 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
       ) : (
         <>
           <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} appMode={mode} />
-          <input
-            value={query} onChange={e => setQuery(e.target.value)}
-            placeholder="Buscar ID, origen, destino…"
-            style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '5px 8px', borderRadius: 2, outline: 'none', marginBottom: 6 }}
-          />
           {/* Origen / Destino dropdowns */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 6 }}>
             <div>
@@ -708,7 +685,7 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
               )
             })}
             {list.length === 0 && (
-              <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin envíos{query || estado || filterOrig || filterDest ? ' (filtro activo)' : ''}</div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin envíos{estado || filterOrig || filterDest ? ' (filtro activo)' : ''}</div>
             )}
           </div>
         </>
@@ -1208,9 +1185,20 @@ export default function SidePanel({
   nowMin = null,
 }) {
   const sections = mode === 'ops' ? OPS_SECTIONS : SIM_SECTIONS
+  const [selectedEnvio, setSelectedEnvio] = useState(null)
+  const fetchEnvioFn = mode === 'ops' ? api.getOpsEnvioById : api.getEnvioById
 
   return (
-    <div style={{ display: 'flex', height: '100%', background: 'var(--panel)', borderRight: '1px solid var(--border)' }}>
+    <div style={{ display: 'flex', height: '100%', background: 'var(--panel)', borderRight: '1px solid var(--border)', position: 'relative' }}>
+      {selectedEnvio && (
+        <DrawerEnvio
+          envioId={selectedEnvio.id}
+          currentEstado={selectedEnvio.estado}
+          fetchEnvio={fetchEnvioFn}
+          onClose={() => setSelectedEnvio(null)}
+          onShowInMap={onShowEnvioRoute}
+        />
+      )}
       {/* Icon strip */}
       <div style={{ width: 52, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: 4, flexShrink: 0, borderRight: activeSection ? '1px solid var(--border)' : 'none' }}>
         {sections.map(({ id, Icon, label, action }) => {
@@ -1262,7 +1250,7 @@ export default function SidePanel({
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} cancelledFlights={cancelledFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} onVueloFilterChange={onVueloFilterChange} nowMin={nowMin} />}
-            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} onSelectFlight={setSelectedFlight} mode={mode} nowMin={nowMin} />}
+            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} onSelectFlight={setSelectedFlight} onEnvioSelect={setSelectedEnvio} mode={mode} nowMin={nowMin} />}
             {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} onAirportFilterChange={onAirportFilterChange} onFocusMapLocation={onFocusMapLocation} />}
             {activeSection === 'config'  && <ConfigSection  onSimulationStarted={onSimulationStarted} onClose={() => onSectionChange(null)} theme={theme} />}
             {activeSection === 'filtros' && <FiltrosSection airports={airports} originIds={originIds} setOriginIds={setOriginIds} destIds={destIds} setDestIds={setDestIds} threshold={threshold} setThreshold={setThreshold} />}
