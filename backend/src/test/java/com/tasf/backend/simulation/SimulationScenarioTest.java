@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.tasf.backend.domain.Aeropuerto;
 import com.tasf.backend.domain.Envio;
 import com.tasf.backend.domain.EstadoEnvio;
@@ -15,8 +17,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
@@ -291,6 +296,100 @@ class SimulationScenarioTest {
         envioDto.getPlanDetalle().getEscalas().forEach(escala ->
             assertTrue(!escala.getHoraSalidaEst().isBefore(cierreVentana1),
                 "Vuelo " + escala.getCodigoVuelo() + " no debe salir antes del cierre de la ventana Sc"));
+    }
+
+    @Test
+    void medicionTaPorBatch5Dias() {
+        // Prueba de medición: corre 5 días reales (2028-08-18 08:00) contra la BD real, con las
+        // restricciones reales (Sa=1, K=120, Sc=120min → hasta 12 bloques/día = 60 bloques en 5 días),
+        // y captura el Ta de cada bloque desde el log de SimulationEngine. No asume que la simulación
+        // completa los 5 días: si colapsa antes (por un envío RETRASADO), reporta los Ta obtenidos
+        // hasta ese punto y el día/motivo del colapso, sin fallar el test por eso.
+        LocalDate fechaInicio = LocalDate.of(2028, 8, 18);
+        LocalDateTime horaInicioDia1 = fechaInicio.atTime(8, 0);
+        LocalDateTime finVentana = fechaInicio.plusDays(5).atStartOfDay();
+
+        List<Envio> envios = envioRepository.findByFechaHoraIngresoBetween(fechaInicio.atStartOfDay(), finVentana)
+            .stream()
+            .map(e -> Envio.builder()
+                .idEnvio(e.getIdPedido())
+                .codigoAerolinea(e.getCodigoAerolinea())
+                .aeropuertoOrigen(e.getIataOrigen())
+                .aeropuertoDestino(e.getIataDestino())
+                .fechaHoraIngreso(e.getFechaHoraIngreso())
+                .cantidadMaletas(e.getCantidadMaletas())
+                .sla(e.getSla())
+                .estado(EstadoEnvio.valueOf(e.getEstado()))
+                .build())
+            .toList();
+
+        org.junit.jupiter.api.Assumptions.assumeTrue(!envios.isEmpty(),
+            "Sin envíos en DB para 2028-08-18, saltando test");
+
+        ParametrosSimulacion params = ParametrosSimulacion.builder()
+            .fechaInicio(fechaInicio)
+            .horaInicio("08:00")
+            .diasSimulacion(5)
+            .esColapso(false)
+            .build();
+
+        // Captura los logs de SimulationEngine ("Ta=... ms" / "Ta (... ms) > Sa (... ms)")
+        // durante toda la corrida, sin tocar código de producción.
+        ch.qos.logback.classic.Logger engineLogger =
+            (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(SimulationEngine.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        engineLogger.addAppender(appender);
+
+        SimulationStateDTO state;
+        try {
+            simulationEngine.inicializar(params, envios); // ya planifica todos los bloques del día 1
+            state = simulationEngine.getEstado();
+            for (int day = 0; day < 5 && !state.isFinalizada(); day++) {
+                state = simulationEngine.avanzarDia();
+            }
+        } finally {
+            engineLogger.detachAppender(appender);
+        }
+
+        Pattern taPattern = Pattern.compile("Ta[=\\s]*\\(?(\\d+)\\s*ms");
+        List<Long> taValues = new ArrayList<>();
+        List<String> taExcedeSa = new ArrayList<>();
+        for (ILoggingEvent event : appender.list) {
+            String msg = event.getFormattedMessage();
+            if (msg == null || !msg.contains("Ta")) continue;
+            Matcher m = taPattern.matcher(msg);
+            if (m.find()) {
+                taValues.add(Long.parseLong(m.group(1)));
+                if (msg.contains("planner too slow")) {
+                    taExcedeSa.add(msg);
+                }
+            }
+        }
+
+        assertNotNull(state);
+        System.out.println("=== Medición de Ta por batch — fechaInicio=" + fechaInicio
+            + " horaInicio=08:00 — envíos cargados=" + envios.size() + " ===");
+        System.out.println("Bloques Sc medidos: " + taValues.size() + " (esperado hasta 60 si completa los 5 días)");
+        if (!taValues.isEmpty()) {
+            long min = taValues.stream().mapToLong(Long::longValue).min().orElse(0);
+            long max = taValues.stream().mapToLong(Long::longValue).max().orElse(0);
+            double avg = taValues.stream().mapToLong(Long::longValue).average().orElse(0);
+            System.out.printf("Ta (ms) — min=%d max=%d avg=%.1f%n", min, max, avg);
+            System.out.println("Ta por batch (ms): " + taValues);
+        }
+        System.out.println("Bloques con Ta > Sa: " + taExcedeSa.size());
+        taExcedeSa.forEach(System.out::println);
+        System.out.println("Día alcanzado: " + state.getDiaActual() + " / " + state.getTotalDias());
+        System.out.println("Finalizada: " + state.isFinalizada()
+            + " — Colapsó: " + (state.getColapsoPunto() != null));
+        if (state.getColapsoPunto() != null) {
+            System.out.println("Colapso en día " + state.getColapsoPunto().getDia()
+                + " — aeropuerto más crítico: " + state.getColapsoPunto().getAeropuertoMasCritico());
+        }
+
+        assertTrue(!taValues.isEmpty(),
+            "No se capturó ningún Ta — revisar que el logger de SimulationEngine esté en nivel INFO");
     }
 
     private List<Envio> createSampleEnvios(int count) {
