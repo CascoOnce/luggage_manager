@@ -174,17 +174,23 @@ public class SimulationEngine {
         LocalDateTime endOfDay1 = params.getFechaInicio().plusDays(1).atStartOfDay();
         PlanningResult planning = null;
         int rutasEvaluadasInit = 0;
+        // enEjecucion/diaActual must be set BEFORE the day-1 planning loop (not after) so that
+        // checkColapsoInmediato() — invoked from aplicarResultadoPlanificacion() on each batch —
+        // can actually detect and record a collapse that happens while still planning day 1.
+        this.diaActual = 1;
+        this.diaInicioTimestampUtc = System.currentTimeMillis();
+        this.enEjecucion = true;
+        this.finalizada = false;
         while (horizonPointer != null && horizonPointer.isBefore(endOfDay1)) {
             planning = planificarSiguienteBloque();
             aplicarResultadoPlanificacion(planning);
             rutasEvaluadasInit += Optional.ofNullable(planning.getMetrica())
                 .map(MetricaAlgoritmo::getRutasEvaluadas).orElse(0);
+            if (!enEjecucion) {
+                break; // checkColapsoInmediato() ya cerró la simulación
+            }
         }
 
-        this.diaActual = 1;
-        this.diaInicioTimestampUtc = System.currentTimeMillis();
-        this.enEjecucion = true;
-        this.finalizada = false;
         // Day 1 warehouses START empty: envíos arrive throughout the day, so 0% at t=0 is correct.
         aeropuertos.forEach(a -> a.setOcupacionInicioDia(0));
         // Set the end-of-day interpolation endpoint to the full planned volume so the
@@ -269,37 +275,7 @@ public class SimulationEngine {
         // (colapso checks, KPIs, etc). ocupacionInicioDia is NOT changed — it stays
         // at the pre-processing value for visual continuity.
         updateWarehouseOccupation(null);
-
-        if (Boolean.TRUE.equals(params.getEsColapso()) && colapsoPunto == null) {
-            long retrasados = envios.stream()
-                .filter(e -> e.getEstado() == EstadoEnvio.RETRASADO).count();
-            if (!envios.isEmpty()) {
-                double pct = retrasados * 100.0 / envios.size();
-                if (pct >= params.getUmbralColapsoPorcentajeSlaVencido()) {
-                    String aerMasCritico = aeropuertos.stream()
-                        .filter(a -> a.getCapacidadAlmacen() > 0)
-                        .max(Comparator.comparingDouble(a ->
-                            (double) a.getOcupacionActual() / a.getCapacidadAlmacen()))
-                        .map(Aeropuerto::getCodigoIATA)
-                        .orElse("N/A");
-                    List<String> topAps = aeropuertos.stream()
-                        .filter(a -> a.getCapacidadAlmacen() > 0)
-                        .sorted(Comparator.comparingDouble((Aeropuerto a) ->
-                            (double) a.getOcupacionActual() / a.getCapacidadAlmacen()).reversed())
-                        .limit(5)
-                        .map(Aeropuerto::getCodigoIATA)
-                        .collect(Collectors.toList());
-                    colapsoPunto = ColapsoPunto.builder()
-                        .dia(diaActual)
-                        .pctSlaVencido(Math.round(pct * 10.0) / 10.0)
-                        .aeropuertoMasCritico(aerMasCritico)
-                        .topAeropuertos(topAps)
-                        .build();
-                    addOperationLog(String.format(
-                        "[COLAPSO] Operación colapsó en Día %d — SLA vencido: %.1f%%", diaActual, pct));
-                }
-            }
-        }
+        checkColapsoInmediato();
 
         throughputHistorial.add(ThroughputDiaDTO.builder()
             .dia(diaActual)
@@ -312,7 +288,7 @@ public class SimulationEngine {
             cancelRandomFlightsAndReplan();
         }
 
-        if (diaActual >= params.getDiasSimulacion()) {
+        if (colapsoPunto == null && diaActual >= params.getDiasSimulacion()) {
             LocalDateTime simEndTime = params.getFechaInicio().plusDays(params.getDiasSimulacion() - 1).atTime(parseHoraInicio(params.getHoraInicio()));
             updateWarehouseOccupation(simEndTime);
             this.finalizada = true;
@@ -357,7 +333,7 @@ public class SimulationEngine {
     /** Plans one batch for the given day-end boundary. Acquires + releases the instance
      *  lock per call so polling and step can interleave between batches. */
     private synchronized boolean planNextBatch(LocalDateTime endOfDay) {
-        if (horizonPointer == null || !horizonPointer.isBefore(endOfDay)) {
+        if (!enEjecucion || horizonPointer == null || !horizonPointer.isBefore(endOfDay)) {
             return false;
         }
         PlanningResult batchResult = planificarSiguienteBloque();
@@ -1091,6 +1067,56 @@ public class SimulationEngine {
         }
     }
 
+    /** Cualquier envío RETRASADO (SLA vencido en tránsito, o sin ruta viable por saturación
+     *  de vuelos/almacén) es colapso operativo — termina la simulación de inmediato,
+     *  en cualquier modo. Idempotente: no hace nada si ya colapsó o si no está corriendo. */
+    private void checkColapsoInmediato() {
+        if (colapsoPunto != null || !enEjecucion) {
+            return;
+        }
+        Optional<Envio> primerRetrasado = envios.stream()
+            .filter(e -> e.getEstado() == EstadoEnvio.RETRASADO)
+            .findFirst();
+        if (primerRetrasado.isEmpty()) {
+            return;
+        }
+
+        long totalRetrasados = envios.stream().filter(e -> e.getEstado() == EstadoEnvio.RETRASADO).count();
+        double pct = envios.isEmpty() ? 0.0 : totalRetrasados * 100.0 / envios.size();
+        String aerMasCritico = aeropuertos.stream()
+            .filter(a -> a.getCapacidadAlmacen() > 0)
+            .max(Comparator.comparingDouble(a -> (double) a.getOcupacionActual() / a.getCapacidadAlmacen()))
+            .map(Aeropuerto::getCodigoIATA)
+            .orElse("N/A");
+        List<String> topAps = aeropuertos.stream()
+            .filter(a -> a.getCapacidadAlmacen() > 0)
+            .sorted(Comparator.comparingDouble((Aeropuerto a) ->
+                (double) a.getOcupacionActual() / a.getCapacidadAlmacen()).reversed())
+            .limit(5)
+            .map(Aeropuerto::getCodigoIATA)
+            .collect(Collectors.toList());
+
+        colapsoPunto = ColapsoPunto.builder()
+            .dia(diaActual)
+            .pctSlaVencido(Math.round(pct * 10.0) / 10.0)
+            .aeropuertoMasCritico(aerMasCritico)
+            .topAeropuertos(topAps)
+            .build();
+        addOperationLog(String.format(
+            "[COLAPSO] Operación colapsó en Día %d — envío %s sin cumplir SLA (%.1f%% del total retrasado)",
+            diaActual, primerRetrasado.get().getIdEnvio(), pct));
+
+        this.finalizada = true;
+        this.enEjecucion = false;
+        applySimulationEnd(fechaSimulada);
+        persistenceService.persistSimulationResults(
+            List.copyOf(planes),
+            List.copyOf(metricas),
+            List.copyOf(logOperaciones),
+            List.copyOf(envios)
+        );
+    }
+
     private void cancelRandomFlightsAndReplan() {
         LocalDate today = fechaSimulada == null ? null : fechaSimulada.toLocalDate();
         if (today == null) return;
@@ -1795,6 +1821,8 @@ public class SimulationEngine {
         this.maletas.stream()
             .filter(m -> confirmedRetrasado.contains(m.getIdEnvio()))
             .forEach(m -> m.setEstado(EstadoMaleta.RETRASADA));
+
+        checkColapsoInmediato();
     }
 
     private List<Maleta> generarMaletasDeBatch(List<PlanDeViaje> batchPlanes, Set<String> yaGenerados) {

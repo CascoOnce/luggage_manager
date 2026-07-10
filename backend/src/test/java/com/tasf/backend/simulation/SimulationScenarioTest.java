@@ -210,6 +210,36 @@ class SimulationScenarioTest {
     }
 
     @Test
+    void colapsaInmediatamenteConCualquierEnvioRetrasado() {
+        // Envío con SLA imposible de cumplir: entra a 3 minutos de que termine la simulación de 1 día,
+        // destino en otro continente (SLA=2 días) pero diasSimulacion=1 corta el reloj antes.
+        List<Envio> envios = List.of(Envio.builder()
+            .idEnvio("E-COLAPSO-1")
+            .codigoAerolinea("AA")
+            .aeropuertoOrigen("SKBO")
+            .aeropuertoDestino("EDDF") // fuera de continente, requiere más tiempo del disponible
+            .fechaHoraIngreso(LocalDateTime.of(2026, 1, 2, 23, 55))
+            .cantidadMaletas(1)
+            .sla(1)
+            .estado(EstadoEnvio.PENDIENTE)
+            .build());
+
+        ParametrosSimulacion params = ParametrosSimulacion.builder()
+            .fechaInicio(LocalDate.of(2026, 1, 2))
+            .horaInicio("00:00")
+            .diasSimulacion(1)
+            .esColapso(false)
+            .build();
+
+        simulationEngine.inicializar(params, envios);
+        var state = simulationEngine.avanzarDia();
+
+        assertNotNull(state.getColapsoPunto(),
+            "Un envío que no puede cumplir su SLA debe disparar colapso inmediato");
+        assertTrue(state.isFinalizada(), "La simulación debe terminar en cuanto colapsa");
+    }
+
+    @Test
     void vuelosNoSalenAntesDeCerrarLaVentanaSc() {
         LocalDateTime horaInicioDia1 = LocalDateTime.of(2026, 1, 2, 8, 0);
         LocalDateTime cierreVentana1 = horaInicioDia1.plusMinutes(120); // Sc=120 con defaults nuevos
