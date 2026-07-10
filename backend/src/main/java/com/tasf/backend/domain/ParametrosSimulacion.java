@@ -37,12 +37,14 @@ public class ParametrosSimulacion {
     /** Fracción de capacidad de almacén usada como tope blando (preferido, puede excederse si es necesario). El tope duro real (100%) se aplica por separado. */
     @Builder.Default
     private double capacidadBlandaFactor = 0.9;
-    /** Duración en minutos de cada ventana de planificación del SA (rolling-planning). */
+    /** Duración en minutos de cada ventana de planificación del SA (rolling-planning).
+     *  Sa=1min con Ta≈30s medido da margen 2x — ver docs/superpowers/plans/2026-07-10-sa-sc-colapso-correction.md */
     @Builder.Default
-    private int saMinutos = 40;
-    /** Número de ventanas SA que componen un ciclo completo (SC = k × saMinutos). */
+    private int saMinutos = 1;
+    /** Número de ventanas SA que componen un ciclo completo (SC = k × saMinutos).
+     *  K=120 calibrado para Tmax=60min real con 5 días simulados (K = 7200min / Tmax). */
     @Builder.Default
-    private int k = 6;
+    private int k = 120;
     /** Duración total en minutos de un ciclo de planificación (SC). */
     public int getScMinutos() {
         return k * saMinutos;
