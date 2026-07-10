@@ -28,8 +28,14 @@ public class ParametrosSimulacion {
     private LocalDate fechaInicio;
     private String horaInicio; // HH:mm format, e.g. "08:30"
     
-    // For Ops Mode: Current time to prevent scheduling flights in the past
+    // For Ops Mode: Current time to prevent scheduling flights in the past.
+    // Also used as the Sc-window departure floor during rolling simulation planning,
+    // see SimulationEngine.planificarSiguienteBloque.
     private LocalDateTime currentTimeUtc;
+    // Currently unused: no longer read anywhere. Its only prior reader (the percentage-threshold
+    // collapse block) was removed in favor of the immediate-collapse trigger implemented in
+    // SimulationEngine.checkColapsoInmediato(). Kept for compatibility; do not assume it still
+    // drives collapse detection.
     @Builder.Default
     private double umbralColapsoPorcentajeSlaVencido = 50.0;
     @Builder.Default

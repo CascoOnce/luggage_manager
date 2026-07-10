@@ -138,7 +138,7 @@ class PlanningServiceIntegrationTest {
             .idEnvio("E-WINDOW-1")
             .codigoAerolinea("AA")
             .aeropuertoOrigen("SKBO")
-            .aeropuertoDestino("SPJC")
+            .aeropuertoDestino("SPIM")
             .fechaHoraIngreso(fechaIngreso)
             .cantidadMaletas(1)
             .sla(2)
@@ -160,7 +160,7 @@ class PlanningServiceIntegrationTest {
             params, timeline, flightLoads);
 
         org.junit.jupiter.api.Assumptions.assumeTrue(!result.getPlanes().isEmpty(),
-            "Sin ruta disponible SKBO->SPJC para esta franja horaria de prueba, saltando test");
+            "Sin ruta disponible SKBO->SPIM para esta franja horaria de prueba, saltando test");
 
         for (PlanDeViaje plan : result.getPlanes()) {
             for (Escala escala : plan.getEscalas()) {

@@ -192,9 +192,10 @@ public class SimulationEngine {
         }
 
         // Skip day-1 visual/occupancy bookkeeping if checkColapsoInmediato() already closed the
-        // simulation mid-loop above: applySimulationEnd() already finalized ocupacionMaxima and
-        // related reporting, so recomputing it here (against the still-in-progress day-1 point)
-        // would skew those numbers.
+        // simulation mid-loop above: the simulation has already ended at that point, so
+        // interpolating occupancy forward to endOfDay1 (a point in time the run never actually
+        // reached) would show a day that won't be rendered and could misrepresent when/how the
+        // collapse happened.
         if (colapsoPunto == null) {
             // Day 1 warehouses START empty: envíos arrive throughout the day, so 0% at t=0 is correct.
             aeropuertos.forEach(a -> a.setOcupacionInicioDia(0));
@@ -345,9 +346,16 @@ public class SimulationEngine {
         PlanningResult batchResult = planificarSiguienteBloque();
         aplicarResultadoPlanificacion(batchResult);
         addOperationLog("Rolling plan: batch up to " + horizonPointer + " — " + batchResult.getPlanes().size() + " new plans");
-        // Use endOfDay as ref so that new-day bags (fechaHoraIngreso > midnight) are counted.
-        // Without this, currentOccupation == ocupacionInicioDia and the frontend interpolation is flat.
-        updateWarehouseOccupation(endOfDay);
+        // Skip the occupancy interpolation if aplicarResultadoPlanificacion() above already
+        // triggered checkColapsoInmediato() and closed the simulation: same reasoning as the
+        // matching guard in inicializar() — endOfDay is a point in time the run never actually
+        // reached, so interpolating occupancy forward to it would misrepresent the collapse.
+        // getEstado() still runs unconditionally so cachedState reflects the collapse.
+        if (colapsoPunto == null) {
+            // Use endOfDay as ref so that new-day bags (fechaHoraIngreso > midnight) are counted.
+            // Without this, currentOccupation == ocupacionInicioDia and the frontend interpolation is flat.
+            updateWarehouseOccupation(endOfDay);
+        }
         this.cachedState = getEstado();
         return horizonPointer != null && horizonPointer.isBefore(endOfDay);
     }

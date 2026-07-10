@@ -60,7 +60,17 @@ class SimulationScenarioTest {
         var finalState = simulationEngine.avanzarDia(); // Day 3 finishes
         
         assertTrue(finalState.isFinalizada());
-        assertEquals(3, finalState.getThroughputHistorial().size());
+        // Bajo el trigger de colapso inmediato (Task 3), la simulación puede terminar antes
+        // de completar los 3 días si algún envío queda RETRASADO. Ambos desenlaces son válidos
+        // dependiendo de la data real: completar los 3 días, o colapsar antes con al menos
+        // 1 día de historial registrado.
+        if (finalState.getColapsoPunto() != null) {
+            assertTrue(finalState.getThroughputHistorial().size() >= 1,
+                "Si colapsó, debe haber al menos 1 día de historial antes del colapso");
+        } else {
+            assertEquals(3, finalState.getThroughputHistorial().size(),
+                "Si no colapsó, debe completar los 3 días");
+        }
     }
 
     @Test
@@ -163,8 +173,16 @@ class SimulationScenarioTest {
         }
 
         assertNotNull(state);
-        assertTrue(state.isFinalizada(), "Simulación debe finalizar en día 3");
-        assertEquals(3, state.getThroughputHistorial().size(), "Debe haber 3 días de historial");
+        assertTrue(state.isFinalizada(), "Simulación debe finalizar (por completar los 3 días o por colapso)");
+        // Bajo el trigger de colapso inmediato (Task 3), la simulación puede terminar antes
+        // de los 3 días si algún envío real de esta ventana queda RETRASADO. Ambos desenlaces
+        // son válidos dependiendo de la data real de 2027-06-01.
+        if (state.getColapsoPunto() != null) {
+            assertTrue(state.getThroughputHistorial().size() >= 1,
+                "Si colapsó, debe haber al menos 1 día de historial antes del colapso");
+        } else {
+            assertEquals(3, state.getThroughputHistorial().size(), "Si no colapsó, debe haber 3 días de historial");
+        }
 
         state.getAeropuertos().forEach(ap -> {
             if (ap.getCapacidadAlmacen() > 0) {
@@ -250,7 +268,7 @@ class SimulationScenarioTest {
             .idEnvio("E-SC-1")
             .codigoAerolinea("AA")
             .aeropuertoOrigen("SKBO")
-            .aeropuertoDestino("SPJC")
+            .aeropuertoDestino("SPIM")
             .fechaHoraIngreso(horaInicioDia1.plusMinutes(5)) // entra 08:05, dentro de la ventana 1
             .cantidadMaletas(1)
             .sla(2)
