@@ -5,15 +5,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.tasf.backend.algorithm.AirportTimeline;
 import com.tasf.backend.domain.Aeropuerto;
 import com.tasf.backend.domain.Envio;
+import com.tasf.backend.domain.Escala;
 import com.tasf.backend.domain.EstadoEnvio;
 import com.tasf.backend.domain.ParametrosSimulacion;
+import com.tasf.backend.domain.PlanDeViaje;
 import com.tasf.backend.domain.PlanningResult;
 import com.tasf.backend.domain.Vuelo;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -123,6 +127,48 @@ class PlanningServiceIntegrationTest {
         assertTrue(result.getMetrica().getRutasEvaluadas() > 0);
         assertFalse(result.getPlanes().isEmpty());
         System.out.println("METRICA_SAMPLE_INCIDENCIA=" + result.getMetrica());
+    }
+
+    @Test
+    void planificarLoteRespetaPisoDeCurrentTimeUtcSobreFechaHoraIngreso() {
+        LocalDateTime fechaIngreso = LocalDateTime.of(2026, 1, 2, 8, 5);
+        LocalDateTime windowEnd = LocalDateTime.of(2026, 1, 2, 10, 0); // Sc=120min desde 08:00
+
+        Envio envio = Envio.builder()
+            .idEnvio("E-WINDOW-1")
+            .codigoAerolinea("AA")
+            .aeropuertoOrigen("SKBO")
+            .aeropuertoDestino("SPJC")
+            .fechaHoraIngreso(fechaIngreso)
+            .cantidadMaletas(1)
+            .sla(2)
+            .estado(EstadoEnvio.PENDIENTE)
+            .build();
+
+        ParametrosSimulacion params = ParametrosSimulacion.builder()
+            .fechaInicio(LocalDate.of(2026, 1, 2))
+            .diasSimulacion(1)
+            .esColapso(false)
+            .currentTimeUtc(windowEnd)
+            .build();
+
+        AirportTimeline timeline = new AirportTimeline();
+        Map<String, Integer> flightLoads = new HashMap<>();
+
+        PlanningResult result = planningService.planificarLote(
+            List.of(envio), dataLoaderService.getVuelos(), dataLoaderService.getAeropuertos(),
+            params, timeline, flightLoads);
+
+        org.junit.jupiter.api.Assumptions.assumeTrue(!result.getPlanes().isEmpty(),
+            "Sin ruta disponible SKBO->SPJC para esta franja horaria de prueba, saltando test");
+
+        for (PlanDeViaje plan : result.getPlanes()) {
+            for (Escala escala : plan.getEscalas()) {
+                assertFalse(escala.getHoraSalidaEst().isBefore(windowEnd),
+                    () -> "Vuelo " + escala.getCodigoVuelo() + " sale " + escala.getHoraSalidaEst()
+                        + " antes del cierre de ventana Sc (" + windowEnd + ")");
+            }
+        }
     }
 
     private ParametrosSimulacion baseParams(String algorithm) {

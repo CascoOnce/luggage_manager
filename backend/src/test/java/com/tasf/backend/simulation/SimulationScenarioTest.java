@@ -209,6 +209,40 @@ class SimulationScenarioTest {
         });
     }
 
+    @Test
+    void vuelosNoSalenAntesDeCerrarLaVentanaSc() {
+        LocalDateTime horaInicioDia1 = LocalDateTime.of(2026, 1, 2, 8, 0);
+        LocalDateTime cierreVentana1 = horaInicioDia1.plusMinutes(120); // Sc=120 con defaults nuevos
+
+        List<Envio> envios = List.of(Envio.builder()
+            .idEnvio("E-SC-1")
+            .codigoAerolinea("AA")
+            .aeropuertoOrigen("SKBO")
+            .aeropuertoDestino("SPJC")
+            .fechaHoraIngreso(horaInicioDia1.plusMinutes(5)) // entra 08:05, dentro de la ventana 1
+            .cantidadMaletas(1)
+            .sla(2)
+            .estado(EstadoEnvio.PENDIENTE)
+            .build());
+
+        ParametrosSimulacion params = ParametrosSimulacion.builder()
+            .fechaInicio(LocalDate.of(2026, 1, 2))
+            .horaInicio("08:00")
+            .diasSimulacion(1)
+            .esColapso(false)
+            .build();
+
+        simulationEngine.inicializar(params, envios);
+
+        var envioDto = simulationEngine.getEnvioPorId("E-SC-1").orElse(null);
+        org.junit.jupiter.api.Assumptions.assumeTrue(envioDto != null && envioDto.getPlanDetalle() != null,
+            "Sin ruta planificada para el envío de prueba, saltando test");
+
+        envioDto.getPlanDetalle().getEscalas().forEach(escala ->
+            assertTrue(!escala.getHoraSalidaEst().isBefore(cierreVentana1),
+                "Vuelo " + escala.getCodigoVuelo() + " no debe salir antes del cierre de la ventana Sc"));
+    }
+
     private List<Envio> createSampleEnvios(int count) {
         List<Envio> list = new ArrayList<>();
         List<Aeropuerto> airports = dataLoaderService.getAeropuertos();

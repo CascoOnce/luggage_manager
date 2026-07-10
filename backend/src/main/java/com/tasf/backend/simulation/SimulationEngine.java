@@ -1742,6 +1742,10 @@ public class SimulationEngine {
             .filter(e -> e.getEstado() == EstadoEnvio.PENDIENTE)
             .collect(Collectors.toList());
 
+        // No flight may be assigned before this Sc window closes — bags collected during
+        // the window are only routed once the window ends (see plan doc for rationale).
+        this.params.setCurrentTimeUtc(windowEnd);
+
         long startMs = System.currentTimeMillis();
         PlanningResult result = planningService.planificarLote(
             batch, this.vuelos, this.aeropuertos, this.params,
