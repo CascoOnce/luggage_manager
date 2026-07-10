@@ -55,7 +55,7 @@ application-local*
 *.rar
 .claude/
 CLAUDE.md
-docs/superpowers/
+docs/
 plans/
 
 # ─── Scripts de infraestructura (no van al repo público) ────────────
