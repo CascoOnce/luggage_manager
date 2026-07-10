@@ -191,12 +191,18 @@ public class SimulationEngine {
             }
         }
 
-        // Day 1 warehouses START empty: envíos arrive throughout the day, so 0% at t=0 is correct.
-        aeropuertos.forEach(a -> a.setOcupacionInicioDia(0));
-        // Set the end-of-day interpolation endpoint to the full planned volume so the
-        // frontend animation shows the warehouse gradually filling up during the day.
-        // Using endOfDay1 counts all Day-1 maletas regardless of their fechaHoraIngreso time.
-        updateWarehouseOccupation(endOfDay1);
+        // Skip day-1 visual/occupancy bookkeeping if checkColapsoInmediato() already closed the
+        // simulation mid-loop above: applySimulationEnd() already finalized ocupacionMaxima and
+        // related reporting, so recomputing it here (against the still-in-progress day-1 point)
+        // would skew those numbers.
+        if (colapsoPunto == null) {
+            // Day 1 warehouses START empty: envíos arrive throughout the day, so 0% at t=0 is correct.
+            aeropuertos.forEach(a -> a.setOcupacionInicioDia(0));
+            // Set the end-of-day interpolation endpoint to the full planned volume so the
+            // frontend animation shows the warehouse gradually filling up during the day.
+            // Using endOfDay1 counts all Day-1 maletas regardless of their fechaHoraIngreso time.
+            updateWarehouseOccupation(endOfDay1);
+        }
 
         String algoritmoInicial = params.getAlgoritmo() != null ? params.getAlgoritmo() : "N/A";
         addOperationLog("Simulation initialized - Day 1 - " + this.envios.size()

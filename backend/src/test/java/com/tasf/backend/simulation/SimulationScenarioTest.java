@@ -211,13 +211,15 @@ class SimulationScenarioTest {
 
     @Test
     void colapsaInmediatamenteConCualquierEnvioRetrasado() {
-        // Envío con SLA imposible de cumplir: entra a 3 minutos de que termine la simulación de 1 día,
-        // destino en otro continente (SLA=2 días) pero diasSimulacion=1 corta el reloj antes.
+        // EDDF no existe en los datos de aeropuertos/vuelos de prueba, así que no hay ninguna
+        // ruta viable para este envío. aplicarResultadoPlanificacion() lo marca RETRASADO por
+        // falta de ruta (no por incumplimiento de SLA), lo cual también debe disparar el
+        // colapso inmediato vía checkColapsoInmediato().
         List<Envio> envios = List.of(Envio.builder()
             .idEnvio("E-COLAPSO-1")
             .codigoAerolinea("AA")
             .aeropuertoOrigen("SKBO")
-            .aeropuertoDestino("EDDF") // fuera de continente, requiere más tiempo del disponible
+            .aeropuertoDestino("EDDF") // destino inexistente en los datos, fuerza envío sin ruta viable
             .fechaHoraIngreso(LocalDateTime.of(2026, 1, 2, 23, 55))
             .cantidadMaletas(1)
             .sla(1)
@@ -281,7 +283,7 @@ class SimulationScenarioTest {
                 .idEnvio("E" + i)
                 .codigoAerolinea("AA")
                 .aeropuertoOrigen("SKBO")
-                .aeropuertoDestino("SPJC")
+                .aeropuertoDestino("SPIM")
                 .fechaHoraIngreso(LocalDateTime.of(2026, 1, 2, 8, 0).plusHours(i))
                 .cantidadMaletas(1)
                 .sla(1)
