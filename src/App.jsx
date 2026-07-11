@@ -58,6 +58,9 @@ export default function App() {
   const colapsoPuntoAlertedRef = useRef(false)
   const simStartMinuteRef = useRef(0)
   const prevSimStateRef = useRef(null)
+  // Envio delta-protocol cache: last full envios array + the version it corresponds to.
+  const lastEnviosRef = useRef(null)
+  const lastEnviosVersionRef = useRef(-1)
 
   useEffect(() => {
     if (backendState && !backendState.finalizada) {
@@ -150,6 +153,30 @@ export default function App() {
     }
   }, [])
 
+  // Envio delta protocol: the polled /state is LIGHT (no envios) and carries only
+  // enviosVersion. We keep the last full envios array cached and only refetch /envios
+  // when the version changes (day advance, replanning, cancellations). Full responses
+  // (start/step/restart/cancel) already carry envios, so we just cache them.
+  const hydrateEnvios = useCallback(async (state) => {
+    if (!state) return state
+    const v = state.enviosVersion
+    const hasFull = Array.isArray(state.envios) && state.envios.length > 0
+    if (hasFull) {
+      lastEnviosRef.current = state.envios
+      if (v != null) lastEnviosVersionRef.current = v
+    } else if (v != null && v !== lastEnviosVersionRef.current) {
+      try {
+        const envios = await api.getEnvios()
+        lastEnviosRef.current = envios
+        lastEnviosVersionRef.current = v
+      } catch (e) {
+        console.error('Error refetching envios (delta):', e)
+      }
+    }
+    state.envios = lastEnviosRef.current || []
+    return state
+  }, [])
+
   const startPolling = useCallback(() => {
     stopPolling()
     pollingErrorsRef.current = 0
@@ -165,14 +192,11 @@ export default function App() {
         // Ignore stale responses if this polling session was stopped or restarted
         if (pollingRef.current !== id) return
 
-        // Fetch envios en segundo plano para mantener la tabla de envíos actualizada en tiempo real
+        // The polled /state is light (no envios). Refetch the envios table only when the
+        // backend's enviosVersion changed; otherwise reuse the cached array.
         if (state && (state.enEjecucion || state.finalizada)) {
-          try {
-            const envios = await api.getEnvios()
-            state.envios = envios
-          } catch (e) {
-            console.error('Error fetching envios during polling:', e)
-          }
+          await hydrateEnvios(state)
+          if (pollingRef.current !== id) return  // may have stopped during the refetch
         }
 
         pollingErrorsRef.current = 0
@@ -233,7 +257,7 @@ export default function App() {
       }
     }, 2000)
     pollingRef.current = id
-  }, [stopPolling])
+  }, [stopPolling, hydrateEnvios])
 
   // When simulation finishes, unlock all users (anyone can start next sim)
   useEffect(() => {
@@ -267,8 +291,9 @@ export default function App() {
   // On mount: check if a simulation is already running (another tab/user started it).
   // Always start polling so B detects new simulations started by A after B has loaded.
   useEffect(() => {
-    api.getState().then((state) => {
+    api.getState().then(async (state) => {
       if (state && (state.enEjecucion || state.finalizada)) {
+        await hydrateEnvios(state)  // light state → fetch envios once
         wasSimRunningRef.current = true  // So external-cancel detection triggers correctly
         setBackendState(state)
         // Determine ownership: the browser that started the simulation has the localStorage flag.
@@ -388,14 +413,11 @@ export default function App() {
   // Animation resumes for the next day while /step processes. When response arrives,
   // setBackendState swaps in new day data. Brief window (~1-4s) of prior-day flight
   // data is acceptable and masked by fine-grained ticks.
-  // On the last day the animation ends at horaInicio (not midnight) so the simulation
-  // window is symmetric: [horaInicio Day1 → horaInicio DayN].
+  // Every day — including the last — animates the full 24h (0→1440) so that a
+  // simulation of N días covers N×24h.
   useEffect(() => {
     if (!autoStep) return
-    const currentDay = backendState?.diaActual ?? 0
-    const totalDias  = backendState?.totalDias  ?? 0
-    const isLastDay  = totalDias > 0 && currentDay >= totalDias
-    const dayEndMin  = isLastDay ? simStartMinuteRef.current : 1440
+    const dayEndMin = 1440
     if (simClockMinutes < dayEndMin) return
     if (stepInProgressRef.current) return  // already fired this step
 
@@ -403,6 +425,7 @@ export default function App() {
     api.stepSimulation().then((newState) => {
       if (!newState) return
       stepInProgressRef.current = false
+      hydrateEnvios(newState)  // full response → cache envios for subsequent light polls
       setBackendState(newState)
       if (newState.finalizada) {
         setAutoStep(false)
@@ -423,6 +446,13 @@ export default function App() {
 
 
   const displayState = (backendState?.finalizada && prevSimStateRef.current) ? prevSimStateRef.current : backendState;
+
+  // The envíos-table state (PLANIFICADO / EN_TRANSITO / ENTREGADO) only flips at flight
+  // departure/arrival boundaries — it doesn't need the 250ms map-animation resolution.
+  // Quantize the clock fed to the ~21k-envío remap so it recomputes ~every 1.25s instead
+  // of 4×/s. The map's flight/occupancy animation still uses the fine simClockMinutes.
+  const ENVIO_CLOCK_QUANTUM = 5
+  const simClockForEnvios = Math.floor(simClockMinutes / ENVIO_CLOCK_QUANTUM) * ENVIO_CLOCK_QUANTUM
 
   const clockedEnviosForState = useMemo(() => {
     const rawEnvios = displayState?.envios || []
@@ -453,7 +483,7 @@ export default function App() {
         const baseDate = displayState?.fechaSimulada ? new Date(displayState.fechaSimulada) : new Date()
         
         // currentSimTime represents the exact UTC equivalent time in the simulation.
-        const currentSimTime = new Date(baseDate.getTime() + simClockMinutes * 60000)
+        const currentSimTime = new Date(baseDate.getTime() + simClockForEnvios * 60000)
         
         // The simulation's start time for today (based on the user's start minute)
         const simStartTime = new Date(baseDate.getTime() + simStartMinuteRef.current * 60000)
@@ -477,7 +507,7 @@ export default function App() {
       }
       return envio
     })
-  }, [displayState?.envios, displayState?.vuelos, simClockMinutes])
+  }, [displayState?.envios, displayState?.vuelos, simClockForEnvios])
 
   const simState = useMemo(() => {
     if (!displayState) return {
@@ -972,6 +1002,7 @@ export default function App() {
     try {
       const state = await api.restartSimulation()
       if (state) {
+        hydrateEnvios(state)  // full response → cache envios
         setBackendState(state)
         setScreen('main')
         startPolling()
@@ -1154,6 +1185,7 @@ export default function App() {
       setMapSelectedVuelo(null)
       setSelectedFlight(null)
       if (newState && (newState.enEjecucion || newState.finalizada)) {
+        hydrateEnvios(newState)  // full response → cache envios
         setBackendState(newState)
       }
     } catch (err) {
@@ -1178,6 +1210,7 @@ export default function App() {
     localStorage.setItem('simOwner', '1')
     setIsOwner(true)
     wasSimRunningRef.current = true
+    hydrateEnvios(state)  // full /start response → seed the envios cache
     setBackendState(state)
     setLastParams(params)
     const [h = 0, m = 0] = (params?.horaInicio || '00:00').split(':').map(Number)
@@ -1189,7 +1222,7 @@ export default function App() {
     setScreen('main')
     setActiveSideSection('vuelos')
     startPolling()
-  }, [startPolling])
+  }, [startPolling, hydrateEnvios])
 
   const mapContainerRef = useRef(null)
   const kpiWidgetRef = useRef(null)

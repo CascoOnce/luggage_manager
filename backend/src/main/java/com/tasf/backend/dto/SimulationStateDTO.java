@@ -9,7 +9,7 @@ import com.tasf.backend.domain.ColapsoPunto;
 import com.tasf.backend.domain.MetricaAlgoritmo;
 
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 public class SimulationStateDTO {
@@ -25,6 +25,11 @@ public class SimulationStateDTO {
     private List<AeropuertoDTO> aeropuertos;
     private List<VueloDTO> vuelos;
     private List<EnvioDTO> envios;
+    // Monotonic counter that changes whenever `envios` materially change (day advance,
+    // (re)planning, cancellations). The frequently-polled /state omits the heavy envios
+    // list and carries only this version; the frontend refetches /envios lazily when it
+    // sees a new value, instead of shipping ~21k envios on every 2s poll.
+    private long enviosVersion;
     private KpisDTO kpis;
     private List<ThroughputDiaDTO> throughputHistorial;
     private List<String> logOperaciones;

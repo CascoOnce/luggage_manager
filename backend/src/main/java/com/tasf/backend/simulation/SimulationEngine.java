@@ -91,10 +91,23 @@ public class SimulationEngine {
     private final Map<String, String> maletaVueloActual = new HashMap<>();
     private final List<ThroughputDiaDTO> throughputHistorial = new ArrayList<>();
 
+    // Static schedule index: sorted departure/arrival LocalTimes per airport, built once
+    // per simulation from the (immutable) flight timetable. Lets toAeropuertoDto compute the
+    // next departure/arrival in O(log flights_at_airport) instead of scanning ALL vuelos per
+    // airport on every getEstado() call (was O(aeropuertos × vuelos) = ~172k ops each time).
+    private Map<String, List<LocalTime>> depTimesByAirport = new HashMap<>();
+    private Map<String, List<LocalTime>> arrTimesByAirport = new HashMap<>();
+
     // Non-blocking cache: updated at end of each avanzarDia/inicializar/detener/reiniciar.
     // Allows /state polling to return immediately without contending on the synchronized lock.
+    // NOTE: the cached copy is intentionally LIGHT (envios omitted) — /state polling carries
+    // only enviosVersion, and the frontend refetches /envios lazily when that value changes.
     private volatile SimulationStateDTO cachedState;
     private volatile boolean initialized = false;
+
+    // Monotonic (never reset) version bumped whenever `envios` materially change: day
+    // advance, (re)planning batches, cancellations, uploads. Drives lazy envio refetch.
+    private volatile long enviosVersion = 0;
 
     // Background planning: avanzarDia() submits next-day batch planning here so the
     // HTTP response returns fast. Each batch acquires the instance lock independently,
@@ -118,6 +131,7 @@ public class SimulationEngine {
         this.initialized = true;
         this.aeropuertos = deepCopyAeropuertos(dataLoaderService.getAeropuertos());
         this.vuelos = deepCopyVuelos(dataLoaderService.getVuelos());
+        buildScheduleIndex();
 
         // Resolve the number of days requested by the user
         int filterDias = resolveDias(params);
@@ -209,7 +223,8 @@ public class SimulationEngine {
         addOperationLog("Simulation initialized - Day 1 - " + this.envios.size()
             + " envios - algorithm: " + algoritmoInicial
             + " - routes evaluated: " + rutasEvaluadasInit);
-        this.cachedState = getEstado();
+        bumpEnviosVersion();
+        this.cachedState = buildLightEstado();
     }
 
     public SimulationStateDTO avanzarDia() {
@@ -260,9 +275,10 @@ public class SimulationEngine {
         Map<String, List<Maleta>> maletasByEnvio = maletas.stream().collect(Collectors.groupingBy(Maleta::getIdEnvio));
 
         // Run up to 3 passes so that same-day connections work correctly.
-        LocalTime endLimit = (diaActual >= params.getDiasSimulacion()) 
-            ? parseHoraInicio(params.getHoraInicio()) 
-            : null;
+        // Every simulated day (including the last) is processed in full — 00:00→24:00 —
+        // so that N días = N×24h. Previously the last day was truncated at horaInicio,
+        // which made the window span only N-1 days (e.g. 96h for a 5-day run).
+        LocalTime endLimit = null;
 
         for (int pass = 0; pass < 3; pass++) {
             processDepartures(envioById, vueloByCode, airportByCode, maletasByEnvio, endLimit);
@@ -270,12 +286,9 @@ public class SimulationEngine {
         }
         DeliveryStats deliveryStats = processDeliveries(envioById, airportByCode, maletasByEnvio);
 
-        LocalDateTime currentStepEndTime;
-        if (diaActual >= params.getDiasSimulacion()) {
-            currentStepEndTime = params.getFechaInicio().plusDays(params.getDiasSimulacion() - 1).atTime(parseHoraInicio(params.getHoraInicio()));
-        } else {
-            currentStepEndTime = params.getFechaInicio().plusDays(diaActual).atStartOfDay();
-        }
+        // End of the day just processed = start of the next calendar day (24h boundary),
+        // for every day including the last.
+        LocalDateTime currentStepEndTime = params.getFechaInicio().plusDays(diaActual).atStartOfDay();
         checkSlaViolations(maletasByEnvio, currentStepEndTime);
 
         // Post-processing: recalculate actual warehouse state for internal accuracy
@@ -295,8 +308,13 @@ public class SimulationEngine {
             cancelRandomFlightsAndReplan();
         }
 
+        // Envio estados settled for this day (processing + any random-cancel replanning) →
+        // publish a new version so pollers refetch the envios table.
+        bumpEnviosVersion();
+
         if (colapsoPunto == null && diaActual >= params.getDiasSimulacion()) {
-            LocalDateTime simEndTime = params.getFechaInicio().plusDays(params.getDiasSimulacion() - 1).atTime(parseHoraInicio(params.getHoraInicio()));
+            // Simulation ends at the end of the last full day = start of day N+1 (N×24h window).
+            LocalDateTime simEndTime = params.getFechaInicio().plusDays(params.getDiasSimulacion()).atStartOfDay();
             updateWarehouseOccupation(simEndTime);
             this.finalizada = true;
             this.enEjecucion = false;
@@ -308,7 +326,10 @@ public class SimulationEngine {
                 List.copyOf(logOperaciones),
                 List.copyOf(envios)
             );
-            return this.cachedState = getEstado();
+            bumpEnviosVersion();  // applySimulationEnd changed estados
+            SimulationStateDTO full = getEstado();
+            this.cachedState = full.toBuilder().envios(List.of()).build();
+            return full;
         }
 
         // Advance to next simulated day. Background thread plans that day's batches
@@ -319,7 +340,9 @@ public class SimulationEngine {
         this.fechaSimulada = params.getFechaInicio().plusDays(diaActual - 1).atStartOfDay();
 
         final LocalDateTime endOfDay = params.getFechaInicio().plusDays(diaActual).atStartOfDay();
-        SimulationStateDTO snap = this.cachedState = getEstado();
+        // Full response (with envios) goes back to the /step caller; cache stays light.
+        SimulationStateDTO snap = getEstado();
+        this.cachedState = snap.toBuilder().envios(List.of()).build();
 
         // Submit background planning — each batch acquires the instance lock independently,
         // so polling (cachedState volatile read) can interleave between batches.
@@ -345,6 +368,7 @@ public class SimulationEngine {
         }
         PlanningResult batchResult = planificarSiguienteBloque();
         aplicarResultadoPlanificacion(batchResult);
+        bumpEnviosVersion();  // new plans/maletas → envios table changed
         addOperationLog("Rolling plan: batch up to " + horizonPointer + " — " + batchResult.getPlanes().size() + " new plans");
         // Skip the occupancy interpolation if aplicarResultadoPlanificacion() above already
         // triggered checkColapsoInmediato() and closed the simulation: same reasoning as the
@@ -356,7 +380,8 @@ public class SimulationEngine {
             // Without this, currentOccupation == ocupacionInicioDia and the frontend interpolation is flat.
             updateWarehouseOccupation(endOfDay);
         }
-        this.cachedState = getEstado();
+        // Background path — cache light directly (never build the ~21k envios here).
+        this.cachedState = buildLightEstado();
         return horizonPointer != null && horizonPointer.isBefore(endOfDay);
     }
 
@@ -367,6 +392,7 @@ public class SimulationEngine {
         // Reset aeropuertos and vuelos to clean state (clears accumulated stats/loads)
         this.aeropuertos = deepCopyAeropuertos(dataLoaderService.getAeropuertos());
         this.vuelos = deepCopyVuelos(dataLoaderService.getVuelos());
+        buildScheduleIndex();
 
         // Reset envio states to PLANIFICADO
         this.envios.forEach(e -> e.setEstado(EstadoEnvio.PLANIFICADO));
@@ -404,7 +430,10 @@ public class SimulationEngine {
         LocalDateTime endOfDay1Restart = params.getFechaInicio().plusDays(1).atStartOfDay();
         updateWarehouseOccupation(endOfDay1Restart);
         addOperationLog("Simulation restarted - Day 1 - reusing previous plans");
-        return this.cachedState = getEstado();
+        bumpEnviosVersion();
+        SimulationStateDTO full = getEstado();
+        this.cachedState = full.toBuilder().envios(List.of()).build();
+        return full;
     }
 
     public synchronized SimulationStateDTO detener() {
@@ -421,7 +450,10 @@ public class SimulationEngine {
             List.copyOf(logOperaciones),
             List.copyOf(envios)
         );
-        return this.cachedState = getEstado();
+        bumpEnviosVersion();
+        SimulationStateDTO full = getEstado();
+        this.cachedState = full.toBuilder().envios(List.of()).build();
+        return full;
     }
 
     private void applySimulationEnd(LocalDateTime simulationEndTime) {
@@ -600,13 +632,29 @@ public class SimulationEngine {
         
         replanificar(nuevasMaletas);
         updateWarehouseOccupation();
+        bumpEnviosVersion();
+        this.cachedState = buildLightEstado();
     }
 
     public SimulationStateDTO getCachedEstado() {
         return cachedState;
     }
 
+    /** Bump the envio version whenever envios/plans/estados change (drives lazy client refetch). */
+    private void bumpEnviosVersion() {
+        this.enviosVersion++;
+    }
+
     public synchronized SimulationStateDTO getEstado() {
+        return buildEstado(true);
+    }
+
+    /** Builds a LIGHT state (envios omitted) for the frequently-polled /state cache. */
+    private SimulationStateDTO buildLightEstado() {
+        return buildEstado(false);
+    }
+
+    private SimulationStateDTO buildEstado(boolean includeEnvios) {
 
         if (params == null) {
             return SimulationStateDTO.builder()
@@ -620,6 +668,7 @@ public class SimulationEngine {
                 .aeropuertos(List.of())
                 .vuelos(List.of())
                 .envios(List.of())
+                .enviosVersion(enviosVersion)
                 .kpis(KpisDTO.builder()
                     .maletasEnTransito(0)
                     .maletasEntregadas(0)
@@ -679,7 +728,12 @@ public class SimulationEngine {
             .finalizada(finalizada)
             .aeropuertos(aeropuertos.stream().map(a -> toAeropuertoDto(a, maletasPorAlmacen, maletasPorDestino)).toList())
             .vuelos(vuelos.stream().map(v -> toVueloDto(v, plansByFlight, envioById, husoByAirport)).toList())
-            .envios(envios.stream().map(e -> toEnvioDto(e, false, latestPlanByEnvio.get(e.getIdEnvio()))).toList())
+            // Heavy list (~21k) — only built for full responses (start/step/cancel); the polled
+            // light state omits it and the client refetches /envios when enviosVersion changes.
+            .envios(includeEnvios
+                ? envios.stream().map(e -> toEnvioDto(e, false, latestPlanByEnvio.get(e.getIdEnvio()))).toList()
+                : List.of())
+            .enviosVersion(enviosVersion)
             .kpis(buildKpis())
             .throughputHistorial(List.copyOf(throughputHistorial))
             .logOperaciones(List.copyOf(logOperaciones))
@@ -1226,7 +1280,8 @@ public class SimulationEngine {
             .build());
 
         // Refresh the cache so subsequent polls reflect the cancellation immediately.
-        this.cachedState = getEstado();
+        bumpEnviosVersion();
+        this.cachedState = buildLightEstado();
     }
 
     public synchronized void cancelarEnvioManualmente(String idEnvio) {
@@ -1268,6 +1323,8 @@ public class SimulationEngine {
         if (!toOptimize.isEmpty()) {
             replanificarConStats(toOptimize, true);
         }
+        bumpEnviosVersion();
+        this.cachedState = buildLightEstado();
     }
 
     private List<Maleta> rescueBags(Vuelo vuelo, LocalDate today) {
@@ -1458,36 +1515,16 @@ public class SimulationEngine {
         double ocupMax = capacidad > 0
             ? (airport.getOcupacionMaximaBolsas() * 100.0 / capacidad) : 0.0;
 
-        // compute next departure/arrival for this airport relative to current simulated time
+        // Next departure/arrival for this airport relative to current simulated time.
+        // Uses the pre-sorted schedule index (built once per simulation) instead of
+        // scanning every vuelo — O(flights_at_airport) rather than O(all vuelos).
         String nextDepStr = null;
         String nextArrStr = null;
-        try {
-            if (fechaSimulada != null && vuelos != null) {
-                java.time.LocalDateTime now = fechaSimulada;
-                java.util.Optional<java.time.LocalDateTime> nd = vuelos.stream()
-                    .filter(v -> v.getOrigen() != null && v.getOrigen().equals(airport.getCodigoIATA()))
-                    .filter(v -> !v.isCancelado())
-                    .map(v -> {
-                        java.time.LocalDateTime candidate = java.time.LocalDateTime.of(now.toLocalDate(), v.getHoraSalida());
-                        if (candidate.isBefore(now) || candidate.isEqual(now)) candidate = candidate.plusDays(1);
-                        return candidate;
-                    })
-                    .min(java.util.Comparator.comparingLong(d -> java.time.Duration.between(now, d).toMillis()));
-                if (nd.isPresent()) nextDepStr = TS_FORMAT.format(nd.get());
-
-                java.util.Optional<java.time.LocalDateTime> na = vuelos.stream()
-                    .filter(v -> v.getDestino() != null && v.getDestino().equals(airport.getCodigoIATA()))
-                    .filter(v -> !v.isCancelado())
-                    .map(v -> {
-                        java.time.LocalDateTime candidate = java.time.LocalDateTime.of(now.toLocalDate(), v.getHoraLlegada());
-                        if (candidate.isBefore(now) || candidate.isEqual(now)) candidate = candidate.plusDays(1);
-                        return candidate;
-                    })
-                    .min(java.util.Comparator.comparingLong(d -> java.time.Duration.between(now, d).toMillis()));
-                if (na.isPresent()) nextArrStr = TS_FORMAT.format(na.get());
-            }
-        } catch (Exception ex) {
-            // ignore and keep nulls
+        if (fechaSimulada != null) {
+            LocalDateTime nd = nextScheduledAfter(depTimesByAirport.get(airport.getCodigoIATA()), fechaSimulada);
+            if (nd != null) nextDepStr = TS_FORMAT.format(nd);
+            LocalDateTime na = nextScheduledAfter(arrTimesByAirport.get(airport.getCodigoIATA()), fechaSimulada);
+            if (na != null) nextArrStr = TS_FORMAT.format(na);
         }
 
         return AeropuertoDTO.builder()
@@ -1555,12 +1592,9 @@ public class SimulationEngine {
     }
 
     private EnvioDTO toEnvioDto(Envio envio, boolean includePlanDetail, PlanDeViaje plan) {
-        if (plan == null) {
-             plan = planes.stream()
-                .filter(p -> p.getIdEnvio().equals(envio.getIdEnvio()))
-                .max(Comparator.comparingInt(PlanDeViaje::getVersion))
-                .orElse(null);
-        }
+        // `plan` is the authoritative latest plan for this envio, resolved by the caller from
+        // a map built over ALL planes. When it is null the envio genuinely has no plan, so the
+        // previous O(planes) fallback scan could never find one — it was pure wasted work.
         LocalDateTime deadline = envio.getFechaHoraIngreso().plusDays(envio.getSla());
 
         // escalasResumen is heavy (one list per envio × ~21k envios = the bulk of the
@@ -1689,6 +1723,40 @@ public class SimulationEngine {
             .lng(a.getLng())
             .ocupacionActual(a.getOcupacionActual())
             .build()).collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    /** Build the sorted departure/arrival time index from the current flight timetable.
+     *  Called once whenever vuelos is (re)loaded. Cancellations are intentionally ignored
+     *  here — this only feeds the "next scheduled departure/arrival" display fields. */
+    private void buildScheduleIndex() {
+        Map<String, List<LocalTime>> dep = new HashMap<>();
+        Map<String, List<LocalTime>> arr = new HashMap<>();
+        for (Vuelo v : vuelos) {
+            if (v.getOrigen() != null && v.getHoraSalida() != null) {
+                dep.computeIfAbsent(v.getOrigen(), k -> new ArrayList<>()).add(v.getHoraSalida());
+            }
+            if (v.getDestino() != null && v.getHoraLlegada() != null) {
+                arr.computeIfAbsent(v.getDestino(), k -> new ArrayList<>()).add(v.getHoraLlegada());
+            }
+        }
+        dep.values().forEach(list -> list.sort(Comparator.naturalOrder()));
+        arr.values().forEach(list -> list.sort(Comparator.naturalOrder()));
+        this.depTimesByAirport = dep;
+        this.arrTimesByAirport = arr;
+    }
+
+    /** Next occurrence of any time in the sorted list strictly after `now`, wrapping to the
+     *  following day if all scheduled times are at or before `now`. Returns null if empty. */
+    private LocalDateTime nextScheduledAfter(List<LocalTime> sortedTimes, LocalDateTime now) {
+        if (sortedTimes == null || sortedTimes.isEmpty()) return null;
+        LocalTime nowT = now.toLocalTime();
+        for (LocalTime t : sortedTimes) {
+            if (t.isAfter(nowT)) {
+                return LocalDateTime.of(now.toLocalDate(), t);
+            }
+        }
+        // All times are <= now → first one tomorrow.
+        return LocalDateTime.of(now.toLocalDate().plusDays(1), sortedTimes.get(0));
     }
 
     private List<Vuelo> deepCopyVuelos(List<Vuelo> source) {

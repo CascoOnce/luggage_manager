@@ -14,6 +14,14 @@ import java.util.stream.Collectors;
 class RouteCandidate {
     private final List<Leg> legs;
 
+    // Memoized derived values. A RouteCandidate is immutable and, within a batch, is only
+    // consumed by the single-threaded SA loop — which calls getSignature() and
+    // getCapacityWindows() several times per iteration. Caching removes a per-call String
+    // join and List/CapacityWindow allocation from that hot path (big GC-pressure win).
+    private String signatureCache;
+    private LocalDateTime cachedWindowsIngreso;
+    private List<CapacityWindow> cachedWindows;
+
     RouteCandidate(List<Leg> legs) {
         this.legs = Collections.unmodifiableList(new ArrayList<>(legs));
     }
@@ -31,9 +39,12 @@ class RouteCandidate {
     }
 
     String getSignature() {
-        return legs.stream()
-            .map(leg -> leg.flight().getCodigoVuelo())
-            .collect(Collectors.joining("|"));
+        if (signatureCache == null) {
+            signatureCache = legs.stream()
+                .map(leg -> leg.flight().getCodigoVuelo())
+                .collect(Collectors.joining("|"));
+        }
+        return signatureCache;
     }
 
     List<String> getIntermediateAirports() {
@@ -49,6 +60,11 @@ class RouteCandidate {
 
     List<CapacityWindow> getCapacityWindows(LocalDateTime fechaIngreso) {
         if (legs.isEmpty()) return List.of();
+        // Windows are deterministic given fechaIngreso, which is constant for the one envio
+        // that owns this candidate — so memoize and reuse across SA-loop calls.
+        if (cachedWindows != null && java.util.Objects.equals(cachedWindowsIngreso, fechaIngreso)) {
+            return cachedWindows;
+        }
         List<CapacityWindow> windows = new ArrayList<>();
         // from = exact arrival datetime, to = actual departure time.
         // Using next-day midnight caused SA to see the hub as empty after midnight,
@@ -65,7 +81,10 @@ class RouteCandidate {
                 legs.get(i + 1).departure()
             ));
         }
-        return windows;
+        List<CapacityWindow> result = Collections.unmodifiableList(windows);
+        this.cachedWindows = result;
+        this.cachedWindowsIngreso = fechaIngreso;
+        return result;
     }
 
     PlanDeViaje toPlan(Envio envio, String algorithmName, int version, ParametrosSimulacion params) {

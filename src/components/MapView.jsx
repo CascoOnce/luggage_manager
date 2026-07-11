@@ -148,9 +148,13 @@ function flightTrafficLightColor(pct, theme) {
   return '#22d07a'
 }
 
+// The warehouse glyph is constant — render its SVG markup once at module load instead of
+// on every makeAirportIcon() call (which runs per airport, on every map re-render).
+const WAREHOUSE_SVG = renderToStaticMarkup(React.createElement(MdWarehouse, { size: 16, color: '#fff' }))
+
 function makeAirportIcon(pct, threshold, theme) {
   const pinColor = trafficLightColor(pct, threshold, theme)
-  const warehouseSvg = renderToStaticMarkup(React.createElement(MdWarehouse, { size: 16, color: '#fff' }))
+  const warehouseSvg = WAREHOUSE_SVG
   const borderColor = theme === 'dark' ? '#060606' : '#ffffff'
   // Single-line HTML avoids whitespace issues with Leaflet's DivIcon rendering
   const html = `<div class="airport-pin" style="width:28px;height:28px;background:${pinColor};border-radius:50%;display:flex;align-items:center;justify-content:center;border:2.5px solid ${borderColor};box-shadow:0 0 7px ${pinColor}99;transform-origin:50% 50%;box-sizing:border-box;">${warehouseSvg}</div>`
@@ -224,9 +228,14 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
   }
 
   useEffect(() => {
+    // Only re-render at the END of a gesture. During a live pan Leaflet already
+    // translates the marker pane, and the relative angle between two airports is
+    // pan-invariant — so re-rendering on every continuous `move`/`zoom` frame was a
+    // wasted storm of full re-renders (very costly with many planes). Zoom changes the
+    // Mercator projection non-linearly, so `zoomend` still forces a reposition.
     const update = () => forceUpdate((n) => n + 1)
-    map.on('zoom zoomend move moveend', update)
-    return () => map.off('zoom zoomend move moveend', update)
+    map.on('zoomend moveend', update)
+    return () => map.off('zoomend moveend', update)
   }, [map])
 
   // Draw route line for selected flight even if it's no longer in activeFlights.
