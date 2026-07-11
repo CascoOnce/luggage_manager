@@ -6,6 +6,13 @@ import DrawerEnvio from '../drawers/DrawerEnvio.jsx'
 
 const FILE_PATTERN = /_envios_[A-Za-z]{4}_\.txt$/i
 
+// Cap how many list rows are rendered to the DOM. With ~39k envios, mapping the whole
+// filtered list produced tens of thousands of nodes that re-rendered every poll/tick and
+// froze the browser ("this page is slowing down"). Users filter to find rows, so a capped
+// window + a "refine your filters" hint keeps the UI responsive.
+const MAX_ENVIO_ROWS = 200
+const MAX_LIST_ROWS = 300
+
 const PERIOD_OPTIONS = [
   { key: '5',       label: '5 DÍAS',    sublabel: 'Simulación estándar' },
   { key: 'colapso', label: 'COLAPSO',   sublabel: 'Sin límite — hasta el colapso' },
@@ -213,7 +220,7 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
         </button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', margin: '0 -12px' }}>
-        {shown.map(f => {
+        {shown.slice(0, MAX_LIST_ROWS).map(f => {
           const pct   = f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
           const color = pct === 0 ? '#4d9fff' : pct >= 85 ? '#f04b4b' : pct >= 60 ? '#f5a623' : '#22d07a'
           const sel   = selectedFlight === f.id
@@ -262,6 +269,11 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
             </div>
           )
         })}
+        {shown.length > MAX_LIST_ROWS && (
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', padding: '10px 12px', textAlign: 'center', borderTop: '1px solid rgba(99,152,255,0.07)' }}>
+            Mostrando {MAX_LIST_ROWS} de {shown.length.toLocaleString()} — usa los filtros para refinar
+          </div>
+        )}
         {shown.length === 0 && (
           <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin vuelos {tab === 'activos' ? 'activos' : tab === 'planificados' ? 'próximos' : 'cancelados'}</div>
         )}
@@ -531,7 +543,7 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
               </tr>
             </thead>
             <tbody>
-              {list.map((e, i) => {
+              {list.slice(0, MAX_LIST_ROWS).map((e, i) => {
                 const delivery = e.fechaEntrega || e.fechaLlegadaUltimoVuelo
                 return (
                   <tr key={e.idEnvio || i} style={{ borderBottom: '1px solid rgba(99,152,255,0.06)' }}>
@@ -545,6 +557,11 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
               })}
             </tbody>
           </table>
+        )}
+        {list.length > MAX_LIST_ROWS && (
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', padding: '10px 12px', textAlign: 'center' }}>
+            Mostrando {MAX_LIST_ROWS} de {list.length.toLocaleString()} — usa los filtros para refinar
+          </div>
         )}
       </div>
     </div>
@@ -677,7 +694,7 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
             ))}
           </div>
           <div style={{ flex: 1, overflowY: 'auto', margin: '0 -12px' }}>
-            {list.map((e, i) => {
+            {list.slice(0, MAX_ENVIO_ROWS).map((e, i) => {
               const color = ESTADO_COLOR[e.estado] || 'var(--muted)'
               return (
                 <div key={e.idEnvio || i}
@@ -698,6 +715,11 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
                 </div>
               )
             })}
+            {list.length > MAX_ENVIO_ROWS && (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', padding: '10px 12px', textAlign: 'center', borderTop: '1px solid rgba(99,152,255,0.07)' }}>
+                Mostrando {MAX_ENVIO_ROWS} de {list.length.toLocaleString()} — usa los filtros (origen / destino / estado) para refinar
+              </div>
+            )}
             {list.length === 0 && (
               <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '16px 12px' }}>Sin envíos{estado || filterOrig || filterDest ? ' (filtro activo)' : ''}</div>
             )}

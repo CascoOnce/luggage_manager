@@ -1,6 +1,9 @@
 import React, { useMemo, useState } from 'react'
 import DrawerEnvio from '../drawers/DrawerEnvio.jsx'
 
+// Cap rendered table rows: with ~39k envios, rendering every filtered row froze the browser.
+const MAX_TABLE_ROWS = 300
+
 const STATUS_ORDER = ['EN_TRANSITO', 'ENTREGADO', 'RETRASADO', 'PLANIFICADO', 'PENDIENTE', 'CANCELADO']
 const STATUS_COLOR = {
   EN_TRANSITO: 'var(--blue)',
@@ -393,7 +396,7 @@ export default function EnviosScreen({ simState, onShowInMap, onCancelFlight, si
           <div style={{ minHeight: 'calc(100% - 44px)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
             SIN DATOS — Inicie una simulación
           </div>
-        ) : visible.map((envio) => (
+        ) : visible.slice(0, MAX_TABLE_ROWS).map((envio) => (
           <div
             key={envio.idEnvio}
             onClick={() => setSelectedEnvioId(envio.idEnvio)}
@@ -421,6 +424,11 @@ export default function EnviosScreen({ simState, onShowInMap, onCancelFlight, si
             <span style={{ color: 'var(--muted)' }}>{truncate(envio.planResumen, 30)}</span>
           </div>
         ))}
+        {visible.length > MAX_TABLE_ROWS && (
+          <div style={{ padding: '10px 14px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+            Mostrando {MAX_TABLE_ROWS} de {visible.length.toLocaleString()} — usa la búsqueda o los filtros para refinar
+          </div>
+        )}
       </section>
 
       <DrawerEnvio
@@ -509,7 +517,7 @@ export default function EnviosScreen({ simState, onShowInMap, onCancelFlight, si
               <div style={{ minHeight: 'calc(100% - 44px)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
                 SIN VUELOS
               </div>
-            ) : visibleVuelos.map((f) => {
+            ) : visibleVuelos.slice(0, MAX_TABLE_ROWS).map((f) => {
               const stColor = f.statusVuelo === 'EN_VUELO' ? 'var(--blue)' : f.statusVuelo === 'COMPLETADO' ? 'var(--green)' : 'var(--amber)'
               const ocupPct = f.capacity > 0 ? Math.round((f.currentLoad / f.capacity) * 100) : 0
               return (
@@ -539,6 +547,11 @@ export default function EnviosScreen({ simState, onShowInMap, onCancelFlight, si
                 </div>
               )
             })}
+            {visibleVuelos.length > MAX_TABLE_ROWS && (
+              <div style={{ padding: '10px 14px', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+                Mostrando {MAX_TABLE_ROWS} de {visibleVuelos.length.toLocaleString()} — usa los filtros para refinar
+              </div>
+            )}
           </section>
         </div>
       )}
