@@ -484,15 +484,16 @@ export default function App() {
         
         // currentSimTime represents the exact UTC equivalent time in the simulation.
         const currentSimTime = new Date(baseDate.getTime() + simClockForEnvios * 60000)
-        
-        // The simulation's start time for today (based on the user's start minute)
-        const simStartTime = new Date(baseDate.getTime() + simStartMinuteRef.current * 60000)
-        
+
         const firstDepartureTime = new Date(envio.fechaSalidaPrimerVuelo)
         const lastArrivalTime = new Date(envio.fechaLlegadaUltimoVuelo)
-        
-        // Validation requested: the plane must depart at or after the simulation's daily start time
-        const hasDeparted = currentSimTime >= firstDepartureTime && firstDepartureTime >= simStartTime
+
+        // firstDepartureTime / lastArrivalTime are absolute datetimes, so a simple time
+        // comparison works across day boundaries. The previous guard `firstDepartureTime >=
+        // simStartTime` compared against the CURRENT day's start, which wrongly reverted any
+        // envío that had departed on an earlier day back to PLANIFICADO — so multi-day
+        // in-flight envíos never showed as EN_TRANSITO.
+        const hasDeparted = currentSimTime >= firstDepartureTime
         const hasArrived = currentSimTime >= lastArrivalTime
         
         if (hasArrived) {
