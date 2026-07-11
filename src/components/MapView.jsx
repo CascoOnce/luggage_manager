@@ -83,11 +83,20 @@ function FlyToTarget({ target }) {
   const map = useMap()
   const prevRef = useRef(null)
   useEffect(() => {
-    if (!target || !target.lat || !target.lng) return
+    if (!target) return
     if (prevRef.current === target) return
     prevRef.current = target
-    const zoom     = target.zoom     ?? Math.max(map.getZoom(), 5)
     const duration = target.duration ?? 0.7
+    // A `bounds` target ([[latMin,lngMin],[latMax,lngMax]]) fits the whole route/area so the
+    // highlighted polyline is always fully visible — Leaflet computes the exact zoom.
+    if (target.bounds) {
+      try {
+        map.flyToBounds(target.bounds, { animate: true, duration, padding: [60, 60], maxZoom: target.maxZoom ?? 6 })
+        return
+      } catch { /* fall through to point fly */ }
+    }
+    if (target.lat == null || target.lng == null) return
+    const zoom = target.zoom ?? Math.max(map.getZoom(), 5)
     map.flyTo([target.lat, target.lng], zoom, { animate: true, duration })
   }, [map, target])
   return null

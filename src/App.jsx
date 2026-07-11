@@ -1172,6 +1172,15 @@ export default function App() {
       if (legs.length > 0) {
         setHighlightedRoute({ envioId, legs })
         setScreen('main')
+        // Fit the map to the full route so the highlighted polyline is always visible —
+        // makes every "show route" path (list click, buscar-ruta, drawer) actually move
+        // the map, instead of drawing a line somewhere off-screen.
+        const lats = legs.flatMap((l) => [l.originLat, l.destLat])
+        const lngs = legs.flatMap((l) => [l.originLng, l.destLng])
+        setMapFlyTo({
+          bounds: [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]],
+          duration: 1.0,
+        })
       }
     } catch (e) {
       console.error('handleShowEnvioRoute', e)

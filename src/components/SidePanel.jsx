@@ -586,37 +586,10 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
       const ap = apMap[e.aeropuertoDestino]
       if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng, zoom: 7, duration: 1.2 })
     } else if (e.estado === 'EN_TRANSITO') {
+      // Draw the full route AND fit the map to it (both handled in App.handleShowEnvioRoute).
+      // The previous per-leg focus read e.planDetalle, which the list payload omits, so it
+      // never actually ran — fitting the whole highlighted route is the correct behaviour.
       onShowEnvioRoute?.(e.idEnvio)
-      const escalas = e.planDetalle?.escalas || []
-      const now = mode === 'ops'
-        ? new Date()
-        : (() => {
-            const fs = simState?.fechaSimulada
-            if (!fs) return new Date()
-            return new Date(new Date(fs).getTime() + (nowMin || 0) * 60000)
-          })()
-      const sorted = [...escalas].sort((a, b) => a.orden - b.orden)
-      const currentIdx = sorted.findIndex(esc => {
-        const sal = parseUtcDateTime(esc.horaSalidaEst)
-        const lleg = parseUtcDateTime(esc.horaLlegadaEst)
-        return sal && lleg && sal <= now && lleg > now
-      })
-      if (currentIdx >= 0) {
-        const arrAp  = apMap[sorted[currentIdx].codigoAeropuerto]
-        // Leg 0's "previous" stop is the envío's own origin, not null — otherwise
-        // the very first leg (or a direct flight) always falls through to the
-        // airport-only branch below instead of the mid-route view.
-        const prevAp = currentIdx > 0 ? apMap[sorted[currentIdx - 1].codigoAeropuerto] : apMap[e.aeropuertoOrigen]
-        if (arrAp && prevAp) {
-          onFocusMapLocation?.({ lat: (arrAp.lat + prevAp.lat) / 2, lng: (arrAp.lng + prevAp.lng) / 2, zoom: 4, duration: 1.2 })
-        } else if (arrAp) {
-          onFocusMapLocation?.({ lat: arrAp.lat, lng: arrAp.lng, zoom: 5, duration: 1.2 })
-        }
-        onSelectFlight?.(sorted[currentIdx].codigoVuelo)
-      } else {
-        const ap = apMap[e.aeropuertoOrigen]
-        if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng, zoom: 5, duration: 1.2 })
-      }
     } else {
       const ap = apMap[e.aeropuertoOrigen]
       if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng, zoom: 7, duration: 1.2 })
