@@ -25,6 +25,12 @@ import java.util.Map;
 )
 public class SimDataSourceConfig {
 
+    // Schema management strategy for this persistence unit. Defaults to "validate"
+    // (prod-safe: tables must pre-exist). Override with app.jpa.ddl-auto=update in a
+    // fresh local/dev database so Hibernate generates the schema on first boot.
+    @org.springframework.beans.factory.annotation.Value("${app.jpa.ddl-auto:validate}")
+    private String ddlAuto;
+
     @Primary
     @Bean
     @ConfigurationProperties("spring.datasource")
@@ -51,7 +57,7 @@ public class SimDataSourceConfig {
                 .dataSource(dataSource)
                 .packages("com.tasf.backend.entity")
                 .persistenceUnit("sim")
-                .properties(Map.of("hibernate.hbm2ddl.auto", "validate"))
+                .properties(Map.of("hibernate.hbm2ddl.auto", ddlAuto))
                 .build();
     }
 

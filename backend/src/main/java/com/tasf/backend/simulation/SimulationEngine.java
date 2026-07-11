@@ -258,15 +258,13 @@ public class SimulationEngine {
         // is about to animate, so days advance 1:1 with the visual clock (no duplicate day-1
         // frame, and the final day animates before the redirect to resultados).
 
-        // VISUAL CONTINUITY: Set ocupacionInicioDia BEFORE processing, so it matches
-        // what the frontend was showing at the end of the previous day (the ocupacionActual
-        // set by planNextBatch). After processing, departures/deliveries reduce the bag
-        // count — if we used the post-processing count as ocupacionInicioDia, the frontend
-        // would jump down at each day boundary.
-        // Use null ref to count ALL EN_ALMACEN bags (same as what planNextBatch computed).
-        updateWarehouseOccupation(null);
+        // Sample the day's realistic PEAK occupancy (still held in ocupacionActual from the
+        // prior look-ahead planning / inicializar) for the historical-average KPI — do this
+        // BEFORE the raw recount below overwrites it. ocupacionInicioDia is no longer set from
+        // a raw count here: the peak projection now sets both endpoints to a steady honest value.
         accumulateOccupationSample();
-        aeropuertos.forEach(a -> a.setOcupacionInicioDia(a.getOcupacionActual()));
+        // Raw recount: initializes the per-airport counter that processDeliveries decrements.
+        updateWarehouseOccupation(null);
 
         // Build lookup maps once per day — shared across all passes and processDeliveries.
         Map<String, Envio> envioById = envios.stream().collect(Collectors.toMap(Envio::getIdEnvio, e -> e, (a, b) -> a));
@@ -285,6 +283,8 @@ public class SimulationEngine {
             processArrivals(vueloByCode, airportByCode, maletasByEnvio, endLimit);
         }
         DeliveryStats deliveryStats = processDeliveries(envioById, airportByCode, maletasByEnvio);
+
+        logDepartureDiagnostics(vueloByCode);
 
         // End of the day just processed = start of the next calendar day (24h boundary),
         // for every day including the last.
@@ -1100,6 +1100,86 @@ public class SimulationEngine {
         return new DeliveryStats(delivered, slaOk, slaBreach);
     }
 
+    /**
+     * DIAGNOSTIC (temporary): explains the "warehouses overflow while flights fly empty" symptom.
+     * Logs, for the day just processed:
+     *  - maleta state counts,
+     *  - STUCK bags: EN_ALMACEN bags that had a flight scheduled to depart today from their
+     *    current location (mirrors processDepartures' filter exactly). If STUCK &gt; 0 after the
+     *    3 passes, departures FAILED to board them → execution bug. If STUCK ≈ 0, the backlog is
+     *    timing/capacity (routes depart on later days), i.e. congestion, not a departure bug.
+     *  - flight capacity used vs available for today's departing legs.
+     */
+    private void logDepartureDiagnostics(Map<String, Vuelo> vueloByCode) {
+        LocalDate today = fechaSimulada.toLocalDate();
+        Map<String, PlanDeViaje> latest = buildLatestPlanByEnvio();
+
+        long enAlmacen = 0, enVuelo = 0, entregada = 0, retrasada = 0;
+        for (Maleta m : maletas) {
+            switch (m.getEstado()) {
+                case EN_ALMACEN -> enAlmacen++;
+                case EN_VUELO -> enVuelo++;
+                case ENTREGADA -> entregada++;
+                case RETRASADA -> retrasada++;
+                default -> { }
+            }
+        }
+
+        long stuck = 0;
+        Map<String, List<Maleta>> byEnvio = maletas.stream()
+            .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN)
+            .collect(Collectors.groupingBy(Maleta::getIdEnvio));
+        for (Map.Entry<String, List<Maleta>> e : byEnvio.entrySet()) {
+            PlanDeViaje p = latest.get(e.getKey());
+            if (p == null) continue;
+            for (Escala esc : p.getEscalas()) {
+                if (esc.getHoraSalidaEst() == null || !esc.getHoraSalidaEst().toLocalDate().equals(today)) continue;
+                Vuelo v = vueloByCode.get(esc.getCodigoVuelo());
+                if (v == null || v.isCancelado()) continue;
+                String legOrigin = v.getOrigen();
+                for (Maleta m : e.getValue()) {
+                    if (legOrigin.equals(m.getUbicacionActual()) && m.getPlanVersion() == p.getVersion()) {
+                        stuck++;
+                    }
+                }
+            }
+        }
+
+        // Flight fill for legs departing today (how full the used flights actually are).
+        Set<String> flightsToday = latest.values().stream()
+            .flatMap(p -> p.getEscalas().stream())
+            .filter(esc -> esc.getHoraSalidaEst() != null && esc.getHoraSalidaEst().toLocalDate().equals(today))
+            .map(Escala::getCodigoVuelo)
+            .collect(Collectors.toSet());
+        int capToday = flightsToday.stream().map(vueloByCode::get).filter(java.util.Objects::nonNull)
+            .mapToInt(Vuelo::getCapacidadTotal).sum();
+        int loadToday = flightsToday.stream().map(vueloByCode::get).filter(java.util.Objects::nonNull)
+            .mapToInt(Vuelo::getCargaActual).sum();
+
+        log.info("[DIAG day {}] maletas: EN_ALMACEN={} EN_VUELO={} ENTREGADA={} RETRASADA={} | STUCK(should-have-departed)={} | flightsToday={} fill={}/{} ({}%)",
+            diaActual, enAlmacen, enVuelo, entregada, retrasada, stuck, flightsToday.size(), loadToday, capToday,
+            capToday == 0 ? 0 : Math.round(loadToday * 100.0 / capToday));
+
+        // GROUND TRUTH: real instantaneous EN_ALMACEN count per airport (raw, no projection).
+        Map<String, Long> realByAirport = maletas.stream()
+            .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN && m.getUbicacionActual() != null)
+            .collect(Collectors.groupingBy(Maleta::getUbicacionActual, Collectors.counting()));
+        Map<String, Integer> capByAirport = aeropuertos.stream()
+            .collect(Collectors.toMap(Aeropuerto::getCodigoIATA, Aeropuerto::getCapacidadAlmacen, (a, b) -> a));
+        String top = realByAirport.entrySet().stream()
+            .sorted((x, y) -> {
+                double px = x.getValue() * 100.0 / Math.max(1, capByAirport.getOrDefault(x.getKey(), 1));
+                double py = y.getValue() * 100.0 / Math.max(1, capByAirport.getOrDefault(y.getKey(), 1));
+                return Double.compare(py, px);
+            })
+            .limit(6)
+            .map(en -> String.format("%s %d/%d(%.0f%%)", en.getKey(), en.getValue(),
+                capByAirport.getOrDefault(en.getKey(), 0),
+                en.getValue() * 100.0 / Math.max(1, capByAirport.getOrDefault(en.getKey(), 1))))
+            .collect(Collectors.joining(", "));
+        log.info("[DIAG day {}] OCUPACION REAL por almacen (top): {}", diaActual, top);
+    }
+
     private boolean isCrossWindow(Envio envio, LocalDateTime simEnd, Map<String, PlanDeViaje> latestPlans) {
         if (simEnd == null) return false;
         PlanDeViaje plan = latestPlans.get(envio.getIdEnvio());
@@ -1370,22 +1450,84 @@ public class SimulationEngine {
     }
 
     private void updateWarehouseOccupation(LocalDateTime ref) {
-        Map<String, Long> counts = maletas.stream()
-            .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN)
-            .filter(m -> ref == null || m.getFechaHoraLlegadaUbicacion() == null
-                || !m.getFechaHoraLlegadaUbicacion().isAfter(ref))
-            .collect(Collectors.groupingBy(Maleta::getUbicacionActual, Collectors.counting()));
+        // ── Actual mode (ref == null): count every EN_ALMACEN bag as-is (internal accuracy). ──
+        if (ref == null) {
+            Map<String, Long> counts = maletas.stream()
+                .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN)
+                .collect(Collectors.groupingBy(Maleta::getUbicacionActual, Collectors.counting()));
+            for (Aeropuerto a : aeropuertos) {
+                a.setOcupacionActual(counts.getOrDefault(a.getCodigoIATA(), 0L).intValue());
+            }
+            return;
+        }
 
-        for (Aeropuerto aeropuerto : aeropuertos) {
-            long count = counts.getOrDefault(aeropuerto.getCodigoIATA(), 0L);
-            aeropuerto.setOcupacionActual((int) count);
-            if (count > 0) {
-                int cap = aeropuerto.getCapacidadAlmacen();
-                double pct = cap > 0 ? (count * 100.0 / cap) : 0.0;
-                log.debug("[OCUPACION] Airport: {} | Bags in warehouse: {} | Capacity: {} | Occupation: {}%",
-                    aeropuerto.getCodigoIATA(), count, cap, String.format("%.1f", pct));
+        // ── Projection mode (ref != null): PEAK simultaneous occupancy per airport. ──
+        // A bag occupies its current warehouse only during [arrival, departure]. Counting every
+        // staged bag at once (the old behaviour) summed non-overlapping throughput and produced
+        // absurd numbers (e.g. 228% at a hub that never holds more than ~18% at any instant).
+        // Instead we sweep each bag's presence interval and report the true peak overlap, which
+        // is what the SA capacity model bounds to ≤ warehouse capacity.
+        final Map<String, PlanDeViaje> latestPlan = buildLatestPlanByEnvio();
+        final Map<String, Envio> envioById = envios.stream()
+            .collect(Collectors.toMap(Envio::getIdEnvio, e -> e, (a, b) -> a));
+        final java.time.ZoneOffset UTC = java.time.ZoneOffset.UTC;
+
+        // airport -> list of {epochSecond, delta} events (+1 on arrival, -1 on departure)
+        Map<String, List<long[]>> events = new HashMap<>();
+        for (Maleta m : maletas) {
+            if (m.getEstado() != EstadoMaleta.EN_ALMACEN || m.getUbicacionActual() == null) continue;
+            LocalDateTime arr = m.getFechaHoraLlegadaUbicacion();
+            long start = (arr == null ? LocalDateTime.MIN : arr).toEpochSecond(UTC);
+            LocalDateTime dep = departureFromLocation(m, latestPlan, envioById);
+            long end = (dep == null ? LocalDateTime.MAX : dep).toEpochSecond(UTC);
+            if (end <= start) end = start + 1;
+            List<long[]> list = events.computeIfAbsent(m.getUbicacionActual(), k -> new ArrayList<>());
+            list.add(new long[]{start, 1});
+            list.add(new long[]{end, -1});
+        }
+
+        for (Aeropuerto a : aeropuertos) {
+            int peak = peakOverlap(events.get(a.getCodigoIATA()));
+            // Both endpoints = the day's realistic peak, so the frontend semáforo shows a
+            // steady honest value instead of interpolating between two inconsistent metrics
+            // (the old raw start count summed all same-day throughput and read ~81%).
+            a.setOcupacionActual(peak);
+            a.setOcupacionInicioDia(peak);
+        }
+    }
+
+    /** Maximum number of simultaneously-present bags from a list of (+1 arrival / -1 departure)
+     *  events. Ties at the same instant apply departures before arrivals so a bag that leaves
+     *  exactly when another arrives doesn't double-count. */
+    private int peakOverlap(List<long[]> evts) {
+        if (evts == null || evts.isEmpty()) return 0;
+        evts.sort((x, y) -> x[0] != y[0] ? Long.compare(x[0], y[0]) : Long.compare(x[1], y[1]));
+        int running = 0, peak = 0;
+        for (long[] e : evts) {
+            running += (int) e[1];
+            if (running > peak) peak = running;
+        }
+        return Math.max(0, peak);
+    }
+
+    /** Planned departure time of this bag from its CURRENT location, or null if it has no
+     *  onward leg from there (stays indefinitely). */
+    private LocalDateTime departureFromLocation(Maleta m,
+            Map<String, PlanDeViaje> latestPlan, Map<String, Envio> envioById) {
+        PlanDeViaje p = latestPlan.get(m.getIdEnvio());
+        if (p == null || p.getEscalas() == null || p.getEscalas().isEmpty()) return null;
+        Envio e = envioById.get(m.getIdEnvio());
+        String origen = e != null ? e.getAeropuertoOrigen() : null;
+        String loc = m.getUbicacionActual();
+        List<Escala> escalas = p.getEscalas();
+        for (int i = 0; i < escalas.size(); i++) {
+            // Leg i departs from: the envio origin (first leg) or the previous stop's airport.
+            String legOrigin = (i == 0) ? origen : escalas.get(i - 1).getCodigoAeropuerto();
+            if (loc != null && loc.equals(legOrigin)) {
+                return escalas.get(i).getHoraSalidaEst();
             }
         }
+        return null;
     }
 
     private void accumulateOccupationSample() {

@@ -24,6 +24,11 @@ import java.util.Map;
 )
 public class OpsDataSourceConfig {
 
+    // See SimDataSourceConfig: defaults to "validate", override with app.jpa.ddl-auto=update
+    // for a fresh local database.
+    @org.springframework.beans.factory.annotation.Value("${app.jpa.ddl-auto:validate}")
+    private String ddlAuto;
+
     @Bean
     @ConfigurationProperties("ops.datasource")
     public DataSourceProperties opsDataSourceProperties() {
@@ -59,7 +64,7 @@ public class OpsDataSourceConfig {
                 .dataSource(dataSource)
                 .packages("com.tasf.backend.entity")
                 .persistenceUnit("ops")
-                .properties(Map.of("hibernate.hbm2ddl.auto", "validate"))
+                .properties(Map.of("hibernate.hbm2ddl.auto", ddlAuto))
                 .build();
     }
 

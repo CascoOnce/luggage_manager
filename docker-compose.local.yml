@@ -1,0 +1,24 @@
+# Local debugging stack. Only MySQL runs in Docker; the backend/frontend run natively
+# (mvnw / npm) so recompiles are instant. The backend self-seeds all data from the bundled
+# resources/data/*.txt on first boot (DataLoaderService.seedDatabaseIfEmpty) when the tables
+# are created via app.jpa.ddl-auto=update.
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: tasf-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: tasf
+      MYSQL_DATABASE: tasf
+    ports:
+      - "3307:3306"   # host 3307 to avoid clashing with any local MySQL on 3306
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-ptasf"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - tasf-mysql-data:/var/lib/mysql
+
+volumes:
+  tasf-mysql-data:

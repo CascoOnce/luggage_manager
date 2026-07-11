@@ -45,6 +45,14 @@ public class DataLoaderService {
     private final FlightParser flightParser;
     private final BaggageParser baggageParser;
 
+    // Optional seed window (local/dev only). The bundled envio files hold ~9.5M rows spanning
+    // 2026–2029; seeding them all via JPA is impractical. Setting app.seed.envios.from/to
+    // seeds only that date range so a fresh local DB is ready in seconds. Empty = full range.
+    @org.springframework.beans.factory.annotation.Value("${app.seed.envios.from:}")
+    private String seedEnviosFrom;
+    @org.springframework.beans.factory.annotation.Value("${app.seed.envios.to:}")
+    private String seedEnviosTo;
+
     private List<Aeropuerto> aeropuertos = new ArrayList<>();
     private List<Vuelo> vuelos = new ArrayList<>();
     private Map<String, Set<String>> airportGraph = new HashMap<>();
@@ -115,7 +123,11 @@ public class DataLoaderService {
             }
 
             if (envioRepository.count() == 0) {
-                log.info("Seeding envios...");
+                LocalDate seedFrom = (seedEnviosFrom == null || seedEnviosFrom.isBlank())
+                    ? LocalDate.MIN : LocalDate.parse(seedEnviosFrom.trim());
+                LocalDate seedTo = (seedEnviosTo == null || seedEnviosTo.isBlank())
+                    ? null : LocalDate.parse(seedEnviosTo.trim());
+                log.info("Seeding envios... (window from={} to={})", seedFrom, seedTo);
                 PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
                 Resource[] envioResources = resolver.getResources("classpath:data/Envios/_envios_*.txt");
                 int totalEnvios = 0;
@@ -125,7 +137,7 @@ public class DataLoaderService {
                     if (!matcher.find()) continue;
                     String iata = matcher.group(1);
                     try (InputStream is = resource.getInputStream()) {
-                        List<Envio> envios = baggageParser.parseEnvios(is, iata, LocalDate.MIN, null, continentByAirport);
+                        List<Envio> envios = baggageParser.parseEnvios(is, iata, seedFrom, seedTo, continentByAirport);
                         List<EnvioEntity> entities = envios.stream()
                             .map(e -> EnvioEntity.builder()
                                 .idPedido(e.getIdEnvio())
