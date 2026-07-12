@@ -1500,7 +1500,15 @@ public class SimulationEngine {
             }
         }
 
-        LocalDateTime dayStart = ref.toLocalDate().atStartOfDay();
+        // The projected day is the one containing the last instant BEFORE `ref`. Callers pass
+        // `ref` either as the EXCLUSIVE end-of-day boundary (next midnight, e.g. endOfDay1 =
+        // fechaInicio.plusDays(1)) or as the live fechaSimulada (mid-day). Using
+        // ref.toLocalDate() directly keyed every event to the NEXT day for the midnight
+        // callers, so the frontend (which evaluates at minute-of-current-day) saw a garbage
+        // timeline and the baseline swallowed the whole current day. Subtracting one second
+        // maps a midnight boundary back to the day it closes while leaving a mid-day ref on
+        // its own day.
+        LocalDateTime dayStart = ref.minusSeconds(1).toLocalDate().atStartOfDay();
         long dayStartEpoch = dayStart.toEpochSecond(UTC);
         long dayEndEpoch = dayStart.plusDays(1).toEpochSecond(UTC);
         long nowEpoch = ref.toEpochSecond(UTC);
