@@ -130,6 +130,14 @@ export default function App() {
     return m >= depMin || m < arrMin
   }
 
+  function evalOccupancyAtMinute(baseline, eventos, minuto) {
+    let occ = baseline ?? 0
+    for (const ev of eventos || []) {
+      if (ev.minuto <= minuto) occ += ev.delta
+    }
+    return Math.max(0, occ)
+  }
+
   function flightFractionAtMinute(nowMin, depMin, arrMin) {
     const total = (arrMin - depMin + 1440) % 1440
     if (total <= 0) return 0
@@ -551,6 +559,7 @@ export default function App() {
         // Override occupation and flights to 0 if simulation is cancelled to bypass stale backend state
         currentOccupation: hasActiveSim ? ocupFin : 0,
         ocupacionInicioDia: hasActiveSim ? ocupIni : 0,
+        eventosOcupacionDia: hasActiveSim ? (airport.eventosOcupacionDia ?? []) : [],
         warehouseCapacity: airport.warehouseCapacity ?? airport.capacidadAlmacen ?? 600,
         semaforo: hasActiveSim ? (airport.semaforo || 'verde') : 'azul',
         vuelosSalientes: hasActiveSim ? vuelosList.filter((v) => (v.origen || v.origin) === iata && v.estado === 'activo').length : 0,
@@ -587,7 +596,6 @@ export default function App() {
 
   const clockedAirports = useMemo(() => {
     if (!backendState?.enEjecucion) return normalizedAirports
-    const fraction = Math.min(simClockMinutes / 1440, 1)
 
     const nextDep = {}
     const nextArr = {}
@@ -654,7 +662,7 @@ export default function App() {
 
     return normalizedAirports.map((ap) => ({
       ...ap,
-      currentOccupation: Math.round(ap.ocupacionInicioDia + (ap.currentOccupation - ap.ocupacionInicioDia) * fraction),
+      currentOccupation: evalOccupancyAtMinute(ap.ocupacionInicioDia, ap.eventosOcupacionDia, simClockMinutes),
       nextDepartureWait: nextDep[ap.id] ?? Infinity,
       nextArrivalWait: nextArr[ap.id] ?? Infinity,
       debugDep: depFlightsConsidered[ap.id] || [],
