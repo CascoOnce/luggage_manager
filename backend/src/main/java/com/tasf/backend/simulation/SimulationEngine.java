@@ -1471,38 +1471,47 @@ public class SimulationEngine {
             return;
         }
 
-        // ── Projection mode (ref != null): PEAK simultaneous occupancy per airport. ──
-        // A bag occupies its current warehouse only during [arrival, departure]. Counting every
-        // staged bag at once (the old behaviour) summed non-overlapping throughput and produced
-        // absurd numbers (e.g. 228% at a hub that never holds more than ~18% at any instant).
-        // Instead we sweep each bag's presence interval and report the true peak overlap, which
-        // is what the SA capacity model bounds to ≤ warehouse capacity.
+        // ── Projection mode (ref != null): real event-driven occupancy, continuous across days. ──
+        // Each active envío's assigned plan is walked leg-by-leg (mirroring
+        // RouteCandidate.getCapacityWindows()) to produce arrival(+qty)/departure(-qty) events
+        // per airport. No reset at day boundaries: baseline for the day is the true cumulative
+        // stock carried over from prior days, not a recomputed "peak of day".
         final Map<String, PlanDeViaje> latestPlan = buildLatestPlanByEnvio();
-        final Map<String, Envio> envioById = envios.stream()
-            .collect(Collectors.toMap(Envio::getIdEnvio, e -> e, (a, b) -> a));
         final java.time.ZoneOffset UTC = java.time.ZoneOffset.UTC;
 
-        // airport -> list of {epochSecond, delta} events (+1 on arrival, -1 on departure)
-        Map<String, List<long[]>> events = new HashMap<>();
-        for (Maleta m : maletas) {
-            if (m.getEstado() != EstadoMaleta.EN_ALMACEN || m.getUbicacionActual() == null) continue;
-            LocalDateTime arr = m.getFechaHoraLlegadaUbicacion();
-            long start = (arr == null ? LocalDateTime.MIN : arr).toEpochSecond(UTC);
-            LocalDateTime dep = departureFromLocation(m, latestPlan, envioById);
-            long end = (dep == null ? LocalDateTime.MAX : dep).toEpochSecond(UTC);
-            if (end <= start) end = start + 1;
-            List<long[]> list = events.computeIfAbsent(m.getUbicacionActual(), k -> new ArrayList<>());
-            list.add(new long[]{start, 1});
-            list.add(new long[]{end, -1});
+        Map<String, Long> activeBagCountByEnvio = maletas.stream()
+            .filter(m -> m.getEstado() != EstadoMaleta.ENTREGADA && m.getEstado() != EstadoMaleta.CANCELADA)
+            .collect(Collectors.groupingBy(Maleta::getIdEnvio, Collectors.counting()));
+
+        Map<String, List<long[]>> eventsByAirport = new HashMap<>();
+        for (Envio envio : envios) {
+            if (envio.getEstado() == EstadoEnvio.ENTREGADO || envio.getEstado() == EstadoEnvio.CANCELADO) continue;
+            long qty = activeBagCountByEnvio.getOrDefault(envio.getIdEnvio(), 0L);
+            if (qty == 0) continue;
+            PlanDeViaje plan = latestPlan.get(envio.getIdEnvio());
+            if (plan == null) continue;
+            for (WarehouseOccupationCalculator.CapacityWindow w
+                    : WarehouseOccupationCalculator.windowsForPlan(plan, envio.getAeropuertoOrigen(), envio.getFechaHoraIngreso())) {
+                List<long[]> list = eventsByAirport.computeIfAbsent(w.airport(), k -> new ArrayList<>());
+                list.add(new long[]{w.from().toEpochSecond(UTC), qty});
+                if (w.to() != null) {
+                    list.add(new long[]{w.to().toEpochSecond(UTC), -qty});
+                }
+            }
         }
 
+        LocalDateTime dayStart = ref.toLocalDate().atStartOfDay();
+        long dayStartEpoch = dayStart.toEpochSecond(UTC);
+        long dayEndEpoch = dayStart.plusDays(1).toEpochSecond(UTC);
+        long nowEpoch = ref.toEpochSecond(UTC);
+
         for (Aeropuerto a : aeropuertos) {
-            int peak = peakOverlap(events.get(a.getCodigoIATA()));
-            // Both endpoints = the day's realistic peak, so the frontend semáforo shows a
-            // steady honest value instead of interpolating between two inconsistent metrics
-            // (the old raw start count summed all same-day throughput and read ~81%).
-            a.setOcupacionActual(peak);
-            a.setOcupacionInicioDia(peak);
+            List<long[]> evts = eventsByAirport.getOrDefault(a.getCodigoIATA(), List.of());
+            WarehouseOccupationCalculator.DayProjection proj =
+                WarehouseOccupationCalculator.projectAirport(evts, dayStartEpoch, dayEndEpoch, nowEpoch);
+            a.setOcupacionInicioDia(proj.baseline());
+            a.setOcupacionActual(proj.ocupacionActual());
+            a.setEventosOcupacionDia(proj.eventos());
         }
     }
 
@@ -1714,6 +1723,12 @@ public class SimulationEngine {
             .capacidadAlmacen(capacidad)
             .ocupacionActual(ocupacion)
             .ocupacionInicioDia(airport.getOcupacionInicioDia())
+            .eventosOcupacionDia(airport.getEventosOcupacionDia().stream()
+                .map(e -> com.tasf.backend.dto.OcupacionEventoDTO.builder()
+                    .minuto(e.getMinuto())
+                    .delta(e.getDelta())
+                    .build())
+                .toList())
             .semaforo(semaforo)
             .maletasRecibidas(airport.getMaletasRecibidas())
             .maletasEnviadas(airport.getMaletasEnviadas())
