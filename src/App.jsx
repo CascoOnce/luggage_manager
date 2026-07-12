@@ -1392,9 +1392,9 @@ export default function App() {
               />
             </div>
 
-            {/* KPIs / clocks — top-right */}
+            {/* KPIs / clocks — bottom-right */}
             <div style={{
-              position: 'absolute', top: 20, right: 20,
+              position: 'absolute', bottom: 20, right: 20,
               zIndex: 600,
               display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none',
             }}>
