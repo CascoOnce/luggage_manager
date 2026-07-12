@@ -86,6 +86,21 @@ html, body, #root {
 }
 .tasf-tooltip::before { display: none !important; }
 
+.country-label { pointer-events: none; }
+.country-label span {
+  position: absolute;
+  /* center the text box on the centroid coordinate (the marker's 0,0) */
+  transform: translate(-50%, -50%);
+  font-family: 'Space Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-shadow: 0 0 4px #000, 0 0 4px #000;
+  white-space: nowrap;
+}
+
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(99, 152, 255, 0.2); border-radius: 4px; }

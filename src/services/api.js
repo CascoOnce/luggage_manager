@@ -232,12 +232,12 @@ export const api = {
     return request(`/ops/envios/${id}`)
   }),
 
-  cancelFlight: async (codigoVuelo) => withHandling('cancelFlight', async () => {
-    return request(`/simulation/cancel-flight/${codigoVuelo}`, { method: 'POST' })
+  cancelFlight: async (codigoVuelo, aplicaDesde = 'HOY') => withHandling('cancelFlight', async () => {
+    return request(`/simulation/cancel-flight/${codigoVuelo}?aplicaDesde=${aplicaDesde}`, { method: 'POST' })
   }),
 
-  cancelLiveFlight: async (codigoVuelo) => withHandling('cancelLiveFlight', async () => {
-    return request(`/live/cancel-flight/${codigoVuelo}`, { method: 'POST' })
+  cancelLiveFlight: async (codigoVuelo, aplicaDesde = 'HOY') => withHandling('cancelLiveFlight', async () => {
+    return request(`/live/cancel-flight/${codigoVuelo}?aplicaDesde=${aplicaDesde}`, { method: 'POST' })
   }),
 
   cancelEnvio: async (idEnvio) => withHandling('cancelEnvio', async () => {

@@ -172,9 +172,14 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvio
   const eColor  = estadoColor(estado)
   const isActivo = estado === 'active' || estado === 'activo'
   const isCancelado = estado === 'cancelled' || estado === 'cancelado'
+  const isProgramada = !!vuelo.cancelacionProgramada
   const isCompleted = simClockMinutes !== null && depMin !== null && arrMin !== null
     && (arrMin >= depMin ? simClockMinutes >= arrMin : simClockMinutes >= arrMin && simClockMinutes < depMin)
-  const canCancel = !isActivo && !isCancelado && !isCompleted && !!onCancelFlight
+  // A cancellation registered less than 1h before departure applies to tomorrow's flight instead.
+  const CUTOFF_MIN = 60
+  const aplicaDesde = simClockMinutes !== null && depMin !== null && simClockMinutes <= depMin - CUTOFF_MIN
+    ? 'HOY' : 'MANANA'
+  const canCancel = !isCancelado && !isProgramada && !!onCancelFlight
 
   return (
     <div style={s.overlay}>
@@ -185,8 +190,9 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvio
         <div style={s.header}>
           <span style={s.code}>{code}</span>
           <div style={{ flex: 1 }} />
-          <span style={s.pill(eColor)}>
-            {estado === 'active' ? 'ACTIVO'
+          <span style={s.pill(isProgramada ? 'var(--amber)' : eColor)}>
+            {isProgramada ? 'CANCELACIÓN PROGRAMADA'
+              : estado === 'active' ? 'ACTIVO'
               : estado === 'planned' ? 'PLANIFICADO'
               : estado === 'cancelled' ? 'CANCELADO'
               : estado === 'completed' ? 'COMPLETADO'
@@ -347,6 +353,10 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvio
                 </div>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
                   ¿Estás seguro que deseas cancelar el vuelo <span style={{ color: 'var(--red)', fontWeight: 600 }}>{code}</span> ({origin} → {dest})?
+                  {' '}
+                  {aplicaDesde === 'HOY'
+                    ? 'Se cancelará la salida de hoy.'
+                    : 'Faltan menos de 1h para la salida (o ya despegó): se cancelará la salida de mañana.'}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
@@ -365,7 +375,7 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvio
                 <button
                   onClick={() => {
                     setShowConfirmCancel(false)
-                    onCancelFlight(code)
+                    onCancelFlight(code, aplicaDesde)
                   }}
                   style={{
                     flex: 1, padding: '8px 12px', background: 'rgba(240,75,75,0.1)',

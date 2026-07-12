@@ -16,4 +16,6 @@ public class KpisDTO {
     private int vuelosActivos;
     private int slaVencidos;
     private double ocupacionPromedioAlmacen;
+    private double ocupacionFlota;
+    private double ocupacionAlmacenes;
 }

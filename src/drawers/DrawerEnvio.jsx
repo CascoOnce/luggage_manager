@@ -130,6 +130,7 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
   const [envio, setEnvio]   = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]   = useState(null)
+  const [maletasOpen, setMaletasOpen] = useState(false)
 
   useEffect(() => {
     if (!envioId) {
@@ -230,6 +231,39 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
                 <span style={s.rowVal}>{envio.ubicacionActual || '—'}</span>
               </div>
             </div>
+
+            {/* Lista de maletas */}
+            {envio.cantidadMaletas > 0 && (
+              <div style={s.section}>
+                <button
+                  onClick={() => setMaletasOpen((v) => !v)}
+                  style={{
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    padding: 0, width: '100%', display: 'flex', alignItems: 'center',
+                    justifyContent: 'space-between', marginBottom: maletasOpen ? 10 : 0,
+                  }}
+                >
+                  <span style={{ ...s.sectionTitle, marginBottom: 0 }}>
+                    Maletas ({envio.cantidadMaletas})
+                  </span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+                    {maletasOpen ? '▲' : '▼'}
+                  </span>
+                </button>
+                {maletasOpen && (
+                  <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+                    {Array.from({ length: envio.cantidadMaletas }, (_, i) => (
+                      <div
+                        key={i}
+                        style={{ padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--blue)' }}
+                      >
+                        {envio.idEnvio || envioId}-{i + 1}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Ruta Asignada — timeline */}
             {escalas.length > 0 && (

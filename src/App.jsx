@@ -4,10 +4,10 @@ import SidePanel from './components/SidePanel.jsx'
 import TopBar from './components/TopBar.jsx'
 import FloatingKPIs from './components/FloatingKPIs.jsx'
 import FloatingClocks from './components/FloatingClocks.jsx'
+import FloatingFlightInfo from './components/FloatingFlightInfo.jsx'
 import DraggableWidget from './components/DraggableWidget.jsx'
 import { api } from './services/api.js'
 import ConfigScreen from './screens/ConfigScreen.jsx'
-import EnviosScreen from './screens/EnviosScreen.jsx'
 import DashboardScreen from './screens/DashboardScreen.jsx'
 import ResultadosScreen from './screens/ResultadosScreen.jsx'
 import ColapsoScreen from './screens/ColapsoScreen.jsx'
@@ -38,6 +38,7 @@ export default function App() {
   const [destIds, setDestIds] = useState(null)
 
   const [selectedFlight, setSelectedFlight] = useState(null)
+  const [flightSource, setFlightSource] = useState(null) // 'map' | 'panel'
   const [mapSelectedAirport, setMapSelectedAirport] = useState(null)
   const [mapSelectedVuelo, setMapSelectedVuelo] = useState(null)
   const [highlightedRoute, setHighlightedRoute] = useState(null)
@@ -88,6 +89,9 @@ export default function App() {
   const [autoStep, setAutoStep] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   const [activeSideSection, setActiveSideSection] = useState(null)
+  // Bumped with a fresh object each time the top bar should force-open a section inside
+  // OpsScreen's own side panel (which owns its activeSideSection state independently).
+  const [opsOpenSectionRequest, setOpsOpenSectionRequest] = useState(null)
 
   useEffect(() => {
     function onKey(e) {
@@ -573,6 +577,7 @@ export default function App() {
         husDestino: v.husDestino ?? null,
         depMin: parseTimeToMinutes(v.horaSalida),
         arrMin: parseTimeToMinutes(v.horaLlegada),
+        cancelacionProgramada: v.cancelacionProgramada ?? false,
       }))
   }, [displayState?.vuelos])
 
@@ -820,6 +825,16 @@ export default function App() {
     return `${mm}-${dd} ${hh}:${mi}`
   }, [displayState?.fechaSimulada, displayState?.diaActual, displayState?.currentDay, simClockMinutes])
 
+  // Calendar day only (no time-of-day) — used to date individual flight departures/arrivals.
+  const simCurrentDate = useMemo(() => {
+    if (!displayState?.fechaSimulada) return null
+    const source = new Date(displayState.fechaSimulada)
+    if (Number.isNaN(source.getTime())) return null
+    source.setHours(0, 0, 0, 0)
+    const dayOffset = Math.max(0, ((displayState.diaActual || displayState.currentDay || 1) - 1)) * 24 * 60 * 60 * 1000
+    return new Date(source.getTime() + dayOffset)
+  }, [displayState?.fechaSimulada, displayState?.diaActual, displayState?.currentDay])
+
   useEffect(() => {
     if (!selectedFlight) {
       setMapSelectedVuelo(null)
@@ -847,13 +862,9 @@ export default function App() {
           slaCompliance: 0, activeFlights: 0,
           slaViolated: 0,
         }
-    const globalFleetOccupancy = backendFlights.length > 0
-      ? backendFlights.reduce((acc, f) => acc + (f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0), 0) / backendFlights.length
-      : 0
+    const globalFleetOccupancy = displayState?.kpis?.ocupacionFlota ?? 0
     const withCap = clockedAirports.filter((a) => (a.warehouseCapacity ?? 0) > 0)
-    const globalWarehouseOccupancy = withCap.length > 0
-      ? withCap.reduce((acc, a) => acc + (a.currentOccupation / a.warehouseCapacity) * 100, 0) / withCap.length
-      : 0
+    const globalWarehouseOccupancy = displayState?.kpis?.ocupacionAlmacenes ?? 0
       
     const freeFleetSpace = backendFlights.reduce((acc, f) => acc + Math.max(0, (f.capacity || 0) - (f.currentLoad || 0)), 0)
     const freeWarehouseSpace = withCap.reduce((acc, a) => acc + Math.max(0, (a.warehouseCapacity || 0) - (a.currentOccupation || 0)), 0)
@@ -1124,7 +1135,13 @@ export default function App() {
       if (screen === 'live') stopLive()
       setScreen('ops')
       if (!isOpsActive) startOps()
-    } else if (isOpsActive && (next === 'envios' || next === 'dashboard' || next === 'resultados')) {
+    } else if (isOpsActive && next === 'envios') {
+      // Envíos is a side-panel section, not a standalone screen — same as non-ops mode.
+      // OpsScreen owns its side panel state internally, so hand it a fresh request object.
+      refreshOpsViewData()
+      setScreen('ops')
+      setOpsOpenSectionRequest({ section: 'envios', ts: Date.now() })
+    } else if (isOpsActive && (next === 'dashboard' || next === 'resultados')) {
       refreshOpsViewData()
       setScreen(next)
     } else if (!isOpsActive && next === 'envios') {
@@ -1149,7 +1166,9 @@ export default function App() {
   }, [screen, isOpsActive])
 
   const handleCloseAirport = useCallback(() => setMapSelectedAirport(null), [])
-  const handleCloseVuelo   = useCallback(() => { setMapSelectedVuelo(null); setSelectedFlight(null) }, [])
+  const handleCloseVuelo   = useCallback(() => { setMapSelectedVuelo(null); setSelectedFlight(null); setFlightSource(null) }, [])
+  const selectFlightFromMap   = useCallback((id) => { setFlightSource('map'); setSelectedFlight(id) }, [])
+  const selectFlightFromPanel = useCallback((id) => { setFlightSource('panel'); setSelectedFlight(id) }, [])
 
   const handleShowEnvioRoute = useCallback(async (envioId) => {
     try {
@@ -1187,17 +1206,27 @@ export default function App() {
       console.error('handleShowEnvioRoute', e)
     }
   }, [clockedAirports])
-  const handleCancelFlight = useCallback(async (codigoVuelo) => {
+  const handleCancelFlight = useCallback(async (codigoVuelo, aplicaDesde = 'HOY') => {
     try {
       // cancelFlight returns the fresh SimulationStateDTO with cancelaciones already included.
       // We use that response directly to avoid stale cachedState from getState().
-      const newState = await api.cancelFlight(codigoVuelo)
+      const newState = await api.cancelFlight(codigoVuelo, aplicaDesde)
       setMapSelectedVuelo(null)
       setSelectedFlight(null)
       if (newState && (newState.enEjecucion || newState.finalizada)) {
         hydrateEnvios(newState)  // full response → cache envios
         setBackendState(newState)
       }
+    } catch (err) {
+      alert('Error al cancelar vuelo: ' + (err instanceof Error ? err.message : String(err)))
+    }
+  }, [])
+  // Ops reads flight cancellations from a separate mechanism than the main simulation
+  // (see api.cancelLiveFlight) — it is not backed by SimulationEngine.
+  const handleCancelOpsFlight = useCallback(async (codigoVuelo, aplicaDesde = 'HOY') => {
+    try {
+      await api.cancelLiveFlight(codigoVuelo, aplicaDesde)
+      refreshOps()
     } catch (err) {
       alert('Error al cancelar vuelo: ' + (err instanceof Error ? err.message : String(err)))
     }
@@ -1230,7 +1259,7 @@ export default function App() {
     // Capture wall-clock start for real elapsed timer in FloatingClocks
     setSimStartedAt(Date.now())
     setScreen('main')
-    setActiveSideSection('vuelos')
+    setActiveSideSection(null)
     startPolling()
   }, [startPolling, hydrateEnvios])
 
@@ -1312,7 +1341,7 @@ export default function App() {
                 airports={mapFilteredAirports}
                 flights={mapFilteredFlights}
                 selectedFlight={selectedFlight}
-                setSelectedFlight={setSelectedFlight}
+                setSelectedFlight={selectFlightFromMap}
                 selectedFlightData={mapSelectedVuelo}
                 onAirportClick={setMapSelectedAirport}
                 onMapClick={() => { handleCloseVuelo(); setHighlightedRoute(null) }}
@@ -1332,7 +1361,7 @@ export default function App() {
                 plannedFlights={backendPlannedFlights}
                 cancelledFlights={backendCancelledFlights}
                 selectedFlight={selectedFlight}
-                setSelectedFlight={setSelectedFlight}
+                setSelectedFlight={selectFlightFromPanel}
                 setMapSelectedVuelo={setMapSelectedVuelo}
                 setMapSelectedAirport={setMapSelectedAirport}
                 simState={simState}
@@ -1355,13 +1384,11 @@ export default function App() {
               />
             </div>
 
-            {/* KPIs / clocks — shift right when panel open */}
+            {/* KPIs / clocks — top-right */}
             <div style={{
-              position: 'absolute', top: 20,
-              left: activeSideSection ? 432 : 72,
+              position: 'absolute', top: 20, right: 20,
               zIndex: 600,
               display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none',
-              transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             }}>
               <DraggableWidget ref={kpiWidgetRef} containerRef={mapContainerRef}>
                 <FloatingKPIs kpis={activeKpis} hasSimulation={Boolean(backendState)} />
@@ -1371,18 +1398,39 @@ export default function App() {
               </DraggableWidget>
             </div>
 
+            {/* Flight cajetín — top-left, shifts right when side panel open */}
+            {mapSelectedVuelo && flightSource === 'map' && (
+              <div style={{
+                position: 'absolute', top: 20,
+                left: activeSideSection ? 432 : 72,
+                zIndex: 600, pointerEvents: 'none',
+                transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              }}>
+                <DraggableWidget containerRef={mapContainerRef} hideVisibilityToggle>
+                  <FloatingFlightInfo
+                    vuelo={mapSelectedVuelo}
+                    onClose={handleCloseVuelo}
+                    fetchEnvios={isOpsActive ? api.getOpsEnviosByFlight : api.getEnviosByFlight}
+                    simDate={simCurrentDate}
+                  />
+                </DraggableWidget>
+              </div>
+            )}
+
             <DrawerAeropuerto
               airport={mapSelectedAirport}
               vuelos={backendState?.vuelos || []}
               onClose={handleCloseAirport}
               fetchInventory={isOpsActive ? api.getOpsAirportInventory : api.getAirportInventory}
             />
-            <DrawerVuelo
-              vuelo={mapSelectedVuelo}
-              onClose={handleCloseVuelo}
-              onCancelFlight={isOwner ? handleCancelFlight : null}
-              fetchEnvios={isOpsActive ? api.getOpsEnviosByFlight : api.getEnviosByFlight}
-            />
+            {flightSource === 'panel' && (
+              <DrawerVuelo
+                vuelo={mapSelectedVuelo}
+                onClose={handleCloseVuelo}
+                onCancelFlight={isOwner ? handleCancelFlight : null}
+                fetchEnvios={isOpsActive ? api.getOpsEnviosByFlight : api.getEnviosByFlight}
+              />
+            )}
           </div>
         )}
 
@@ -1406,7 +1454,8 @@ export default function App() {
               theme={theme}
               onBack={() => { stopOps(); handleNavigate('config') }}
               onRefreshOps={() => { refreshOps(); refreshOpsViewData() }}
-              onCancelFlight={handleCancelFlight}
+              onCancelFlight={handleCancelOpsFlight}
+              openSectionRequest={opsOpenSectionRequest}
             />
           </div>
         )}
@@ -1414,19 +1463,6 @@ export default function App() {
         {/* ── OVERLAY SCREENS ── */}
         {screen !== 'main' && screen !== 'live' && screen !== 'ops' && (
           <div style={{ height: '100%', overflow: 'auto', background: 'var(--bg)' }}>
-            {screen === 'envios' && isOpsActive && (
-              <EnviosScreen
-                simState={opsAsSimState}
-                theme={theme}
-                onBack={handleBackToMain}
-                onShowInMap={null}
-                onCancelFlight={null}
-                simClockMinutes={opsNowMinutes}
-                flights={opsActiveFlights}
-                opsMode={true}
-                fetchEnvio={api.getOpsEnvioById}
-              />
-            )}
             {screen === 'dashboard' && (
               <DashboardScreen
                 simState={isOpsActive ? opsAsSimState : simState}

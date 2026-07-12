@@ -142,6 +142,38 @@ class SimulationScenarioTest {
     }
 
     @Test
+    void cancelacionManualDiferidaAplicaAlDiaSiguiente() {
+        ParametrosSimulacion params = ParametrosSimulacion.builder()
+            .fechaInicio(LocalDate.of(2026, 1, 2))
+            .diasSimulacion(3)
+            .esColapso(false)
+            .build();
+
+        simulationEngine.inicializar(params, sampleEnvios);
+        String codigoVuelo = simulationEngine.getEstado().getVuelos().get(0).getCodigoVuelo();
+
+        simulationEngine.cancelarVueloManualmente(codigoVuelo, "MANANA");
+
+        // Not applied yet: today's occurrence keeps flying, no Cancelacion recorded yet.
+        var stateHoy = simulationEngine.getEstado();
+        assertTrue(stateHoy.getVuelos().stream()
+            .filter(v -> v.getCodigoVuelo().equals(codigoVuelo))
+            .anyMatch(v -> v.isCancelacionProgramada()));
+        assertTrue(stateHoy.getCancelaciones().stream()
+            .noneMatch(c -> c.getCodigoVuelo().equals(codigoVuelo)));
+
+        simulationEngine.avanzarDia();
+
+        // Applied on day 2: recorded as a cancellation, flag cleared for subsequent days.
+        var stateManana = simulationEngine.getEstado();
+        assertTrue(stateManana.getCancelaciones().stream()
+            .anyMatch(c -> c.getCodigoVuelo().equals(codigoVuelo)));
+        assertTrue(stateManana.getVuelos().stream()
+            .filter(v -> v.getCodigoVuelo().equals(codigoVuelo))
+            .noneMatch(v -> v.isCancelacionProgramada()));
+    }
+
+    @Test
     void simulacionFechasCriticas2027() {
         LocalDate fechaInicio = LocalDate.of(2027, 6, 1);
         LocalDateTime inicio = fechaInicio.atStartOfDay();
