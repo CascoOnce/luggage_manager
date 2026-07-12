@@ -1438,7 +1438,11 @@ export default function App() {
             )}
             {screen === 'resultados' && (
               <ResultadosScreen
-                simState={isOpsActive ? opsAsSimState : simState}
+                /* Use backendState (the real final/collapse snapshot), NOT simState — on
+                   finalize/collapse simState falls back to prevSimStateRef (the pre-collapse
+                   frame) which has finalizada=false and no colapsoPunto, so these screens
+                   wrongly showed "SIN RESULTADOS" / "no se detectó colapso". */
+                simState={isOpsActive ? opsAsSimState : (backendState || simState)}
                 theme={theme}
                 onBack={handleBackToMain}
                 opsMode={isOpsActive}
@@ -1446,7 +1450,7 @@ export default function App() {
             )}
             {screen === 'colapso' && (
               <ColapsoScreen
-                simState={simState}
+                simState={backendState || simState}
                 theme={theme}
                 onBack={handleBackToMain}
               />
