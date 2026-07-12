@@ -1,5 +1,6 @@
 package com.tasf.backend.domain;
 
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -33,4 +34,6 @@ public class Aeropuerto {
     private int ocupacionMaximaBolsas = 0;
     @Builder.Default
     private int ocupacionInicioDia = 0;
+    @Builder.Default
+    private List<OcupacionEvento> eventosOcupacionDia = List.of();
 }
