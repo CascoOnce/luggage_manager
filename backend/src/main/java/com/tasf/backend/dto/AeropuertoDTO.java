@@ -1,5 +1,7 @@
 package com.tasf.backend.dto;
 
+import java.util.List;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -27,6 +29,7 @@ public class AeropuertoDTO {
     private int maletasEnAlmacenLocal;
     private int maletasEnTransitoEntrantes;
     private int ocupacionInicioDia;
+    private List<OcupacionEventoDTO> eventosOcupacionDia;
     private String nextDeparture;
     private String nextArrival;
 }
