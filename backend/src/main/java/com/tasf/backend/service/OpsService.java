@@ -338,6 +338,12 @@ public class OpsService {
                 .map(this::toDomain)
                 .toList();
 
+        // Ops has no rolling day loop — it plans on demand. K=1 (Sa=1min default) keeps the
+        // Sc window at 1min, so the currentTimeUtc floor below stays effectively "now": each
+        // shipment gets routed immediately instead of waiting out a multi-hour batch window.
+        int saMinutos = 1;
+        int k = 1;
+        LocalDateTime ahora = LocalDateTime.now(ZoneOffset.UTC);
         ParametrosSimulacion params = ParametrosSimulacion.builder()
                 .algoritmo("SIMULATED_ANNEALING")
                 .minutosEscalaMinima(10)
@@ -345,8 +351,12 @@ public class OpsService {
                 .umbralSemaforoVerde(60)
                 .umbralSemaforoAmbar(85)
                 .fechaInicio(LocalDate.now(ZoneOffset.UTC))
-                .currentTimeUtc(LocalDateTime.now(ZoneOffset.UTC))
+                .saMinutos(saMinutos)
+                .k(k)
                 .build();
+        // Same Sc-window floor mechanism SimulationEngine uses (RoutePlannerSupport honours
+        // currentTimeUtc as earliest-departure floor) — no flight assigned before this window closes.
+        params.setCurrentTimeUtc(ahora.plusMinutes(params.getScMinutos()));
 
         PlanningResult result = planningService.planificar(
                 domainEnvios,
@@ -365,7 +375,7 @@ public class OpsService {
             planesPorEnvio.remove(e.getIdPedido()); // clear old plans before re-planning
         }
         for (PlanDeViaje plan : result.getPlanes()) {
-            planesPorEnvio.computeIfAbsent(plan.getIdEnvio(), k -> new ArrayList<>()).add(plan);
+            planesPorEnvio.computeIfAbsent(plan.getIdEnvio(), id -> new ArrayList<>()).add(plan);
         }
         persistOpsPlans(result.getPlanes());
 

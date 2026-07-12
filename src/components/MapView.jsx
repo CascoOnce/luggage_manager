@@ -4,7 +4,9 @@ import { MapContainer, TileLayer, Tooltip, Marker, Polyline, useMap, useMapEvent
 import L from 'leaflet'
 import { MdWarehouse, MdFlight, MdFilterList } from 'react-icons/md'
 import DraggableWidget from './DraggableWidget'
-const AIRPORT_BOUNDS = [[-50, -85], [60, 82]]
+// Ceñido al extent real de aeropuertos (Argentina -34.5°S ↔ Dinamarca 55.6°N)
+// para que llenen la altura de pantalla; sin relleno muerto arriba/abajo.
+const AIRPORT_BOUNDS = [[-38, -82], [59, 80]]
 const SNAP_THRESHOLD_PX = 200
 
 // Keeps the airport bounding box always filling the container.
@@ -353,9 +355,63 @@ function FlightLayer({ activeFlights, apIdx, selectedFlight, selectedFlightData,
   )
 }
 
+// Country name + approximate centroid per airport (keyed by IATA). One airport
+// per country in the dataset, so the label sits at the country center — not on
+// the airport icon (labels sit behind icons via zIndexOffset, so overlap is
+// fine). Tweak a [lat,lng] here if a label lands in an awkward spot.
+const COUNTRY_LABELS = {
+  SKBO: { name: 'COLOMBIA',      center: [4.0, -73.0] },
+  SEQM: { name: 'ECUADOR',       center: [-1.5, -78.3] },
+  SVMI: { name: 'VENEZUELA',     center: [7.0, -66.0] },
+  SBBR: { name: 'BRASIL',        center: [-10.0, -52.0] },
+  SPIM: { name: 'PERÚ',          center: [-9.5, -75.0] },
+  SLLP: { name: 'BOLIVIA',       center: [-16.5, -64.5] },
+  SCEL: { name: 'CHILE',         center: [-30.0, -71.0] },
+  SABE: { name: 'ARGENTINA',     center: [-35.0, -65.0] },
+  SGAS: { name: 'PARAGUAY',      center: [-23.0, -58.0] },
+  SUAA: { name: 'URUGUAY',       center: [-33.0, -56.0] },
+  LATI: { name: 'ALBANIA',       center: [41.0, 20.0] },
+  EDDI: { name: 'ALEMANIA',      center: [51.2, 10.4] },
+  LOWW: { name: 'AUSTRIA',       center: [47.6, 14.2] },
+  EBCI: { name: 'BÉLGICA',       center: [50.6, 4.6] },
+  UMMS: { name: 'BIELORRUSIA',   center: [53.5, 28.0] },
+  LBSF: { name: 'BULGARIA',      center: [42.7, 25.3] },
+  LKPR: { name: 'CHEQUIA',       center: [49.8, 15.5] },
+  LDZA: { name: 'CROACIA',       center: [45.3, 16.0] },
+  EKCH: { name: 'DINAMARCA',     center: [56.0, 9.5] },
+  EHAM: { name: 'HOLANDA',       center: [52.2, 5.6] },
+  VIDP: { name: 'INDIA',         center: [22.5, 79.0] },
+  OSDI: { name: 'SIRIA',         center: [35.0, 38.5] },
+  OERK: { name: 'ARABIA SAUDITA', center: [24.0, 45.0] },
+  OMDB: { name: 'EMIRATOS ÁRABES', center: [24.0, 54.0] },
+  OAKB: { name: 'AFGANISTÁN',    center: [34.0, 66.0] },
+  OOMS: { name: 'OMÁN',          center: [21.0, 57.0] },
+  OYSN: { name: 'YEMEN',         center: [15.5, 47.5] },
+  OPKC: { name: 'PAKISTÁN',      center: [30.0, 69.5] },
+  UBBB: { name: 'AZERBAIYÁN',    center: [40.3, 47.8] },
+  OJAI: { name: 'JORDANIA',      center: [31.0, 36.5] },
+}
+
+// Standalone text labels at country centroids. Not tied to airport icons.
+function CountryLabels({ airports }) {
+  return airports.map((ap) => {
+    const c = COUNTRY_LABELS[ap.id]
+    if (!c) return null
+    return (
+      <Marker
+        key={`lbl-${ap.id}`}
+        position={c.center}
+        interactive={false}
+        zIndexOffset={-1000}
+        icon={L.divIcon({ className: 'country-label', html: `<span>${c.name}</span>`, iconSize: [0, 0] })}
+      />
+    )
+  })
+}
+
 function AirportMarkers({ airports, theme, threshold, hoveredAirport, setHoveredAirport, onAirportClick }) {
   const map = useMap()
-  
+
   return airports.map((ap) => {
     const pct = occupancyPct(ap)
     let direction = 'top'
@@ -386,7 +442,7 @@ function AirportMarkers({ airports, theme, threshold, hoveredAirport, setHovered
           mouseout: () => setHoveredAirport(null)
         }}
       >
-        {hoveredAirport === ap.id && (
+        {hoveredAirport === ap.id ? (
           <Tooltip permanent className="tasf-tooltip" direction={direction} offset={offset}>
             <strong>{ap.id}</strong> — {ap.name}<br />
             Almacén: <strong>{pct.toFixed(2)}%</strong> ({ap.currentOccupation} / {ap.warehouseCapacity})<br />
@@ -394,7 +450,7 @@ function AirportMarkers({ airports, theme, threshold, hoveredAirport, setHovered
             {ap.maletasEnTransitoEntrantes > 0 && <><span>Llegando: <strong>{ap.maletasEnTransitoEntrantes}</strong> maletas</span><br /></>}
             {(ap.vuelosSalientes > 0 || ap.vuelosLlegando > 0) && <span>Vuelos: <strong>{ap.vuelosSalientes}</strong> salen · <strong>{ap.vuelosLlegando}</strong> llegan</span>}
           </Tooltip>
-        )}
+        ) : null}
       </Marker>
     )
   })
@@ -604,6 +660,9 @@ export default function MapView({
           pathOptions={{ color: '#a3e635', weight: 3, opacity: 0.9 }}
         />
       ))}
+
+      {/* ── COUNTRY LABELS ────────────────────────────────────────────────── */}
+      <CountryLabels airports={filteredAirports} />
 
       {/* ── AIRPORT NODES ─────────────────────────────────────────────────── */}
       <AirportMarkers

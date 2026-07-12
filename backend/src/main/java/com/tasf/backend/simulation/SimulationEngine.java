@@ -144,6 +144,10 @@ public class SimulationEngine {
         LocalDateTime inicioExacto = fechaInicio.atTime(parseHoraInicio(params.getHoraInicio()));
         boolean esColapso = Boolean.TRUE.equals(params.getEsColapso());
 
+        // Colapso runs open-ended over a saturated network — wider Sc batches (K=150) trade
+        // reaction speed for bigger batches per replan. Normal sim keeps K=120 (Tmax=60min calib).
+        params.setK(esColapso ? 150 : 120);
+
         List<Envio> filteredEnvios;
         if (esColapso) {
             filteredEnvios = todosLosEnvios.stream()

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
 import { MdVisibility, MdVisibilityOff, MdRestore } from 'react-icons/md'
 
-const DraggableWidget = forwardRef(({ children, style, containerRef }, ref) => {
+const DraggableWidget = forwardRef(({ children, style, containerRef, hideVisibilityToggle = false }, ref) => {
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
   const [isVisible, setIsVisible] = useState(true)
@@ -184,23 +184,25 @@ const DraggableWidget = forwardRef(({ children, style, containerRef }, ref) => {
         >
           <MdRestore size={14} />
         </button>
-        <button
-          onClick={() => setIsVisible(false)}
-          style={{
-            background: 'rgba(0,0,0,0.6)',
-            border: 'none',
-            borderRadius: 4,
-            color: 'white',
-            cursor: 'pointer',
-            padding: 4,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          title="Ocultar"
-        >
-          <MdVisibilityOff size={14} />
-        </button>
+        {!hideVisibilityToggle && (
+          <button
+            onClick={() => setIsVisible(false)}
+            style={{
+              background: 'rgba(0,0,0,0.6)',
+              border: 'none',
+              borderRadius: 4,
+              color: 'white',
+              cursor: 'pointer',
+              padding: 4,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            title="Ocultar"
+          >
+            <MdVisibilityOff size={14} />
+          </button>
+        )}
       </div>
     </div>
   )
