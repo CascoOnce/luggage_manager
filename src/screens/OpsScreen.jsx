@@ -44,7 +44,7 @@ function mod1440(m) {
   return ((m % 1440) + 1440) % 1440
 }
 
-export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onRefreshOps, onCancelFlight }) {
+export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onRefreshOps, onCancelFlight, openSectionRequest }) {
   const [selectedFlight, setSelectedFlight] = useState(null)
   const [selectedVueloData, setSelectedVueloData] = useState(null)
   const [flightSource, setFlightSource] = useState(null) // 'map' | 'panel'
@@ -153,6 +153,12 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
     }).catch(() => {})
   }, [])
 
+  // Top bar "Envíos" click sends a fresh request object to force-open this section,
+  // even if it's already the active one (the side panel state is local to this screen).
+  useEffect(() => {
+    if (openSectionRequest?.section) setActiveSideSection(openSectionRequest.section)
+  }, [openSectionRequest])
+
   const flights = useMemo(() => {
     if (!opsState?.vuelos) return []
     return opsState.vuelos
@@ -180,6 +186,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
           fraction: flightFractionAtMinute(liveNowMinutes, depMin, arrMin),
           enUso: v.enUso ?? false,
           inFlight: v.inFlight ?? false,
+          cancelacionProgramada: v.cancelacionProgramada ?? false,
         }
       })
       .filter((v) => v.inFlight)
@@ -212,6 +219,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
           fraction: 0,
           enUso: v.enUso ?? false,
           inFlight: v.inFlight ?? false,
+          cancelacionProgramada: v.cancelacionProgramada ?? false,
         }
       })
       .filter((v) => !v.inFlight)
@@ -502,6 +510,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
               onClose={handleCloseVuelo}
               onCancelFlight={onCancelFlight}
               fetchEnvios={api.getOpsEnviosByFlight}
+              simClockMinutes={Math.floor(liveNowMinutes)}
             />
           )}
           <DrawerAeropuerto

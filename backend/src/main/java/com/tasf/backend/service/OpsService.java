@@ -219,6 +219,7 @@ public class OpsService {
                     .husDestino(husoByIata.get(v.getDestino()))
                     .enUso(enUso)
                     .inFlight(inFlight)
+                    .cancelacionProgramada(dataLoaderService.isFlightCancellationProgramadaForSession(v.getCodigoVuelo()))
                     .build());
         }
 

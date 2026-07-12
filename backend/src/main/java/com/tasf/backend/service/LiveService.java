@@ -161,7 +161,7 @@ public class LiveService {
                 .build();
     }
 
-    public void cancelFlight(String codigoVuelo) {
-        dataLoaderService.cancelFlightForSession(codigoVuelo);
+    public void cancelFlight(String codigoVuelo, String aplicaDesde) {
+        dataLoaderService.cancelFlightForSession(codigoVuelo, aplicaDesde);
     }
 }

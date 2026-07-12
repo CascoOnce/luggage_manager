@@ -68,6 +68,8 @@ public class SimulationEngine {
     private List<Maleta> maletas = new ArrayList<>();
     private List<PlanDeViaje> planes = new ArrayList<>();
     private List<Cancelacion> cancelaciones = new ArrayList<>();
+    // Flights cancelled with aplicaDesde=MANANA: applied at the start of the next simulated day.
+    private final Set<String> vuelosCancelacionDiferida = new HashSet<>();
     private List<MetricaAlgoritmo> metricas = new ArrayList<>();
     private int diaActual;
     private LocalDateTime fechaSimulada;
@@ -255,6 +257,17 @@ public class SimulationEngine {
         // Vuelos have only LocalTime (daily repeating schedule). Cancellations from a
         // previous simulated day must be reset so that the same flight can operate again.
         vuelos.forEach(v -> v.setCancelado(false));
+
+        // Apply cancellations that were scheduled (aplicaDesde=MANANA) for today.
+        if (!vuelosCancelacionDiferida.isEmpty()) {
+            LocalDate hoy = fechaSimulada.toLocalDate();
+            for (Vuelo v : vuelos) {
+                if (vuelosCancelacionDiferida.remove(v.getCodigoVuelo())) {
+                    v.setCancelado(true);
+                    aplicarCancelacion(v, hoy, "Cancelación manual programada", "CAN-PROG");
+                }
+            }
+        }
 
         // The current day's batches were already planned ahead of time — by inicializar()
         // for day 1, or by the previous avanzarDia()'s look-ahead for later days. This means
@@ -1275,29 +1288,35 @@ public class SimulationEngine {
 
         List<Vuelo> cancelledToday = detectCancellations(today);
         for (Vuelo vuelo : cancelledToday) {
-            List<Maleta> affected = rescueBags(vuelo, today);
-            int sinRuta = 0;
-            String resultado;
-            if (!affected.isEmpty()) {
-                addOperationLog(String.format("[INCIDENCIA] Vuelo %s cancelado. Rescatadas %d maletas. Iniciando replanificación...",
-                    vuelo.getCodigoVuelo(), affected.size()));
-                sinRuta = replanificarConStats(affected, true);
-                resultado = sinRuta == 0 ? "REROUTADO" : "PARCIAL";
-            } else {
-                addOperationLog("[INCIDENCIA] Vuelo " + vuelo.getCodigoVuelo() + " cancelado. Sin maletas afectadas hoy.");
-                resultado = "SIN_AFECTADOS";
-            }
-            cancelaciones.add(Cancelacion.builder()
-                .id("CAN-" + vuelo.getCodigoVuelo() + "-" + System.nanoTime())
-                .codigoVuelo(vuelo.getCodigoVuelo())
-                .fecha(today)
-                .hora(LocalTime.now())
-                .motivo("Incidencia aleatoria")
-                .maletasAfectadas(affected.size())
-                .enviosSinRuta(sinRuta)
-                .resultado(resultado)
-                .build());
+            aplicarCancelacion(vuelo, today, "Incidencia aleatoria", "CAN");
         }
+    }
+
+    // Shared by random cancellation, manual same-day cancellation, and manual
+    // next-day cancellation once it's applied at the start of that day.
+    private void aplicarCancelacion(Vuelo vuelo, LocalDate today, String motivo, String idPrefix) {
+        List<Maleta> affected = rescueBags(vuelo, today);
+        int sinRuta = 0;
+        String resultado;
+        if (!affected.isEmpty()) {
+            addOperationLog(String.format("[INCIDENCIA] Vuelo %s cancelado (%s). Rescatadas %d maletas. Iniciando replanificación...",
+                vuelo.getCodigoVuelo(), motivo, affected.size()));
+            sinRuta = replanificarConStats(affected, true);
+            resultado = sinRuta == 0 ? "REROUTADO" : "PARCIAL";
+        } else {
+            addOperationLog(String.format("[INCIDENCIA] Vuelo %s cancelado (%s). Sin maletas afectadas hoy.", vuelo.getCodigoVuelo(), motivo));
+            resultado = "SIN_AFECTADOS";
+        }
+        cancelaciones.add(Cancelacion.builder()
+            .id(idPrefix + "-" + vuelo.getCodigoVuelo() + "-" + System.nanoTime())
+            .codigoVuelo(vuelo.getCodigoVuelo())
+            .fecha(today)
+            .hora(LocalTime.now())
+            .motivo(motivo)
+            .maletasAfectadas(affected.size())
+            .enviosSinRuta(sinRuta)
+            .resultado(resultado)
+            .build());
     }
 
     private List<Vuelo> detectCancellations(LocalDate today) {
@@ -1319,7 +1338,7 @@ public class SimulationEngine {
         return cancelled;
     }
 
-    public synchronized void cancelarVueloManualmente(String codigoVuelo) {
+    public synchronized void cancelarVueloManualmente(String codigoVuelo, String aplicaDesde) {
         if (!enEjecucion) return;
 
         Vuelo vuelo = vuelos.stream()
@@ -1327,7 +1346,15 @@ public class SimulationEngine {
             .findFirst()
             .orElse(null);
 
-        if (vuelo == null || vuelo.isCancelado()) return;
+        if (vuelo == null || vuelo.isCancelado() || vuelosCancelacionDiferida.contains(codigoVuelo)) return;
+
+        if ("MANANA".equalsIgnoreCase(aplicaDesde)) {
+            vuelosCancelacionDiferida.add(codigoVuelo);
+            addOperationLog("[INCIDENCIA] Vuelo " + codigoVuelo + " programado para cancelarse el día siguiente.");
+            bumpEnviosVersion();
+            this.cachedState = buildLightEstado();
+            return;
+        }
 
         LocalDate today = fechaSimulada.toLocalDate();
 
@@ -1340,28 +1367,7 @@ public class SimulationEngine {
         }
 
         vuelo.setCancelado(true);
-        List<Maleta> affected = rescueBags(vuelo, today);
-        int sinRuta = 0;
-        String resultado;
-        if (!affected.isEmpty()) {
-            addOperationLog(String.format("[INCIDENCIA] Vuelo %s cancelado MANUALMENTE. Rescatadas %d maletas. Iniciando replanificación...",
-                vuelo.getCodigoVuelo(), affected.size()));
-            sinRuta = replanificarConStats(affected, true);
-            resultado = sinRuta == 0 ? "REROUTADO" : "PARCIAL";
-        } else {
-            addOperationLog("[INCIDENCIA] Vuelo " + vuelo.getCodigoVuelo() + " cancelado MANUALMENTE. Sin maletas afectadas hoy.");
-            resultado = "SIN_AFECTADOS";
-        }
-        cancelaciones.add(Cancelacion.builder()
-            .id("CAN-MANUAL-" + vuelo.getCodigoVuelo() + "-" + System.nanoTime())
-            .codigoVuelo(vuelo.getCodigoVuelo())
-            .fecha(today)
-            .hora(LocalTime.now())
-            .motivo("Cancelación manual")
-            .maletasAfectadas(affected.size())
-            .enviosSinRuta(sinRuta)
-            .resultado(resultado)
-            .build());
+        aplicarCancelacion(vuelo, today, "Cancelación manual", "CAN-MANUAL");
 
         // Refresh the cache so subsequent polls reflect the cancellation immediately.
         bumpEnviosVersion();
@@ -1624,6 +1630,28 @@ public class SimulationEngine {
                 .orElse(0.0d);
         }
 
+        // Aggregate occupancy: sum(load) / sum(capacity) across the fleet/warehouses,
+        // not an average of per-unit percentages (which biases towards small-capacity units).
+        Map<String, Vuelo> vueloByCodeKpi = vuelos.stream()
+            .collect(Collectors.toMap(Vuelo::getCodigoVuelo, v -> v, (a, b) -> a));
+        long cargaFlota = 0;
+        long capFlota = 0;
+        for (String code : vuelosEnUso) {
+            Vuelo v = vueloByCodeKpi.get(code);
+            if (v != null) {
+                cargaFlota += v.getCargaActual();
+                capFlota += v.getCapacidadTotal();
+            }
+        }
+        double ocupacionFlota = capFlota == 0 ? 0.0 : cargaFlota * 100.0 / capFlota;
+
+        long cargaAlmacen = maletas.stream()
+            .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN)
+            .filter(m -> today == null || m.getFechaIngreso() == null || !m.getFechaIngreso().isAfter(today))
+            .count();
+        long capAlmacen = aeropuertos.stream().mapToLong(Aeropuerto::getCapacidadAlmacen).sum();
+        double ocupacionAlmacenes = capAlmacen == 0 ? 0.0 : cargaAlmacen * 100.0 / capAlmacen;
+
         return KpisDTO.builder()
             .maletasEnTransito(maletasEnTransito)
             .maletasEntregadas(maletasEntregadas)
@@ -1631,6 +1659,8 @@ public class SimulationEngine {
             .vuelosActivos(vuelosActivos)
             .slaVencidos(slaVencidos)
             .ocupacionPromedioAlmacen(ocupacionPromedio)
+            .ocupacionFlota(ocupacionFlota)
+            .ocupacionAlmacenes(ocupacionAlmacenes)
             .build();
     }
 
@@ -1734,6 +1764,7 @@ public class SimulationEngine {
             .husOrigen(husoByAirport.get(vuelo.getOrigen()))
             .husDestino(husoByAirport.get(vuelo.getDestino()))
             .enUso(enUsoHoy)
+            .cancelacionProgramada(vuelosCancelacionDiferida.contains(vuelo.getCodigoVuelo()))
             .build();
     }
 

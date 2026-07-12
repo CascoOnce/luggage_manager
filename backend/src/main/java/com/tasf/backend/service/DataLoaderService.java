@@ -56,8 +56,10 @@ public class DataLoaderService {
     private List<Aeropuerto> aeropuertos = new ArrayList<>();
     private List<Vuelo> vuelos = new ArrayList<>();
     private Map<String, Set<String>> airportGraph = new HashMap<>();
-    private final Set<String> sessionCancelledFlights =
-        Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+    // Flight code -> calendar date it's cancelled for. No scheduled reset needed: a HOY
+    // cancellation stops matching "today" once the real date rolls over, and a MANANA
+    // cancellation starts matching once tomorrow becomes today.
+    private final Map<String, LocalDate> sessionCancelledFlightDates = new java.util.concurrent.ConcurrentHashMap<>();
 
     public DataLoaderService(
             AeropuertoRepository aeropuertoRepository,
@@ -219,16 +221,21 @@ public class DataLoaderService {
         return Collections.unmodifiableMap(airportGraph);
     }
 
-    public void cancelFlightForSession(String codigoVuelo) {
-        sessionCancelledFlights.add(codigoVuelo);
+    public void cancelFlightForSession(String codigoVuelo, String aplicaDesde) {
+        LocalDate fecha = "MANANA".equalsIgnoreCase(aplicaDesde) ? LocalDate.now().plusDays(1) : LocalDate.now();
+        sessionCancelledFlightDates.put(codigoVuelo, fecha);
     }
 
     public boolean isFlightCancelledForSession(String codigoVuelo) {
-        return sessionCancelledFlights.contains(codigoVuelo);
+        return LocalDate.now().equals(sessionCancelledFlightDates.get(codigoVuelo));
+    }
+
+    public boolean isFlightCancellationProgramadaForSession(String codigoVuelo) {
+        return LocalDate.now().plusDays(1).equals(sessionCancelledFlightDates.get(codigoVuelo));
     }
 
     public void clearSessionCancellations() {
-        sessionCancelledFlights.clear();
+        sessionCancelledFlightDates.clear();
     }
 
     // Nota: El método getTodosLosEnvios() se elimina porque ya no cargamos todo en memoria.

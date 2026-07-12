@@ -38,8 +38,10 @@ public class LiveController {
     }
 
     @PostMapping("/cancel-flight/{codigoVuelo}")
-    public ResponseEntity<Void> cancelFlight(@PathVariable String codigoVuelo) {
-        liveService.cancelFlight(codigoVuelo);
+    public ResponseEntity<Void> cancelFlight(
+            @PathVariable String codigoVuelo,
+            @RequestParam(defaultValue = "HOY") String aplicaDesde) {
+        liveService.cancelFlight(codigoVuelo, aplicaDesde);
         return ResponseEntity.ok().build();
     }
 }

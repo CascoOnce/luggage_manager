@@ -24,4 +24,5 @@ public class VueloDTO {
     private Integer husOrigen;
     private Integer husDestino;
     private boolean enUso;
+    private boolean cancelacionProgramada;
 }

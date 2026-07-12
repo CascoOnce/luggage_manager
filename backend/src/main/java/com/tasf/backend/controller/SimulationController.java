@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -113,8 +114,10 @@ public class SimulationController {
     }
 
     @PostMapping("/simulation/cancel-flight/{codigoVuelo}")
-    public ResponseEntity<SimulationStateDTO> cancelFlight(@PathVariable String codigoVuelo) {
-        simulationEngine.cancelarVueloManualmente(codigoVuelo);
+    public ResponseEntity<SimulationStateDTO> cancelFlight(
+            @PathVariable String codigoVuelo,
+            @RequestParam(defaultValue = "HOY") String aplicaDesde) {
+        simulationEngine.cancelarVueloManualmente(codigoVuelo, aplicaDesde);
         return ResponseEntity.ok(simulationEngine.getEstado());
     }
 
