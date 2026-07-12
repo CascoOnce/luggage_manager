@@ -1404,6 +1404,19 @@ export default function App() {
               <DraggableWidget ref={clockWidgetRef} containerRef={mapContainerRef}>
                 <FloatingClocks backendState={backendState} simClockMinutes={simClockMinutes} simStartMinute={simStartMinuteRef.current} simStartedAt={simStartedAt} />
               </DraggableWidget>
+              {backendState && !backendState?.finalizada && (
+                <button
+                  onClick={() => setAutoStep((v) => !v)}
+                  style={{
+                    pointerEvents: 'auto', alignSelf: 'flex-end',
+                    background: 'var(--panel)', border: '1px solid var(--border)',
+                    color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12,
+                    padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+                  }}
+                >
+                  {autoStep ? '⏸ Pausar' : '▶ Reanudar'}
+                </button>
+              )}
             </div>
 
             {/* Flight cajetín — top-left, shifts right when side panel open */}
@@ -1429,6 +1442,7 @@ export default function App() {
               airport={mapSelectedAirport}
               vuelos={backendState?.vuelos || []}
               onClose={handleCloseAirport}
+              nowMinuteUtc={simClockMinutes}
               fetchInventory={isOpsActive ? api.getOpsAirportInventory : api.getAirportInventory}
             />
             {flightSource === 'panel' && (

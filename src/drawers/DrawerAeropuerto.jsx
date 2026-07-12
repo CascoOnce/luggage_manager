@@ -174,7 +174,17 @@ function EnvioRow({ e, singleLine }) {
   )
 }
 
-export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInventoryTabs = false, fetchInventory = api.getAirportInventory }) {
+// Sim clock runs in UTC; each airport displays its own local wall time (UTC + huso).
+function localTimeLabel(huso, nowMinuteUtc) {
+  if (huso == null || nowMinuteUtc == null) return null
+  const localMin = ((Math.floor(nowMinuteUtc) + huso * 60) % 1440 + 1440) % 1440
+  const hh = String(Math.floor(localMin / 60)).padStart(2, '0')
+  const mm = String(localMin % 60).padStart(2, '0')
+  const sign = huso >= 0 ? '+' : '-'
+  return `${hh}:${mm} local · UTC${sign}${Math.abs(huso)}`
+}
+
+export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInventoryTabs = false, nowMinuteUtc = null, fetchInventory = api.getAirportInventory }) {
   const [tab, setTab] = useState('info')
   const [inventory, setInventory] = useState(null)
   const [loadingInv, setLoadingInv] = useState(false)
@@ -226,6 +236,11 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
         {/* Header */}
         <div style={s.header}>
           <span style={s.iata}>{airport.id}</span>
+          {localTimeLabel(airport.huso, nowMinuteUtc) && (
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginLeft: 8 }}>
+              {localTimeLabel(airport.huso, nowMinuteUtc)}
+            </span>
+          )}
           <div style={{ flex: 1 }} />
           <span style={s.pill(color)}>{semaforoLabel(pct)}</span>
           <button style={s.closeBtn} onClick={onClose} aria-label="Cerrar">✕</button>

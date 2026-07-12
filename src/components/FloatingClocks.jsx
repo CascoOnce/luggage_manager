@@ -114,6 +114,9 @@ export default function FloatingClocks({ backendState, simClockMinutes, simStart
           <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--amber)', fontWeight: 700 }}>
             Simulación
           </div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', border: '1px solid var(--border)', padding: '0 4px', borderRadius: 3 }}>
+            UTC
+          </div>
           {backendState && (
             <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--amber)', background: 'rgba(251,191,36,0.15)', padding: '1px 5px', borderRadius: 3 }}>
               Día {diaActual}/{totalDias}
