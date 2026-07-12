@@ -37,6 +37,49 @@ class WarehouseOccupationCalculatorTest {
     }
 
     @Test
+    void windowsForPlan_twoHops_coversOriginThenIntermediateThenDestination() {
+        LocalDateTime ingreso = LocalDateTime.of(2026, 7, 12, 0, 0);
+        Escala hub = Escala.builder()
+            .orden(1)
+            .codigoAeropuerto("PANC")
+            .horaLlegadaEst(LocalDateTime.of(2026, 7, 12, 2, 0))
+            .horaSalidaEst(LocalDateTime.of(2026, 7, 12, 1, 0))
+            .codigoVuelo("XX100")
+            .build();
+        Escala destino = Escala.builder()
+            .orden(2)
+            .codigoAeropuerto("SPIM")
+            .horaLlegadaEst(LocalDateTime.of(2026, 7, 12, 6, 0))
+            .horaSalidaEst(LocalDateTime.of(2026, 7, 12, 4, 0))
+            .codigoVuelo("XX200")
+            .build();
+        PlanDeViaje plan = PlanDeViaje.builder().idEnvio("E2").escalas(List.of(hub, destino)).build();
+
+        List<WarehouseOccupationCalculator.CapacityWindow> windows =
+            WarehouseOccupationCalculator.windowsForPlan(plan, "SKBO", ingreso);
+
+        assertThat(windows).hasSize(3);
+
+        assertThat(windows.get(0).airport()).isEqualTo("SKBO");
+        assertThat(windows.get(0).from()).isEqualTo(ingreso);
+        assertThat(windows.get(0).to()).isEqualTo(hub.getHoraSalidaEst());
+
+        assertThat(windows.get(1).airport()).isEqualTo("PANC");
+        assertThat(windows.get(1).from()).isEqualTo(hub.getHoraLlegadaEst());
+        assertThat(windows.get(1).to()).isEqualTo(destino.getHoraSalidaEst());
+
+        assertThat(windows.get(2).airport()).isEqualTo("SPIM");
+        assertThat(windows.get(2).from()).isEqualTo(destino.getHoraLlegadaEst());
+        assertThat(windows.get(2).to()).isNull();
+
+        // Ensure the intermediate window is genuinely distinct from origin and final windows.
+        assertThat(windows.get(1).airport()).isNotEqualTo(windows.get(0).airport());
+        assertThat(windows.get(1).airport()).isNotEqualTo(windows.get(2).airport());
+        assertThat(windows.get(1).from()).isNotEqualTo(windows.get(0).from());
+        assertThat(windows.get(1).to()).isNotEqualTo(windows.get(2).to());
+    }
+
+    @Test
     void projectAirport_spimExample_matchesExpectedSteps() {
         // SPIM, capacity 200: +50@30min, +30@45min, +80@90min, +20@110min, all within day 1.
         LocalDateTime dayStart = LocalDateTime.of(2026, 7, 12, 0, 0);
