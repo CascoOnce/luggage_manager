@@ -1487,9 +1487,22 @@ public class SimulationEngine {
         for (Envio envio : envios) {
             if (envio.getEstado() == EstadoEnvio.ENTREGADO || envio.getEstado() == EstadoEnvio.CANCELADO) continue;
             long qty = activeBagCountByEnvio.getOrDefault(envio.getIdEnvio(), 0L);
-            if (qty == 0) continue;
             PlanDeViaje plan = latestPlan.get(envio.getIdEnvio());
-            if (plan == null) continue;
+
+            // PENDIENTE envíos without maletas/plan: the bags are physically at the origin
+            // airport warehouse from fechaHoraIngreso but haven't been generated yet (no
+            // plan assigned). Emit an open-ended arrival event so the warehouse projection
+            // counts them correctly. Without this, PENDIENTE envíos are invisible and the
+            // occupation under-reports actual warehouse usage.
+            if (qty == 0 || plan == null) {
+                long pendienteQty = envio.getCantidadMaletas();
+                if (pendienteQty > 0) {
+                    List<long[]> list = eventsByAirport.computeIfAbsent(envio.getAeropuertoOrigen(), k -> new ArrayList<>());
+                    list.add(new long[]{envio.getFechaHoraIngreso().toEpochSecond(UTC), pendienteQty});
+                    // No departure event: bags sit indefinitely until planned/departed
+                }
+                continue;
+            }
             for (WarehouseOccupationCalculator.CapacityWindow w
                     : WarehouseOccupationCalculator.windowsForPlan(plan, envio.getAeropuertoOrigen(), envio.getFechaHoraIngreso())) {
                 List<long[]> list = eventsByAirport.computeIfAbsent(w.airport(), k -> new ArrayList<>());
@@ -1602,6 +1615,14 @@ public class SimulationEngine {
                 .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN)
                 .filter(m -> kpiToday == null || m.getFechaIngreso() == null || !m.getFechaIngreso().isAfter(kpiToday))
                 .collect(Collectors.groupingBy(Maleta::getUbicacionActual, Collectors.counting()));
+            // Include PENDIENTE envíos (no maletas yet) at their origin airport
+            Set<String> enviosConMaletas = maletas.stream().map(Maleta::getIdEnvio).collect(Collectors.toSet());
+            for (Envio e : envios) {
+                if (e.getEstado() != EstadoEnvio.PENDIENTE) continue;
+                if (enviosConMaletas.contains(e.getIdEnvio())) continue;
+                if (kpiToday != null && e.getFechaHoraIngreso().toLocalDate().isAfter(kpiToday)) continue;
+                liveOcupacion.merge(e.getAeropuertoOrigen(), (long) e.getCantidadMaletas(), Long::sum);
+            }
             ocupacionPromedio = aeropuertos.stream()
                 .mapToDouble(a -> {
                     if (a.getCapacidadAlmacen() == 0) return 0.0;
@@ -1631,6 +1652,16 @@ public class SimulationEngine {
             .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN)
             .filter(m -> today == null || m.getFechaIngreso() == null || !m.getFechaIngreso().isAfter(today))
             .count();
+        // PENDIENTE envíos have no maletas generated yet, but their bags are physically in the
+        // origin warehouse. Count them so the global occupation KPI reflects actual warehouse usage.
+        Set<String> enviosWithMaletas = maletas.stream().map(Maleta::getIdEnvio).collect(Collectors.toSet());
+        long pendienteBags = envios.stream()
+            .filter(e -> e.getEstado() == EstadoEnvio.PENDIENTE)
+            .filter(e -> !enviosWithMaletas.contains(e.getIdEnvio()))
+            .filter(e -> today == null || !e.getFechaHoraIngreso().toLocalDate().isAfter(today))
+            .mapToLong(Envio::getCantidadMaletas)
+            .sum();
+        cargaAlmacen += pendienteBags;
         long capAlmacen = aeropuertos.stream().mapToLong(Aeropuerto::getCapacidadAlmacen).sum();
         double ocupacionAlmacenes = capAlmacen == 0 ? 0.0 : cargaAlmacen * 100.0 / capAlmacen;
 
