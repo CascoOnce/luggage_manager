@@ -1514,41 +1514,6 @@ public class SimulationEngine {
             a.setEventosOcupacionDia(proj.eventos());
         }
     }
-
-    /** Maximum number of simultaneously-present bags from a list of (+1 arrival / -1 departure)
-     *  events. Ties at the same instant apply departures before arrivals so a bag that leaves
-     *  exactly when another arrives doesn't double-count. */
-    private int peakOverlap(List<long[]> evts) {
-        if (evts == null || evts.isEmpty()) return 0;
-        evts.sort((x, y) -> x[0] != y[0] ? Long.compare(x[0], y[0]) : Long.compare(x[1], y[1]));
-        int running = 0, peak = 0;
-        for (long[] e : evts) {
-            running += (int) e[1];
-            if (running > peak) peak = running;
-        }
-        return Math.max(0, peak);
-    }
-
-    /** Planned departure time of this bag from its CURRENT location, or null if it has no
-     *  onward leg from there (stays indefinitely). */
-    private LocalDateTime departureFromLocation(Maleta m,
-            Map<String, PlanDeViaje> latestPlan, Map<String, Envio> envioById) {
-        PlanDeViaje p = latestPlan.get(m.getIdEnvio());
-        if (p == null || p.getEscalas() == null || p.getEscalas().isEmpty()) return null;
-        Envio e = envioById.get(m.getIdEnvio());
-        String origen = e != null ? e.getAeropuertoOrigen() : null;
-        String loc = m.getUbicacionActual();
-        List<Escala> escalas = p.getEscalas();
-        for (int i = 0; i < escalas.size(); i++) {
-            // Leg i departs from: the envio origin (first leg) or the previous stop's airport.
-            String legOrigin = (i == 0) ? origen : escalas.get(i - 1).getCodigoAeropuerto();
-            if (loc != null && loc.equals(legOrigin)) {
-                return escalas.get(i).getHoraSalidaEst();
-            }
-        }
-        return null;
-    }
-
     private void accumulateOccupationSample() {
         for (Aeropuerto aeropuerto : aeropuertos) {
             int count = aeropuerto.getOcupacionActual();
