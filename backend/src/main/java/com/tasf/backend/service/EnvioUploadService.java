@@ -78,28 +78,20 @@ public class EnvioUploadService {
             return List.of();
         }
 
-        // Persistir en lotes
+        // El archivo trae hora local: convertir a UTC una sola vez antes de persistir.
+        Map<String, Integer> husoByAirport = aeropuertoRepository.findAll().stream()
+            .collect(Collectors.toMap(e -> e.getCodigoIata(), e -> e.getHuso()));
+        newDomainEnvios.forEach(e ->
+            e.setFechaHoraIngreso(e.getFechaHoraIngreso()
+                .minusHours(husoByAirport.getOrDefault(e.getAeropuertoOrigen(), 0))));
+
+        // Persistir en lotes (ya en UTC)
         saveEnviosInBatches(newDomainEnvios);
         log.info("Successfully uploaded and saved {} new envios from {}", newDomainEnvios.size(), filename);
 
-        // Notificar al motor si está en ejecución
+        // Notificar al motor si está en ejecución (ya en UTC)
         if (simulationEngine.estaInicializada()) {
-            Map<String, Integer> husoByAirport = aeropuertoRepository.findAll().stream()
-                .collect(Collectors.toMap(e -> e.getCodigoIata(), e -> e.getHuso()));
-            List<Envio> utcEnvios = newDomainEnvios.stream().map(e -> {
-                int husoOrigen = husoByAirport.getOrDefault(e.getAeropuertoOrigen(), 0);
-                return Envio.builder()
-                    .idEnvio(e.getIdEnvio())
-                    .codigoAerolinea(e.getCodigoAerolinea())
-                    .aeropuertoOrigen(e.getAeropuertoOrigen())
-                    .aeropuertoDestino(e.getAeropuertoDestino())
-                    .fechaHoraIngreso(e.getFechaHoraIngreso().minusHours(husoOrigen))
-                    .cantidadMaletas(e.getCantidadMaletas())
-                    .sla(e.getSla())
-                    .estado(e.getEstado())
-                    .build();
-            }).toList();
-            simulationEngine.agregarNuevosEnvios(utcEnvios);
+            simulationEngine.agregarNuevosEnvios(newDomainEnvios);
         }
 
         return newDomainEnvios;
@@ -146,7 +138,14 @@ public class EnvioUploadService {
             return List.of();
         }
 
-        // Persistir en lotes
+        // El archivo trae hora local: convertir a UTC una sola vez antes de persistir.
+        Map<String, Integer> husoByAirport = aeropuertoRepository.findAll().stream()
+            .collect(Collectors.toMap(e -> e.getCodigoIata(), e -> e.getHuso()));
+        newDomainEnvios.forEach(e ->
+            e.setFechaHoraIngreso(e.getFechaHoraIngreso()
+                .minusHours(husoByAirport.getOrDefault(e.getAeropuertoOrigen(), 0))));
+
+        // Persistir en lotes (ya en UTC)
         saveOpsEnviosInBatches(newDomainEnvios);
         log.info("Successfully uploaded and saved {} new ops envios from {}", newDomainEnvios.size(), filename);
 

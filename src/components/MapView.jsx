@@ -163,18 +163,31 @@ function flightTrafficLightColor(pct, theme) {
 // on every makeAirportIcon() call (which runs per airport, on every map re-render).
 const WAREHOUSE_SVG = renderToStaticMarkup(React.createElement(MdWarehouse, { size: 16, color: '#fff' }))
 
+// Cache icons by their visual key so unchanged airports reuse the same L.divIcon
+// instance across polling re-renders. Marker.setIcon() rebuilds the icon's DOM node,
+// which can drop an in-flight mouseout and leave the hover tooltip stuck — a new
+// object reference every 2s poll tick (even with identical values) was triggering
+// that teardown constantly.
+const iconCache = new Map()
+
 function makeAirportIcon(pct, threshold, theme) {
   const pinColor = trafficLightColor(pct, threshold, theme)
+  const key = `${pinColor}|${theme}`
+  const cached = iconCache.get(key)
+  if (cached) return cached
+
   const warehouseSvg = WAREHOUSE_SVG
   const borderColor = theme === 'dark' ? '#060606' : '#ffffff'
   // Single-line HTML avoids whitespace issues with Leaflet's DivIcon rendering
   const html = `<div class="airport-pin" style="width:28px;height:28px;background:${pinColor};border-radius:50%;display:flex;align-items:center;justify-content:center;border:2.5px solid ${borderColor};box-shadow:0 0 7px ${pinColor}99;transform-origin:50% 50%;box-sizing:border-box;">${warehouseSvg}</div>`
-  return L.divIcon({
+  const icon = L.divIcon({
     className: '',
     html,
     iconSize:   [28, 28],  // Exact visual size of the circle
     iconAnchor: [14, 14],  // Center of the 28×28 circle → sits precisely on the coordinate
   })
+  iconCache.set(key, icon)
+  return icon
 }
 
 // Linearly interpolate position along origin→destination
@@ -546,7 +559,11 @@ export default function MapView({
   )
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div
+      ref={containerRef}
+      style={{ position: 'relative', width: '100%', height: '100%' }}
+      onMouseLeave={() => setHoveredAirport(null)}
+    >
       <div style={{ position: 'absolute', bottom: 16, left: 20, zIndex: 500, pointerEvents: 'none' }}>
         <DraggableWidget
           ref={widgetRef}
