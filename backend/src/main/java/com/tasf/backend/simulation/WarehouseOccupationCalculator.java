@@ -27,14 +27,14 @@ final class WarehouseOccupationCalculator {
      *  at escalas[i].codigoAeropuerto at horaLlegadaEst, having departed the previous stop
      *  (or `origen` for i=0) at escalas[i].horaSalidaEst.
      *
-     *  Emits a window only for warehouses where the bag actually waits: the origin (from
-     *  fechaIngreso until the first flight departs) and each intermediate hub (from arrival
-     *  until the connecting flight departs). The FINAL destination is deliberately NOT
-     *  emitted: SimulationEngine.processDeliveries marks a bag ENTREGADA and decrements
-     *  occupancy in the same pass it arrives, so a delivered bag never lingers in the
-     *  destination warehouse. Emitting an open-ended [arrival, ∞) window there made
-     *  destination-only airports (e.g. LATI) accumulate every bag they ever received. */
-    static List<CapacityWindow> windowsForPlan(PlanDeViaje plan, String origen, LocalDateTime fechaIngreso) {
+     *  Emits a window for every warehouse where the bag actually waits: the origin (from
+     *  fechaIngreso until the first flight departs), each intermediate hub (from arrival
+     *  until the connecting flight departs), and the FINAL destination (from arrival until
+     *  `recogidaMinutos` later, when it's picked up). The destination window is bounded
+     *  (never open-ended) so it can't accumulate bags forever the way an [arrival, ∞) window
+     *  would for destination-only airports (e.g. LATI). */
+    static List<CapacityWindow> windowsForPlan(PlanDeViaje plan, String origen, LocalDateTime fechaIngreso,
+            int recogidaMinutos) {
         List<Escala> escalas = plan.getEscalas();
         if (escalas == null || escalas.isEmpty()) return List.of();
 
@@ -45,6 +45,14 @@ final class WarehouseOccupationCalculator {
                 escalas.get(i).getCodigoAeropuerto(),
                 escalas.get(i).getHoraLlegadaEst(),
                 escalas.get(i + 1).getHoraSalidaEst()
+            ));
+        }
+        Escala last = escalas.get(escalas.size() - 1);
+        if (last.getHoraLlegadaEst() != null) {
+            windows.add(new CapacityWindow(
+                last.getCodigoAeropuerto(),
+                last.getHoraLlegadaEst(),
+                last.getHoraLlegadaEst().plusMinutes(recogidaMinutos)
             ));
         }
         return windows;

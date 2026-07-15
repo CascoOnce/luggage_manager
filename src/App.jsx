@@ -1173,6 +1173,11 @@ export default function App() {
     }
   }, [screen, isOpsActive])
 
+  // mapSelectedAirport is a snapshot captured at click time; re-derive the live version from
+  // clockedAirports each render so occupancy/clock keep advancing while the drawer is open.
+  const liveSelectedAirport = mapSelectedAirport
+    ? (clockedAirports.find((a) => a.id === mapSelectedAirport.id) || mapSelectedAirport)
+    : null
   const handleCloseAirport = useCallback(() => setMapSelectedAirport(null), [])
   const handleCloseVuelo   = useCallback(() => { setMapSelectedVuelo(null); setSelectedFlight(null); setFlightSource(null) }, [])
   const selectFlightFromMap   = useCallback((id) => { setFlightSource('map'); setSelectedFlight(id) }, [])
@@ -1439,7 +1444,7 @@ export default function App() {
             )}
 
             <DrawerAeropuerto
-              airport={mapSelectedAirport}
+              airport={liveSelectedAirport}
               vuelos={backendState?.vuelos || []}
               onClose={handleCloseAirport}
               nowMinuteUtc={simClockMinutes}

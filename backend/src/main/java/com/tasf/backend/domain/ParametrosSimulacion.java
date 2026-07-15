@@ -19,8 +19,12 @@ public class ParametrosSimulacion {
     private Boolean esColapso = false;
     @Builder.Default
     private int minutosEscalaMinima = 10;
+    /** Tiempo de recojo de la maleta en su destino final. */
     @Builder.Default
-    private int minutosRecogidaDestino = 10;
+    private int minutosRecogidaDestino = 15;
+    /** Colchón entre que el envío ingresa en origen y puede abordar su primer vuelo. */
+    @Builder.Default
+    private int minutosPreparacionOrigen = 10;
     @Builder.Default
     private int umbralSemaforoVerde = 60;
     @Builder.Default

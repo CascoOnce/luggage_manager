@@ -13,10 +13,9 @@ import org.junit.jupiter.api.Test;
 class WarehouseOccupationCalculatorTest {
 
     @Test
-    void windowsForPlan_singleHop_coversOriginOnly_notDeliveredDestination() {
-        // Single hop SKBO -> SPIM (SPIM is the final destination). The bag is delivered on
-        // arrival at SPIM (processDeliveries removes it same-pass), so SPIM must NOT get an
-        // occupancy window — only the origin, where the bag waits for its flight.
+    void windowsForPlan_singleHop_coversOriginAndBoundedDestinationPickup() {
+        // Single hop SKBO -> SPIM (SPIM is the final destination). The bag waits at SPIM for
+        // `recogidaMinutos` after arrival (picked up), plus the origin wait before departure.
         LocalDateTime ingreso = LocalDateTime.of(2026, 7, 12, 0, 0);
         Escala escala = Escala.builder()
             .orden(1)
@@ -28,19 +27,21 @@ class WarehouseOccupationCalculatorTest {
         PlanDeViaje plan = PlanDeViaje.builder().idEnvio("E1").escalas(List.of(escala)).build();
 
         List<WarehouseOccupationCalculator.CapacityWindow> windows =
-            WarehouseOccupationCalculator.windowsForPlan(plan, "SKBO", ingreso);
+            WarehouseOccupationCalculator.windowsForPlan(plan, "SKBO", ingreso, 15);
 
-        assertThat(windows).hasSize(1);
+        assertThat(windows).hasSize(2);
         assertThat(windows.get(0).airport()).isEqualTo("SKBO");
         assertThat(windows.get(0).from()).isEqualTo(ingreso);
         assertThat(windows.get(0).to()).isEqualTo(escala.getHoraSalidaEst());
-        // Regression guard: the final destination must never be emitted (it inflated
-        // destination-only airports like LATI with an open-ended [arrival, ∞) window).
-        assertThat(windows).noneMatch(w -> w.airport().equals("SPIM"));
+        // Destination window is bounded by recogidaMinutos, never open-ended — it can't
+        // accumulate bags forever the way an [arrival, ∞) window would.
+        assertThat(windows.get(1).airport()).isEqualTo("SPIM");
+        assertThat(windows.get(1).from()).isEqualTo(escala.getHoraLlegadaEst());
+        assertThat(windows.get(1).to()).isEqualTo(escala.getHoraLlegadaEst().plusMinutes(15));
     }
 
     @Test
-    void windowsForPlan_twoHops_coversOriginAndHub_notDeliveredDestination() {
+    void windowsForPlan_twoHops_coversOriginHubAndBoundedDestinationPickup() {
         LocalDateTime ingreso = LocalDateTime.of(2026, 7, 12, 0, 0);
         Escala hub = Escala.builder()
             .orden(1)
@@ -59,10 +60,10 @@ class WarehouseOccupationCalculatorTest {
         PlanDeViaje plan = PlanDeViaje.builder().idEnvio("E2").escalas(List.of(hub, destino)).build();
 
         List<WarehouseOccupationCalculator.CapacityWindow> windows =
-            WarehouseOccupationCalculator.windowsForPlan(plan, "SKBO", ingreso);
+            WarehouseOccupationCalculator.windowsForPlan(plan, "SKBO", ingreso, 15);
 
-        // Origin + intermediate hub only; the delivered destination (SPIM) is not emitted.
-        assertThat(windows).hasSize(2);
+        // Origin + intermediate hub + bounded destination pickup window.
+        assertThat(windows).hasSize(3);
 
         assertThat(windows.get(0).airport()).isEqualTo("SKBO");
         assertThat(windows.get(0).from()).isEqualTo(ingreso);
@@ -72,7 +73,9 @@ class WarehouseOccupationCalculatorTest {
         assertThat(windows.get(1).from()).isEqualTo(hub.getHoraLlegadaEst());
         assertThat(windows.get(1).to()).isEqualTo(destino.getHoraSalidaEst());
 
-        assertThat(windows).noneMatch(w -> w.airport().equals("SPIM"));
+        assertThat(windows.get(2).airport()).isEqualTo("SPIM");
+        assertThat(windows.get(2).from()).isEqualTo(destino.getHoraLlegadaEst());
+        assertThat(windows.get(2).to()).isEqualTo(destino.getHoraLlegadaEst().plusMinutes(15));
     }
 
     @Test

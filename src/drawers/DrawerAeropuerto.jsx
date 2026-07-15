@@ -193,27 +193,33 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
   const [expandedOut, setExpandedOut] = useState(true)
   const [expandedNoRoute, setExpandedNoRoute] = useState(true)
 
+  // Key on airport.id, not the object: App re-derives a fresh airport object every clock tick
+  // (live occupancy), and keying on identity would reset the tab/inventory on every frame.
   useEffect(() => {
     if (!airport) return
     setTab('info')
     setInventory(null)
-  }, [airport])
+  }, [airport?.id])
 
   useEffect(() => {
     if (!airport) return
     function onKey(e) { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [airport, onClose])
+  }, [airport?.id, onClose])
 
+  // Refetch on tab open and each time the sim clock crosses a 15-sim-min boundary, so
+  // "Inventario" tracks who's physically in the warehouse now without a server call per tick.
+  // (120 was too coarse: at ~4 sim-min/real-sec it only refetched every ~30s.)
+  const invWindow = nowMinuteUtc != null ? Math.floor(nowMinuteUtc / 15) : null
   useEffect(() => {
     if (!airport || tab === 'info') return
     setLoadingInv(true)
-    fetchInventory(airport.id)
+    fetchInventory(airport.id, nowMinuteUtc)
       .then(setInventory)
       .catch(() => setInventory(null))
       .finally(() => setLoadingInv(false))
-  }, [airport, tab])
+  }, [airport?.id, tab, invWindow])
 
   if (!airport) return null
 

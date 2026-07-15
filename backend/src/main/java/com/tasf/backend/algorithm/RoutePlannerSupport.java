@@ -148,7 +148,7 @@ abstract class RoutePlannerSupport {
     protected Optional<RouteCandidate> buildDirectCandidate(Envio envio, Vuelo flight, ParametrosSimulacion params, Map<String, Aeropuerto> airportByCode) {
         // Enforce origin pickup time: bag must be collected before boarding.
         LocalDateTime earliestDeparture = envio.getFechaHoraIngreso()
-            .plusMinutes(params.getMinutosRecogidaDestino());
+            .plusMinutes(params.getMinutosPreparacionOrigen());
             
         // envio.getFechaHoraIngreso() and flight schedule times are both UTC (see
         // OpsService.toDomain / getLiveState) — compare directly, no huso shift.
@@ -162,7 +162,7 @@ abstract class RoutePlannerSupport {
 
     protected Optional<RouteCandidate> buildOneStopCandidate(Envio envio, Vuelo first, Vuelo second, ParametrosSimulacion params, Map<String, Aeropuerto> airportByCode) {
         LocalDateTime earliestDeparture = envio.getFechaHoraIngreso()
-            .plusMinutes(params.getMinutosRecogidaDestino());
+            .plusMinutes(params.getMinutosPreparacionOrigen());
             
         // envio.getFechaHoraIngreso() and flight schedule times are both UTC (see
         // OpsService.toDomain / getLiveState) — compare directly, no huso shift.

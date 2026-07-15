@@ -157,8 +157,10 @@ public class SimulationController {
     }
 
     @GetMapping("/airports/{iata}/inventory")
-    public ResponseEntity<com.tasf.backend.dto.AirportInventoryDTO> airportInventory(@PathVariable String iata) {
+    public ResponseEntity<com.tasf.backend.dto.AirportInventoryDTO> airportInventory(
+            @PathVariable String iata,
+            @RequestParam(required = false) Integer nowMin) {
         if (!simulationEngine.estaInicializada()) return ResponseEntity.noContent().build();
-        return ResponseEntity.ok(simulationEngine.getAirportInventory(iata));
+        return ResponseEntity.ok(simulationEngine.getAirportInventory(iata, nowMin));
     }
 }
