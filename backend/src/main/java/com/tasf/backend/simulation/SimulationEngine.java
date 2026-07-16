@@ -369,6 +369,11 @@ public class SimulationEngine {
                 while (more) {
                     more = planNextBatch(endOfDay);
                 }
+                // Recompute + publish warehouse occupancy ONCE, after the whole day is planned.
+                // Doing it per-batch exposed a transient spike (>100%): mid-planning most of the
+                // day's envíos are still PENDIENTE and get counted open-ended, so the intermediate
+                // cachedState briefly showed the whole day's bags piled at their origins.
+                finalizarOcupacionDelDia(endOfDay);
             } catch (Exception e) {
                 log.error("Background planning error: {}", e.getMessage(), e);
             }
@@ -387,19 +392,21 @@ public class SimulationEngine {
         aplicarResultadoPlanificacion(batchResult);
         bumpEnviosVersion();  // new plans/maletas → envios table changed
         addOperationLog("Rolling plan: batch up to " + horizonPointer + " — " + batchResult.getPlanes().size() + " new plans");
-        // Skip the occupancy interpolation if aplicarResultadoPlanificacion() above already
-        // triggered checkColapsoInmediato() and closed the simulation: same reasoning as the
-        // matching guard in inicializar() — endOfDay is a point in time the run never actually
-        // reached, so interpolating occupancy forward to it would misrepresent the collapse.
-        // getEstado() still runs unconditionally so cachedState reflects the collapse.
-        if (colapsoPunto == null) {
-            // Use endOfDay as ref so that new-day bags (fechaHoraIngreso > midnight) are counted.
-            // Without this, currentOccupation == ocupacionInicioDia and the frontend interpolation is flat.
-            updateWarehouseOccupation(endOfDay);
-        }
-        // Background path — cache light directly (never build the ~21k envios here).
+        // NOTE: warehouse occupancy is NOT recomputed per-batch here — mid-planning most of the
+        // day's envíos are still PENDIENTE (counted open-ended), which produced a transient >100%
+        // spike. It is recomputed once by finalizarOcupacionDelDia() after the whole day is planned.
+        // We still publish cachedState so polling sees new plans (envios freshness) as they land.
         this.cachedState = buildLightEstado();
         return horizonPointer != null && horizonPointer.isBefore(endOfDay);
+    }
+
+    /** Recompute + publish warehouse occupancy once the day's rolling planning has finished, so
+     *  the polled state reflects the settled (all-envíos-planned) occupancy instead of a
+     *  mid-planning intermediate where un-planned PENDIENTE bags are counted open-ended. */
+    private synchronized void finalizarOcupacionDelDia(LocalDateTime endOfDay) {
+        if (!enEjecucion || colapsoPunto != null) return;
+        updateWarehouseOccupation(endOfDay);
+        this.cachedState = buildLightEstado();
     }
 
     public synchronized SimulationStateDTO reiniciar() {
