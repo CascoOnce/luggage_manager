@@ -14,7 +14,7 @@ const s = {
     position: 'absolute', left: 60, top: 10, bottom: 10, width: 340,
     background: 'rgba(22, 27, 34, 0.75)', backdropFilter: 'blur(12px)',
     border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: 16,
-    display: 'flex', flexDirection: 'column', overflowY: 'auto', zIndex: 2001,
+    display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', zIndex: 2001,
     boxShadow: '4px 4px 24px rgba(0, 0, 0, 0.5)',
   },
   header: {
@@ -83,17 +83,43 @@ const s = {
   },
   statVal: { fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 600, color: 'var(--text-bright)' },
   statLabel: { fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 3 },
+  maletasPopupOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2010,
+  },
+  maletasPopup: {
+    position: 'absolute', left: 60 + (340 - 220) / 2, top: 60, width: 220, maxHeight: 220,
+    background: 'rgba(22, 27, 34, 0.98)', backdropFilter: 'blur(8px)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 10, boxShadow: '0 6px 24px rgba(0,0,0,0.6)',
+    display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  },
+  maletasPopupHeader: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+    padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.08)',
+    fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: 'var(--text-bright)',
+    whiteSpace: 'nowrap',
+  },
+  maletasPopupList: { overflowY: 'auto', padding: '4px 6px' },
+  maletasPopupItem: {
+    display: 'flex', alignItems: 'center', gap: 6,
+    fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', padding: '5px 6px',
+    borderRadius: 6,
+  },
 }
 
-function semaforoColor(pct) {
-  if (pct >= 85) return 'var(--red)'
-  if (pct >= 60) return 'var(--amber)'
+// Thresholds match the map/side-panel semaforo (App.jsx `threshold` slider, default
+// 80 → umbralVerde=60/umbralRojo=80) or the fixed 60/85 scheme used where there's no slider.
+function semaforoColor(pct, umbralVerde, umbralRojo) {
+  if (pct === 0) return 'var(--blue)'
+  if (pct >= umbralRojo) return 'var(--red)'
+  if (pct >= umbralVerde) return 'var(--amber)'
   return 'var(--green)'
 }
 
-function semaforoLabel(pct) {
-  if (pct >= 85) return 'CRÍTICO'
-  if (pct >= 60) return 'ALTO'
+function semaforoLabel(pct, umbralVerde, umbralRojo) {
+  if (pct === 0) return 'VACÍO'
+  if (pct >= umbralRojo) return 'CRÍTICO'
+  if (pct >= umbralVerde) return 'ALTO'
   return 'NORMAL'
 }
 
@@ -109,6 +135,17 @@ const sumarMaletas = (lista) => {
   return lista.reduce((total, e) => total + (e.cantidadMaletas || 0), 0);
 }
 
+// Clasifica envíos en almacén según el rol del aeropuerto actual en su ruta.
+function agruparPorRol(lista, iata) {
+  const salida = [], llegada = [], escala = []
+  for (const e of lista || []) {
+    if (e.aeropuertoOrigen === iata) salida.push(e)
+    else if (e.aeropuertoDestino === iata) llegada.push(e)
+    else escala.push(e)
+  }
+  return { salida, llegada, escala }
+}
+
 const TAB_STYLE = (active) => ({
   fontFamily: 'var(--mono)', fontSize: 12, textTransform: 'uppercase',
   letterSpacing: 1.2, padding: '8px 12px', cursor: 'pointer',
@@ -117,10 +154,13 @@ const TAB_STYLE = (active) => ({
   color: active ? 'var(--text-bright)' : 'var(--muted)',
 })
 
-function EnvioRow({ e, singleLine }) {
+function EnvioRow({ e, singleLine, onClick }) {
   if (singleLine) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', gap: 8 }}>
+      <div
+        onClick={onClick}
+        style={{ display: 'flex', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', gap: 8, cursor: onClick ? 'pointer' : 'default' }}
+      >
         <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--blue)', flexShrink: 0 }}>
           {e.idEnvio}
         </span>
@@ -150,7 +190,10 @@ function EnvioRow({ e, singleLine }) {
   }
 
   return (
-    <div style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+    <div
+      onClick={onClick}
+      style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: onClick ? 'pointer' : 'default' }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--blue)' }}>{e.idEnvio}</span>
         {e.hora && <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--amber)' }}>{e.hora}</span>}
@@ -184,14 +227,19 @@ function localTimeLabel(huso, nowMinuteUtc) {
   return `${hh}:${mm} local · UTC${sign}${Math.abs(huso)}`
 }
 
-export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInventoryTabs = false, nowMinuteUtc = null, fetchInventory = api.getAirportInventory }) {
+export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInventoryTabs = false, nowMinuteUtc = null, fetchInventory = api.getAirportInventory, umbralVerde = 60, umbralRojo = 85 }) {
   const [tab, setTab] = useState('info')
   const [inventory, setInventory] = useState(null)
   const [loadingInv, setLoadingInv] = useState(false)
+  const [maletasPopup, setMaletasPopup] = useState(null) // { idEnvio, cantidadMaletas } | null
   
   const [expandedIn, setExpandedIn] = useState(true)
   const [expandedOut, setExpandedOut] = useState(true)
   const [expandedNoRoute, setExpandedNoRoute] = useState(true)
+
+  const [expandedSalida, setExpandedSalida] = useState(true)
+  const [expandedLlegada, setExpandedLlegada] = useState(true)
+  const [expandedEscala, setExpandedEscala] = useState(true)
 
   // Key on airport.id, not the object: App re-derives a fresh airport object every clock tick
   // (live occupancy), and keying on identity would reset the tab/inventory on every frame.
@@ -199,6 +247,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
     if (!airport) return
     setTab('info')
     setInventory(null)
+    setMaletasPopup(null)
   }, [airport?.id])
 
   useEffect(() => {
@@ -228,7 +277,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
   const pct = cap > 0 ? (occ / cap) * 100 : 0
   // Show "<0.01%" when there are bags but rounding drops it to 0
   const pctLabel = pct > 0 && pct < 0.01 ? '<0.01%' : `${pct.toFixed(2)}%`
-  const color = semaforoColor(pct)
+  const color = semaforoColor(pct, umbralVerde, umbralRojo)
 
   const iata = airport.id
   const salidas = (vuelos || []).filter((v) => (v.origin || v.origen) === iata).slice(0, 6)
@@ -248,7 +297,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
             </span>
           )}
           <div style={{ flex: 1 }} />
-          <span style={s.pill(color)}>{semaforoLabel(pct)}</span>
+          <span style={s.pill(color)}>{semaforoLabel(pct, umbralVerde, umbralRojo)}</span>
           <button style={s.closeBtn} onClick={onClose} aria-label="Cerrar">✕</button>
         </div>
 
@@ -259,27 +308,79 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
           {!hideInventoryTabs && <button style={TAB_STYLE(tab === 'planificado')} onClick={() => setTab('planificado')}>Planificado</button>}
         </div>
 
-        {tab === 'inventario' && (
-          <div style={{ padding: 14, flex: 1, overflowY: 'auto' }}>
-            {loadingInv && <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Cargando...</div>}
-            {!loadingInv && !inventory && (
-              <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', opacity: 0.6 }}>
-                Sin datos — simulación no activa
+        {tab === 'inventario' && (() => {
+          const { salida, llegada, escala } = agruparPorRol(inventory?.enAlmacen, iata)
+          const rowClick = (e) => () => setMaletasPopup((p) => (p?.idEnvio === e.idEnvio ? null : { idEnvio: e.idEnvio, cantidadMaletas: e.cantidadMaletas || 0 }))
+          const seccion = (title, color, lista, expanded, setExpanded, borderTop) => (
+            <div style={{ display: 'flex', flexDirection: 'column', flex: expanded ? 1 : 'none', minHeight: 0 }}>
+              <div
+                onClick={() => setExpanded(!expanded)}
+                style={{
+                  padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  cursor: 'pointer', background: 'rgba(255,255,255,0.03)',
+                  borderTop: borderTop ? '1px solid var(--border)' : 'none',
+                  borderBottom: '1px solid rgba(255,255,255,0.05)',
+                }}
+              >
+                <span style={{ ...s.sectionTitle, color, marginBottom: 0 }}>
+                  {title}: {lista.length} envíos ({sumarMaletas(lista)} maletas)
+                </span>
+                <span style={{ color: 'var(--muted)', fontSize: 12 }}>{expanded ? '▲' : '▼'}</span>
               </div>
-            )}
-            {!loadingInv && inventory && (
-              <>
-                <span style={s.sectionTitle}>En almacén: {inventory.enAlmacen?.length ?? 0} envíos ({sumarMaletas(inventory.enAlmacen)} maletas)</span>
-                {(inventory.enAlmacen?.length ?? 0) === 0
-                  ? <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>Sin envíos en almacén</div>
-                  : inventory.enAlmacen.map((e, i) => <EnvioRow key={`${e.idEnvio}-${i}`} e={e} singleLine />)
-                }
-              </>
-            )}
+              {expanded && (
+                <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px' }}>
+                  {lista.length === 0
+                    ? <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', padding: '10px 0' }}>Sin envíos</div>
+                    : lista.map((e, i) => <EnvioRow key={`${e.idEnvio}-${i}`} e={e} singleLine onClick={rowClick(e)} />)
+                  }
+                </div>
+              )}
+            </div>
+          )
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', position: 'relative' }}>
+              {loadingInv && <div style={{ padding: '14px 16px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Cargando...</div>}
+              {!loadingInv && !inventory && (
+                <div style={{ padding: '14px 16px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', opacity: 0.6 }}>
+                  Sin datos — simulación no activa
+                </div>
+              )}
+              {!loadingInv && inventory && (
+                <>
+                  {seccion('Saliendo (origen)', 'var(--text-bright)', salida, expandedSalida, setExpandedSalida, false)}
+                  {seccion('Llegando (destino)', 'var(--text-bright)', llegada, expandedLlegada, setExpandedLlegada, true)}
+                  {seccion('En escala', 'var(--text-bright)', escala, expandedEscala, setExpandedEscala, true)}
+                </>
+              )}
+            </div>
+          )
+        })()}
+
+        {maletasPopup && (
+          <div style={s.maletasPopupOverlay} onClick={() => setMaletasPopup(null)}>
+            <div style={s.maletasPopup} onClick={(ev) => ev.stopPropagation()}>
+              <div style={s.maletasPopupHeader}>
+                <span style={{ color: 'var(--blue)' }}>{maletasPopup.idEnvio}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  🧳 {maletasPopup.cantidadMaletas}
+                </span>
+                <button style={s.closeBtn} onClick={() => setMaletasPopup(null)} aria-label="Cerrar">✕</button>
+              </div>
+              <div style={s.maletasPopupList}>
+                {Array.from({ length: maletasPopup.cantidadMaletas }, (_, i) => (
+                  <div key={i} style={s.maletasPopupItem}>
+                    <span style={{ color: 'var(--blue)', fontSize: 18, lineHeight: 1 }}>•</span>
+                    <span>{maletasPopup.idEnvio}-{i + 1}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
-        {tab === 'planificado' && (
+        {tab === 'planificado' && (() => {
+          const rowClick = (e) => () => setMaletasPopup((p) => (p?.idEnvio === e.idEnvio ? null : { idEnvio: e.idEnvio, cantidadMaletas: e.cantidadMaletas || 0 }))
+          return (
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             {loadingInv && <div style={{ padding: '14px 16px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Cargando...</div>}
             {!loadingInv && !inventory && (
@@ -299,7 +400,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
                     }}
                   >
                     <span style={{ ...s.sectionTitle, color: 'var(--text-bright)', marginBottom: 0 }}>
-                      Entrando hoy: {inventory.planificadosEntrando?.length ?? 0} envíos ({sumarMaletas(inventory.planificadosEntrando)} maletas)
+                      Por entrar hoy: {inventory.planificadosEntrando?.length ?? 0} envíos ({sumarMaletas(inventory.planificadosEntrando)} maletas)
                     </span>
                     <span style={{ color: 'var(--muted)', fontSize: 12 }}>{expandedIn ? '▲' : '▼'}</span>
                   </div>
@@ -307,7 +408,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
                     <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
                       {(inventory.planificadosEntrando?.length ?? 0) === 0
                         ? <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Sin llegadas planificadas</div>
-                        : inventory.planificadosEntrando.map((e, i) => <EnvioRow key={`in-${i}`} e={e} />)
+                        : inventory.planificadosEntrando.map((e, i) => <EnvioRow key={`in-${i}`} e={e} onClick={rowClick(e)} />)
                       }
                     </div>
                   )}
@@ -323,7 +424,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
                     }}
                   >
                     <span style={{ ...s.sectionTitle, color: 'var(--text-bright)', marginBottom: 0 }}>
-                      Saliendo hoy: {inventory.planificadosSaliendo?.length ?? 0} envíos ({sumarMaletas(inventory.planificadosSaliendo)} maletas)
+                      Por salir hoy: {inventory.planificadosSaliendo?.length ?? 0} envíos ({sumarMaletas(inventory.planificadosSaliendo)} maletas)
                     </span>
                     <span style={{ color: 'var(--muted)', fontSize: 12 }}>{expandedOut ? '▲' : '▼'}</span>
                   </div>
@@ -331,7 +432,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
                     <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
                       {(inventory.planificadosSaliendo?.length ?? 0) === 0
                         ? <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Sin salidas planificadas</div>
-                        : inventory.planificadosSaliendo.map((e, i) => <EnvioRow key={`out-${i}`} e={e} />)
+                        : inventory.planificadosSaliendo.map((e, i) => <EnvioRow key={`out-${i}`} e={e} onClick={rowClick(e)} />)
                       }
                     </div>
                   )}
@@ -339,7 +440,8 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
               </>
             )}
           </div>
-        )}
+          )
+        })()}
 
         {tab === 'info' && <>
         {/* Occupancy */}

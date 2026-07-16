@@ -1449,6 +1449,8 @@ export default function App() {
               onClose={handleCloseAirport}
               nowMinuteUtc={simClockMinutes}
               fetchInventory={isOpsActive ? api.getOpsAirportInventory : api.getAirportInventory}
+              umbralVerde={threshold - 20}
+              umbralRojo={threshold}
             />
             {flightSource === 'panel' && (
               <DrawerVuelo

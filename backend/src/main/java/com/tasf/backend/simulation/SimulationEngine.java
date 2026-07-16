@@ -930,15 +930,40 @@ public class SimulationEngine {
         List<com.tasf.backend.dto.EnvioSummaryDTO> entrando = new java.util.ArrayList<>();
         List<com.tasf.backend.dto.EnvioSummaryDTO> saliendo = new java.util.ArrayList<>();
 
+        // Sc-gated reveal: day 1 plans every Sc block upfront (see inicializar()), so a shipment's
+        // route exists in memory long before its own Sc window would have closed in real time. To
+        // still surface "Planificado" incrementally (nothing in Sc 1, then each shipment's escalas
+        // appear once the Sc window it was ingested in has closed — never earlier), derive that
+        // shipment's Sc window end from its fechaHoraIngreso instead of relying on horizonPointer
+        // (which day 1 already fast-forwards past every window).
+        final LocalDateTime origin = (params != null && params.getFechaInicio() != null)
+            ? params.getFechaInicio().atTime(parseHoraInicio(params.getHoraInicio()))
+            : null;
+        final int scMinutos = params != null ? params.getScMinutos() : 0;
+
         planes.stream()
             .filter(PlanDeViaje::isEsActivo)
             .forEach(plan -> {
                 Envio e = envioById.get(plan.getIdEnvio());
                 if (e == null || e.getEstado() == EstadoEnvio.ENTREGADO || e.getEstado() == EstadoEnvio.CANCELADO) return;
-                for (Escala esc : plan.getEscalas()) {
-                    if (esc.isCompletada() || !iata.equals(esc.getCodigoAeropuerto())) continue;
-                    if (esc.getHoraLlegadaEst() != null && esc.getHoraLlegadaEst().toLocalDate().equals(today)) {
-                        int qty = plan.getCantidadMaletas() > 0 ? plan.getCantidadMaletas() : e.getCantidadMaletas();
+                boolean scOpen = ref == null || origin == null || scMinutos <= 0
+                    || !ref.isBefore(scWindowEnd(origin, scMinutos, e.getFechaHoraIngreso()));
+                if (!scOpen) return;
+                // escalas[j] models the leg LANDING at escalas[j].codigoAeropuerto: horaLlegadaEst
+                // is its arrival there, but horaSalidaEst is that leg's departure from the PREVIOUS
+                // stop (the envío's origen for j=0) — NOT from codigoAeropuerto. So arrivals key off
+                // codigoAeropuerto while departures key off the previous stop; the final destino
+                // never departs. Mirrors WarehouseOccupationCalculator.windowsForPlan().
+                List<Escala> escalas = plan.getEscalas();
+                for (int j = 0; j < escalas.size(); j++) {
+                    Escala esc = escalas.get(j);
+                    if (esc.isCompletada()) continue;
+                    String saleDesde = j == 0 ? e.getAeropuertoOrigen() : escalas.get(j - 1).getCodigoAeropuerto();
+                    int qty = plan.getCantidadMaletas() > 0 ? plan.getCantidadMaletas() : e.getCantidadMaletas();
+
+                    if (iata.equals(esc.getCodigoAeropuerto())
+                            && esc.getHoraLlegadaEst() != null && esc.getHoraLlegadaEst().toLocalDate().equals(today)
+                            && (ref == null || esc.getHoraLlegadaEst().isAfter(ref))) {
                         entrando.add(com.tasf.backend.dto.EnvioSummaryDTO.builder()
                             .idEnvio(plan.getIdEnvio())
                             .aeropuertoOrigen(e.getAeropuertoOrigen())
@@ -949,8 +974,9 @@ public class SimulationEngine {
                             .hora(esc.getHoraLlegadaEst().toLocalTime().toString().substring(0, 5))
                             .build());
                     }
-                    if (esc.getHoraSalidaEst() != null && esc.getHoraSalidaEst().toLocalDate().equals(today)) {
-                        int qty = plan.getCantidadMaletas() > 0 ? plan.getCantidadMaletas() : e.getCantidadMaletas();
+                    if (iata.equals(saleDesde)
+                            && esc.getHoraSalidaEst() != null && esc.getHoraSalidaEst().toLocalDate().equals(today)
+                            && (ref == null || esc.getHoraSalidaEst().isAfter(ref))) {
                         saliendo.add(com.tasf.backend.dto.EnvioSummaryDTO.builder()
                             .idEnvio(plan.getIdEnvio())
                             .aeropuertoOrigen(e.getAeropuertoOrigen())
@@ -2069,6 +2095,16 @@ public class SimulationEngine {
             }
         }
         return generated;
+    }
+
+    /** End of the Sc window (relative to `origin`, stepping by `scMinutos`) that would have
+     *  collected a shipment ingested at `fechaIngreso` — mirrors planificarSiguienteBloque()'s
+     *  windowing so "Planificado" can gate on it without needing horizonPointer (day 1 runs all
+     *  Sc blocks upfront, so horizonPointer alone can't tell which window is "current" in real time). */
+    private static LocalDateTime scWindowEnd(LocalDateTime origin, int scMinutos, LocalDateTime fechaIngreso) {
+        long minutosDesdeOrigen = Math.max(0, Duration.between(origin, fechaIngreso).toMinutes());
+        long ventana = minutosDesdeOrigen / scMinutos;
+        return origin.plusMinutes((ventana + 1) * scMinutos);
     }
 
     private PlanningResult planificarSiguienteBloque() {
