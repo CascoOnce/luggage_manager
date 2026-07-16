@@ -44,7 +44,7 @@ export default function App() {
   const [highlightedRoute, setHighlightedRoute] = useState(null)
   const [simClockMinutes, setSimClockMinutes] = useState(0)
   const [mapFlyTo, setMapFlyTo] = useState(null)
-  const [vueloMapFilter, setVueloMapFilter] = useState({ origin: '', dest: '', semaforo: [] })
+  const [vueloMapFilter, setVueloMapFilter] = useState({ origin: '', dest: '', semaforo: [], query: '' })
   const [airportMapFilter, setAirportMapFilter] = useState({ continent: '', pattern: '', semaforo: [] })
 
   const realStartRef = useRef(null)  // kept for legacy compat, unused
@@ -758,8 +758,8 @@ export default function App() {
   }, [activeVuelosWithTimes, simClockMinutes, originSet, destSet, displayState?.diaActual])
 
   const mapFilteredFlights = useMemo(() => {
-    const { origin, dest, semaforo } = vueloMapFilter
-    if (!origin && !dest && semaforo.length === 0) return backendFlights
+    const { origin, dest, semaforo, query } = vueloMapFilter
+    if (!origin && !dest && semaforo.length === 0 && !query) return backendFlights
     return backendFlights.filter(f => {
       if (origin && f.origin !== origin) return false
       if (dest && f.destination !== dest) return false
@@ -768,6 +768,7 @@ export default function App() {
         const s = pct === 0 ? 'vacio' : pct >= 60 ? (pct >= 85 ? 'rojo' : 'ambar') : 'verde'
         if (!semaforo.includes(s)) return false
       }
+      if (query && !(f.id?.toLowerCase().includes(query) || f.origin?.toLowerCase().includes(query) || f.destination?.toLowerCase().includes(query))) return false
       return true
     })
   }, [backendFlights, vueloMapFilter])
@@ -778,6 +779,7 @@ export default function App() {
     return activeVuelosWithTimes
       .filter((v) =>
         v.depMin >= startMin &&
+        v.depMin > simClockMinutes &&
         !isActiveAtMinute(simClockMinutes, v.depMin, v.arrMin, day) &&
         (!originSet || originSet.has(v.origin)) &&
         (!destSet || destSet.has(v.destination))

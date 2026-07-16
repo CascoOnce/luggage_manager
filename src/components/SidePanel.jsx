@@ -114,13 +114,22 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
   const [filterOrigin, setFilterOrigin] = useState('')
   const [filterDest,   setFilterDest]   = useState('')
   const [semaforoFilt, setSemaforoFilt] = useState([])
+  const [isFilterMode, setIsFilterMode] = useState(false) // false = búsqueda (transitoria), true = filtro (persiste)
 
   const list = tab === 'activos' ? (flights || []) : tab === 'planificados' ? (plannedFlights || []) : (cancelledFlights || [])
 
+  // Búsqueda: al cerrar la selección, se vuelve al estado anterior (se limpia el texto).
+  // Filtro: el texto permanece aunque se abra/cierre una selección.
+  const prevSelectedRef = useRef(selectedFlight)
+  useEffect(() => {
+    if (!isFilterMode && prevSelectedRef.current && !selectedFlight) setQuery('')
+    prevSelectedRef.current = selectedFlight
+  }, [selectedFlight, isFilterMode])
+
   // Propagate origin/dest/semaforo filters to map
   useEffect(() => {
-    onVueloFilterChange?.({ origin: filterOrigin, dest: filterDest, semaforo: semaforoFilt })
-  }, [filterOrigin, filterDest, semaforoFilt]) // eslint-disable-line react-hooks/exhaustive-deps
+    onVueloFilterChange?.({ origin: filterOrigin, dest: filterDest, semaforo: semaforoFilt, query: isFilterMode ? query.trim().toLowerCase() : '' })
+  }, [filterOrigin, filterDest, semaforoFilt, isFilterMode, query]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const originOptions = useMemo(() =>
     [...new Set(list.map(f => f.origin).filter(Boolean))].sort().filter(x => !filterDest || x !== filterDest)
@@ -143,20 +152,13 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
       )
     })
     const occ = f => f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
-    const parseLocalTime = (utcStr, huso) => {
-      const localStr = toLocalTime(utcStr, huso) ?? utcStr
-      if (!localStr || !localStr.includes(':')) return null
-      const [h, m] = localStr.split(':').map(Number)
-      if (!Number.isFinite(h) || !Number.isFinite(m)) return null
-      return h * 60 + m
-    }
-    
+
     return [...filtered].sort((a, b) => {
       let av, bv
       if (sortField === 'origin')           { av = (a.origin || '').toLowerCase();      bv = (b.origin || '').toLowerCase() }
       else if (sortField === 'dest')        { av = (a.destination || '').toLowerCase(); bv = (b.destination || '').toLowerCase() }
-      else if (sortField === 'departureTime') { av = parseLocalTime(a.horaSalida, a.husOrigen); bv = parseLocalTime(b.horaSalida, b.husOrigen) }
-      else if (sortField === 'arrivalTime')   { av = parseLocalTime(a.horaLlegada, a.husDestino); bv = parseLocalTime(b.horaLlegada, b.husDestino) }
+      else if (sortField === 'departureTime') { av = parseTimeStr2(a.horaSalida); bv = parseTimeStr2(b.horaSalida) }
+      else if (sortField === 'arrivalTime')   { av = parseTimeStr2(a.horaLlegada); bv = parseTimeStr2(b.horaLlegada) }
       else                                  { av = occ(a); bv = occ(b) }
       if (av == null && bv == null) return 0
       if (av == null) return 1; if (bv == null) return -1
@@ -182,11 +184,19 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
           CANCELADOS
         </button>
       </div>
-      <input
-        value={query} onChange={e => setQuery(e.target.value)}
-        placeholder="Buscar vuelo, origen, destino…"
-        style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '5px 8px', borderRadius: 2, outline: 'none', marginBottom: 6 }}
-      />
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+        <input
+          value={query} onChange={e => setQuery(e.target.value)}
+          placeholder={isFilterMode ? 'Filtrar vuelo…' : 'Buscar vuelo…'}
+          style={{ flex: 1, boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: `1px solid ${isFilterMode ? '#3d8bff88' : 'var(--border)'}`, color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13, padding: '5px 8px', borderRadius: 2, outline: 'none' }}
+        />
+        <label title="Modo filtro: el texto persiste al abrir/cerrar un vuelo" style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'var(--mono)', fontSize: 10, color: isFilterMode ? 'var(--blue)' : 'var(--muted)', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+          <input type="checkbox" checked={isFilterMode}
+            onChange={e => { setIsFilterMode(e.target.checked); setQuery('') }}
+            style={{ cursor: 'pointer' }} />
+          FILTRO
+        </label>
+      </div>
       <div style={{ display: 'flex', gap: 5, marginBottom: 6 }}>
         {[
           { label: 'Origen', val: filterOrigin, set: setFilterOrigin, opts: originOptions },
@@ -258,11 +268,9 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--text-bright)', fontWeight: 500 }}>{f.origin} → {f.destination}</div>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                   {f.currentLoad}/{f.capacity} · {f.type === 'continental' ? 'CONT' : 'INT'}
-                  {f.horaSalida && (() => {
-                    const sal = toLocalTime(f.horaSalida, f.husOrigen) ?? f.horaSalida
-                    const lleg = f.horaLlegada ? (toLocalTime(f.horaLlegada, f.husDestino) ?? f.horaLlegada) : ''
-                    return <span style={{ marginLeft: 6 }}>· ✈ {sal}{lleg ? `→${lleg}` : ''}</span>
-                  })()}
+                  {f.horaSalida && (
+                    <span style={{ marginLeft: 6 }}>· ✈ {f.horaSalida}{f.horaLlegada ? `→${f.horaLlegada}` : ''} UTC</span>
+                  )}
                 </div>
                 <div style={{ height: 2, background: 'rgba(255,255,255,0.07)', borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: color, transition: 'width 0.4s' }} />
