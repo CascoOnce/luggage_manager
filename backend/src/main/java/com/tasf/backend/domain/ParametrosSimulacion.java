@@ -19,8 +19,9 @@ public class ParametrosSimulacion {
     private Boolean esColapso = false;
     @Builder.Default
     private int minutosEscalaMinima = 10;
+    // Client (jun-2026): pickup time for bags at the FINAL destination warehouse = 15 min.
     @Builder.Default
-    private int minutosRecogidaDestino = 10;
+    private int minutosRecogidaDestino = 15;
     @Builder.Default
     private int umbralSemaforoVerde = 60;
     @Builder.Default

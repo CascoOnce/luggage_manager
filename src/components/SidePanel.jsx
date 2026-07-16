@@ -334,7 +334,7 @@ function EscalasDetalle({ escalas }) {
   )
 }
 
-function BuscarRutaPanel({ simState, onShowEnvioRoute, appMode }) {
+function BuscarRutaPanel({ simState, onShowEnvioRoute, onShowMaletaRoute, appMode }) {
   const [searchMode, setSearchMode] = useState('envio')   // 'maleta' | 'envio'
   const [inputId,  setInputId]  = useState('')
   const [loading,  setLoading]  = useState(false)
@@ -346,13 +346,20 @@ function BuscarRutaPanel({ simState, onShowEnvioRoute, appMode }) {
     if (!id) return
     setLoading(true); setError(null); setResult(null)
     try {
+      // Por maleta: dibuja la ruta de ESA maleta (su planVersion). Por envío: todas sus rutas.
+      if (searchMode === 'maleta' && appMode !== 'ops' && onShowMaletaRoute) {
+        const ruta = await api.getMaletaRuta(id)
+        setResult({ envioId: parseEnvioIdFromMaletaId(id) || id, escalas: ruta?.escalas || [], origen: ruta?.aeropuertoOrigen, destino: ruta?.aeropuertoDestino })
+        onShowMaletaRoute(id)
+        return
+      }
       let envioId = id
       if (searchMode === 'maleta') {
         const parsed = parseEnvioIdFromMaletaId(id)
         if (parsed) envioId = parsed
       }
-      const envio = appMode === 'ops' 
-        ? await api.getOpsEnvioById(envioId) 
+      const envio = appMode === 'ops'
+        ? await api.getOpsEnvioById(envioId)
         : await api.getEnvioById(envioId)
       const escalas = envio?.planDetalle?.escalas || []
       setResult({ envioId: envio.idEnvio, escalas, origen: envio.aeropuertoOrigen, destino: envio.aeropuertoDestino })
@@ -568,7 +575,7 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
   )
 }
 
-function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation, onSelectFlight, onEnvioSelect, mode, nowMin }) {
+function EnviosSection({ simState, onShowEnvioRoute, onShowMaletaRoute, airports, onFocusMapLocation, onSelectFlight, onEnvioSelect, mode, nowMin }) {
   const [view,       setView]       = useState('lista')
   const [estado,     setEstado]     = useState('')
   const [filterOrig, setFilterOrig] = useState('')
@@ -636,7 +643,7 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
         <EntregadosPanel mode={mode} simState={simState} nowMin={nowMin} airports={airports} />
       ) : (
         <>
-          <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} appMode={mode} />
+          <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} onShowMaletaRoute={onShowMaletaRoute} appMode={mode} />
           {/* Origen / Destino dropdowns */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 6 }}>
             <div>
@@ -1169,6 +1176,7 @@ export default function SidePanel({
   // Envíos
   simState,
   onShowEnvioRoute,
+  onShowMaletaRoute,
   // Almacén
   airports,
   threshold,
@@ -1259,7 +1267,7 @@ export default function SidePanel({
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} cancelledFlights={cancelledFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} onVueloFilterChange={onVueloFilterChange} nowMin={nowMin} />}
-            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} onSelectFlight={setSelectedFlight} onEnvioSelect={setSelectedEnvio} mode={mode} nowMin={nowMin} />}
+            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} onShowMaletaRoute={onShowMaletaRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} onSelectFlight={setSelectedFlight} onEnvioSelect={setSelectedEnvio} mode={mode} nowMin={nowMin} />}
             {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} onAirportFilterChange={onAirportFilterChange} onFocusMapLocation={onFocusMapLocation} />}
             {activeSection === 'config'  && <ConfigSection  onSimulationStarted={onSimulationStarted} onClose={() => onSectionChange(null)} theme={theme} />}
             {activeSection === 'filtros' && <FiltrosSection airports={airports} originIds={originIds} setOriginIds={setOriginIds} destIds={destIds} setDestIds={setDestIds} threshold={threshold} setThreshold={setThreshold} />}

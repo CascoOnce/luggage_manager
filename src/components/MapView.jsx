@@ -9,6 +9,19 @@ import DraggableWidget from './DraggableWidget'
 const AIRPORT_BOUNDS = [[-38, -82], [59, 80]]
 const SNAP_THRESHOLD_PX = 200
 
+// Colors for highlighted routes — one per route so a split envío's several routes are
+// distinguishable on the map.
+const HR_COLORS = ['#a3e635', '#38bdf8', '#f472b6', '#fbbf24', '#c084fc', '#2dd4bf']
+
+// "2026-08-08T10:16:00" → "08-08 10:16" for escala tooltips.
+function fmtHoraEscala(s) {
+  if (!s) return '—'
+  const [d, t] = String(s).split('T')
+  const hm = (t || '').slice(0, 5)
+  const md = (d || '').slice(5)
+  return md ? `${md} ${hm}` : hm
+}
+
 // Keeps the airport bounding box always filling the container.
 // On each resize: invalidate size, recalculate the minimum zoom so the
 // bounds fit exactly, then clamp current zoom if needed.
@@ -652,14 +665,25 @@ export default function MapView({
         showAllRoutes={showRoutes}
       />
 
-      {/* ── HIGHLIGHTED ENVIO ROUTE ───────────────────────────────────────── */}
-      {highlightedRoute?.legs.map((leg, i) => (
-        <Polyline
-          key={`hr-${highlightedRoute.envioId}-${i}`}
-          positions={[[leg.originLat, leg.originLng], [leg.destLat, leg.destLng]]}
-          pathOptions={{ color: '#a3e635', weight: 3, opacity: 0.9 }}
-        />
-      ))}
+      {/* ── HIGHLIGHTED ROUTE(S): envío (all versions) or maleta (one), with escala detail ── */}
+      {highlightedRoute?.routes?.map((route, ri) => {
+        const color = HR_COLORS[ri % HR_COLORS.length]
+        const multi = highlightedRoute.routes.length > 1
+        return route.escalas.map((leg, i) => (
+          <Polyline
+            key={`hr-${ri}-${i}`}
+            positions={[[leg.originLat, leg.originLng], [leg.destLat, leg.destLng]]}
+            pathOptions={{ color, weight: 3.5, opacity: 0.95 }}
+          >
+            <Tooltip sticky className="tasf-tooltip">
+              <strong>{leg.vuelo || '—'}</strong> · {leg.origen} → {leg.destino}<br />
+              {multi && <><span>Ruta v{route.version}</span><br /></>}
+              Sale: <strong>{fmtHoraEscala(leg.horaSalida)}</strong><br />
+              Llega: <strong>{fmtHoraEscala(leg.horaLlegada)}</strong>
+            </Tooltip>
+          </Polyline>
+        ))
+      })}
 
       {/* ── COUNTRY LABELS ────────────────────────────────────────────────── */}
       <CountryLabels airports={filteredAirports} />

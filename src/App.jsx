@@ -1170,42 +1170,70 @@ export default function App() {
   const selectFlightFromMap   = useCallback((id) => { setFlightSource('map'); setSelectedFlight(id) }, [])
   const selectFlightFromPanel = useCallback((id) => { setFlightSource('panel'); setSelectedFlight(id) }, [])
 
+  // Turn backend RutaDTO[] into map-ready routes (legs with coords + escala detail) and the
+  // bounding box that frames them all. Returns null when no leg has known airport coords.
+  const buildRutasParaMapa = useCallback((rutas) => {
+    const apMap = Object.fromEntries(clockedAirports.map((a) => [a.id, a]))
+    const routes = (rutas || []).map((r) => ({
+      version: r.version,
+      escalas: (r.escalas || []).map((e) => {
+        const o = apMap[e.aeropuertoOrigen], d = apMap[e.aeropuertoDestino]
+        if (!o || !d) return null
+        return {
+          vuelo: e.codigoVuelo,
+          origen: e.aeropuertoOrigen, destino: e.aeropuertoDestino,
+          horaSalida: e.horaSalidaEst, horaLlegada: e.horaLlegadaEst,
+          completada: e.completada,
+          originLat: o.lat, originLng: o.lng, destLat: d.lat, destLng: d.lng,
+        }
+      }).filter(Boolean),
+    })).filter((r) => r.escalas.length > 0)
+    if (routes.length === 0) return null
+    const lats = routes.flatMap((r) => r.escalas.flatMap((e) => [e.originLat, e.destLat]))
+    const lngs = routes.flatMap((r) => r.escalas.flatMap((e) => [e.originLng, e.destLng]))
+    return { routes, bounds: [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]] }
+  }, [clockedAirports])
+
+  // Show ALL routes an envío's bags take (a split envío has several) with their escala detail.
   const handleShowEnvioRoute = useCallback(async (envioId) => {
     try {
-      const envio = await api.getEnvioById(envioId)
-      // Each escala represents a LEG, keyed by its destination airport (see
-      // RouteCandidate.toPlan on the backend) — escalas[i].codigoAeropuerto is
-      // where leg i ARRIVES, not a waypoint. The leg's origin is the envío's
-      // origin for i=0, or the previous escala's airport otherwise.
-      const escalas = [...(envio?.planDetalle?.escalas || [])].sort((a, b) => a.orden - b.orden)
-      if (escalas.length === 0) return
-      const apMap = Object.fromEntries(clockedAirports.map((a) => [a.id, a]))
-      const legs = []
-      let originIata = envio.aeropuertoOrigen
-      for (let i = 0; i < escalas.length; i++) {
-        const destIata = escalas[i].codigoAeropuerto
-        const o = apMap[originIata]
-        const d = apMap[destIata]
-        if (o && d) legs.push({ originIata, destIata, originLat: o.lat, originLng: o.lng, destLat: d.lat, destLng: d.lng })
-        originIata = destIata
-      }
-      if (legs.length > 0) {
-        setHighlightedRoute({ envioId, legs })
-        setScreen('main')
-        // Fit the map to the full route so the highlighted polyline is always visible —
-        // makes every "show route" path (list click, buscar-ruta, drawer) actually move
-        // the map, instead of drawing a line somewhere off-screen.
-        const lats = legs.flatMap((l) => [l.originLat, l.destLat])
-        const lngs = legs.flatMap((l) => [l.originLng, l.destLng])
-        setMapFlyTo({
-          bounds: [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]],
-          duration: 1.0,
+      let rutas = null
+      try { rutas = await api.getEnvioRutas(envioId) } catch { rutas = null }
+      // Fallback (e.g. ops mode has no /rutas endpoint): a single route from the envío detail.
+      if (!rutas || rutas.length === 0) {
+        const envio = await api.getEnvioById(envioId)
+        const escalas = [...(envio?.planDetalle?.escalas || [])].sort((a, b) => a.orden - b.orden)
+        let originIata = envio?.aeropuertoOrigen
+        const det = escalas.map((esc) => {
+          const leg = { codigoVuelo: esc.codigoVuelo, aeropuertoOrigen: originIata, aeropuertoDestino: esc.codigoAeropuerto, horaSalidaEst: esc.horaSalidaEst, horaLlegadaEst: esc.horaLlegadaEst }
+          originIata = esc.codigoAeropuerto
+          return leg
         })
+        rutas = det.length ? [{ version: 1, escalas: det }] : []
       }
+      const built = buildRutasParaMapa(rutas)
+      if (!built) return
+      setHighlightedRoute({ envioId, routes: built.routes })
+      setScreen('main')
+      setMapFlyTo({ bounds: built.bounds, duration: 1.0 })
     } catch (e) {
       console.error('handleShowEnvioRoute', e)
     }
-  }, [clockedAirports])
+  }, [buildRutasParaMapa])
+
+  // Show the single route a specific maleta follows (its plan version).
+  const handleShowMaletaRoute = useCallback(async (maletaId) => {
+    try {
+      const ruta = await api.getMaletaRuta(maletaId)
+      const built = buildRutasParaMapa(ruta ? [ruta] : [])
+      if (!built) return
+      setHighlightedRoute({ maletaId, routes: built.routes })
+      setScreen('main')
+      setMapFlyTo({ bounds: built.bounds, duration: 1.0 })
+    } catch (e) {
+      console.error('handleShowMaletaRoute', e)
+    }
+  }, [buildRutasParaMapa])
   const handleCancelFlight = useCallback(async (codigoVuelo, aplicaDesde = 'HOY') => {
     try {
       // cancelFlight returns the fresh SimulationStateDTO with cancelaciones already included.
@@ -1366,6 +1394,7 @@ export default function App() {
                 setMapSelectedAirport={setMapSelectedAirport}
                 simState={simState}
                 onShowEnvioRoute={handleShowEnvioRoute}
+                onShowMaletaRoute={handleShowMaletaRoute}
                 airports={clockedAirports}
                 onVueloFilterChange={setVueloMapFilter}
                 onAirportFilterChange={setAirportMapFilter}

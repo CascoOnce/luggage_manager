@@ -160,6 +160,22 @@ public class SimulationController {
         return ResponseEntity.ok(simulationEngine.getEnviosByFlight(code));
     }
 
+    /** All routes an envío's bags take (a split envío has several) — for drawing on the map on demand. */
+    @GetMapping("/envios/{id}/rutas")
+    public ResponseEntity<List<com.tasf.backend.dto.RutaDTO>> rutasByEnvio(@PathVariable("id") String id) {
+        if (!simulationEngine.estaInicializada()) return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(simulationEngine.getRutasDeEnvio(id));
+    }
+
+    /** The single route a specific maleta follows (its plan version). */
+    @GetMapping("/maletas/{id}/ruta")
+    public ResponseEntity<com.tasf.backend.dto.RutaDTO> rutaByMaleta(@PathVariable("id") String id) {
+        if (!simulationEngine.estaInicializada()) return ResponseEntity.noContent().build();
+        return simulationEngine.getRutaDeMaleta(id)
+            .map(ResponseEntity::ok)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Maleta not found"));
+    }
+
     @GetMapping("/airports/{iata}/inventory")
     public ResponseEntity<com.tasf.backend.dto.AirportInventoryDTO> airportInventory(@PathVariable String iata) {
         if (!simulationEngine.estaInicializada()) return ResponseEntity.noContent().build();

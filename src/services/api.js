@@ -248,6 +248,17 @@ export const api = {
     return request(`/flights/${code}/envios`)
   }),
 
+  // All routes an envío's bags take (a split envío returns several). Each route carries its
+  // escalas with flight code, airports and estimated times — for drawing on the map on demand.
+  getEnvioRutas: async (id) => withHandling('getEnvioRutas', async () => {
+    return request(`/envios/${encodeURIComponent(id)}/rutas`)
+  }),
+
+  // The single route a specific maleta follows (its plan version).
+  getMaletaRuta: async (id) => withHandling('getMaletaRuta', async () => {
+    return request(`/maletas/${encodeURIComponent(id)}/ruta`)
+  }),
+
   getOpsEnviosByFlight: async (code) => withHandling('getOpsEnviosByFlight', async () => {
     return request(`/ops/flights/${code}/envios`)
   }),

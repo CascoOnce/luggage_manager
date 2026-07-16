@@ -191,7 +191,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
   const [fechaInicio, setFechaInicio] = useState('2026-06-01')
   const [horaInicio, setHoraInicio] = useState('00:00')
   const [escalaMinima, setEscalaMinima] = useState(10)
-  const [tiempoRecogida, setTiempoRecogida] = useState(10)
+  const [tiempoRecogida, setTiempoRecogida] = useState(15)
   const [semaforo, setSemaforo] = useState({ verde: 60, ambar: 85 })
   const [umbralColapso, setUmbralColapso] = useState(50)
   const [cancelacionesAleatorias, setCancelacionesAleatorias] = useState(false)

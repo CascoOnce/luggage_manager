@@ -849,6 +849,63 @@ public class SimulationEngine {
             .map(envio -> toEnvioDto(envio, true, latestPlanByEnvio.get(envio.getIdEnvio())));
     }
 
+    /** All routes an envío's bags take. A split envío has several versions (one route each);
+     *  the frontend draws them all on the map with their escala detail. */
+    public synchronized List<com.tasf.backend.dto.RutaDTO> getRutasDeEnvio(String idEnvio) {
+        Envio envio = envios.stream()
+            .filter(e -> e.getIdEnvio().equals(idEnvio))
+            .findFirst().orElse(null);
+        if (envio == null) return List.of();
+        return planes.stream()
+            .filter(p -> p.getIdEnvio().equals(idEnvio))
+            .sorted(Comparator.comparingInt(PlanDeViaje::getVersion))
+            .map(p -> toRutaDto(envio, p))
+            .collect(Collectors.toList());
+    }
+
+    /** The single route a specific maleta follows (the plan version matching its planVersion). */
+    public synchronized Optional<com.tasf.backend.dto.RutaDTO> getRutaDeMaleta(String idMaleta) {
+        Maleta maleta = maletas.stream()
+            .filter(m -> m.getIdMaleta().equals(idMaleta))
+            .findFirst().orElse(null);
+        if (maleta == null) return Optional.empty();
+        Envio envio = envios.stream()
+            .filter(e -> e.getIdEnvio().equals(maleta.getIdEnvio()))
+            .findFirst().orElse(null);
+        if (envio == null) return Optional.empty();
+        return planes.stream()
+            .filter(p -> p.getIdEnvio().equals(maleta.getIdEnvio()) && p.getVersion() == maleta.getPlanVersion())
+            .findFirst()
+            .map(p -> toRutaDto(envio, p));
+    }
+
+    private com.tasf.backend.dto.RutaDTO toRutaDto(Envio envio, PlanDeViaje plan) {
+        List<Escala> escalas = plan.getEscalas() != null ? plan.getEscalas() : List.of();
+        List<com.tasf.backend.dto.EscalaDetalleDTO> detalle = new ArrayList<>();
+        for (int i = 0; i < escalas.size(); i++) {
+            Escala e = escalas.get(i);
+            // Escala stores only the leg destination; the origin is the envío origin for the
+            // first leg, or the previous stop's airport otherwise.
+            String origen = (i == 0) ? envio.getAeropuertoOrigen() : escalas.get(i - 1).getCodigoAeropuerto();
+            detalle.add(com.tasf.backend.dto.EscalaDetalleDTO.builder()
+                .orden(e.getOrden())
+                .codigoVuelo(e.getCodigoVuelo())
+                .aeropuertoOrigen(origen)
+                .aeropuertoDestino(e.getCodigoAeropuerto())
+                .horaSalidaEst(e.getHoraSalidaEst() != null ? e.getHoraSalidaEst().format(TS_FORMAT) : null)
+                .horaLlegadaEst(e.getHoraLlegadaEst() != null ? e.getHoraLlegadaEst().format(TS_FORMAT) : null)
+                .completada(e.isCompletada())
+                .build());
+        }
+        return com.tasf.backend.dto.RutaDTO.builder()
+            .version(plan.getVersion())
+            .cantidadMaletas(plan.getCantidadMaletas())
+            .aeropuertoOrigen(envio.getAeropuertoOrigen())
+            .aeropuertoDestino(envio.getAeropuertoDestino())
+            .escalas(detalle)
+            .build();
+    }
+
     public synchronized List<EnvioDTO> getEnviosByFlight(String codigoVuelo) {
         Map<String, PlanDeViaje> latestPlanByEnvio = buildLatestPlanByEnvio();
         Set<String> envioIds = planes.stream()
