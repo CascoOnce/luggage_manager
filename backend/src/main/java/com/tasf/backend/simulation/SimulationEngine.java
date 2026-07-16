@@ -357,6 +357,11 @@ public class SimulationEngine {
         this.fechaSimulada = params.getFechaInicio().plusDays(diaActual - 1).atStartOfDay();
 
         final LocalDateTime endOfDay = params.getFechaInicio().plusDays(diaActual).atStartOfDay();
+        // Project the NEW day's occupancy immediately (nowEpoch at day start) so the snap and the
+        // cachedState published during background planning carry THIS day's baseline/events — not
+        // the previous day's, replayed against the reset clock (which made day 1→2 look like a
+        // reset to 0%). finalizarOcupacionDelDia() refines it once planning completes.
+        updateWarehouseOccupation(endOfDay, fechaSimulada);
         // Full response (with envios) goes back to the /step caller; cache stays light.
         SimulationStateDTO snap = getEstado();
         this.cachedState = snap.toBuilder().envios(List.of()).build();
@@ -1568,6 +1573,16 @@ public class SimulationEngine {
     }
 
     private void updateWarehouseOccupation(LocalDateTime ref) {
+        updateWarehouseOccupation(ref, ref);
+    }
+
+    /** dayRef selects which simulated day's events/baseline to project (via minusSeconds(1),
+     *  see below); nowRef sets the instant used for ocupacionActual. They're the same for most
+     *  callers, but at a day boundary we want to project the NEW day's events while evaluating
+     *  ocupacionActual at the day START — so ocupacionActual == carryover baseline, not the
+     *  whole day's still-unplanned PENDIENTE bags piled open-ended at their origins (>100%). */
+    private void updateWarehouseOccupation(LocalDateTime dayRef, LocalDateTime nowRef) {
+        LocalDateTime ref = dayRef;
         // ── Actual mode (ref == null): count every EN_ALMACEN bag as-is (internal accuracy). ──
         if (ref == null) {
             Map<String, Long> counts = maletas.stream()
@@ -1654,7 +1669,7 @@ public class SimulationEngine {
         LocalDateTime dayStart = ref.minusSeconds(1).toLocalDate().atStartOfDay();
         long dayStartEpoch = dayStart.toEpochSecond(UTC);
         long dayEndEpoch = dayStart.plusDays(1).toEpochSecond(UTC);
-        long nowEpoch = ref.toEpochSecond(UTC);
+        long nowEpoch = nowRef.toEpochSecond(UTC);
 
         for (Aeropuerto a : aeropuertos) {
             List<long[]> evts = eventsByAirport.getOrDefault(a.getCodigoIATA(), List.of());
