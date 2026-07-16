@@ -298,6 +298,8 @@ export default function LiveScreen({ liveState, theme, onBack }) {
             airport={selectedAirport}
             vuelos={visibleFlights}
             onClose={() => setSelectedAirport(null)}
+            umbralVerde={threshold - 20}
+            umbralRojo={threshold}
           />
         </div>
 

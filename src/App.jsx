@@ -130,6 +130,14 @@ export default function App() {
     return m >= depMin || m < arrMin
   }
 
+  function evalOccupancyAtMinute(baseline, eventos, minuto) {
+    let occ = baseline ?? 0
+    for (const ev of eventos || []) {
+      if (ev.minuto <= minuto) occ += ev.delta
+    }
+    return Math.max(0, occ)
+  }
+
   function flightFractionAtMinute(nowMin, depMin, arrMin) {
     const total = (arrMin - depMin + 1440) % 1440
     if (total <= 0) return 0
@@ -551,6 +559,7 @@ export default function App() {
         // Override occupation and flights to 0 if simulation is cancelled to bypass stale backend state
         currentOccupation: hasActiveSim ? ocupFin : 0,
         ocupacionInicioDia: hasActiveSim ? ocupIni : 0,
+        eventosOcupacionDia: hasActiveSim ? (airport.eventosOcupacionDia ?? []) : [],
         warehouseCapacity: airport.warehouseCapacity ?? airport.capacidadAlmacen ?? 600,
         semaforo: hasActiveSim ? (airport.semaforo || 'verde') : 'azul',
         vuelosSalientes: hasActiveSim ? vuelosList.filter((v) => (v.origen || v.origin) === iata && v.estado === 'activo').length : 0,
@@ -587,7 +596,6 @@ export default function App() {
 
   const clockedAirports = useMemo(() => {
     if (!backendState?.enEjecucion) return normalizedAirports
-    const fraction = Math.min(simClockMinutes / 1440, 1)
 
     const nextDep = {}
     const nextArr = {}
@@ -654,7 +662,7 @@ export default function App() {
 
     return normalizedAirports.map((ap) => ({
       ...ap,
-      currentOccupation: Math.round(ap.ocupacionInicioDia + (ap.currentOccupation - ap.ocupacionInicioDia) * fraction),
+      currentOccupation: evalOccupancyAtMinute(ap.ocupacionInicioDia, ap.eventosOcupacionDia, simClockMinutes),
       nextDepartureWait: nextDep[ap.id] ?? Infinity,
       nextArrivalWait: nextArr[ap.id] ?? Infinity,
       debugDep: depFlightsConsidered[ap.id] || [],
@@ -1165,6 +1173,11 @@ export default function App() {
     }
   }, [screen, isOpsActive])
 
+  // mapSelectedAirport is a snapshot captured at click time; re-derive the live version from
+  // clockedAirports each render so occupancy/clock keep advancing while the drawer is open.
+  const liveSelectedAirport = mapSelectedAirport
+    ? (clockedAirports.find((a) => a.id === mapSelectedAirport.id) || mapSelectedAirport)
+    : null
   const handleCloseAirport = useCallback(() => setMapSelectedAirport(null), [])
   const handleCloseVuelo   = useCallback(() => { setMapSelectedVuelo(null); setSelectedFlight(null); setFlightSource(null) }, [])
   const selectFlightFromMap   = useCallback((id) => { setFlightSource('map'); setSelectedFlight(id) }, [])
@@ -1413,9 +1426,9 @@ export default function App() {
               />
             </div>
 
-            {/* KPIs / clocks — top-right */}
+            {/* KPIs / clocks — bottom-right */}
             <div style={{
-              position: 'absolute', top: 20, right: 20,
+              position: 'absolute', bottom: 20, right: 20,
               zIndex: 600,
               display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none',
             }}>
@@ -1425,6 +1438,19 @@ export default function App() {
               <DraggableWidget ref={clockWidgetRef} containerRef={mapContainerRef}>
                 <FloatingClocks backendState={backendState} simClockMinutes={simClockMinutes} simStartMinute={simStartMinuteRef.current} simStartedAt={simStartedAt} />
               </DraggableWidget>
+              {backendState && !backendState?.finalizada && (
+                <button
+                  onClick={() => setAutoStep((v) => !v)}
+                  style={{
+                    pointerEvents: 'auto', alignSelf: 'flex-end',
+                    background: 'var(--panel)', border: '1px solid var(--border)',
+                    color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12,
+                    padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+                  }}
+                >
+                  {autoStep ? '⏸ Pausar' : '▶ Reanudar'}
+                </button>
+              )}
             </div>
 
             {/* Flight cajetín — top-left, shifts right when side panel open */}
@@ -1447,10 +1473,13 @@ export default function App() {
             )}
 
             <DrawerAeropuerto
-              airport={mapSelectedAirport}
+              airport={liveSelectedAirport}
               vuelos={backendState?.vuelos || []}
               onClose={handleCloseAirport}
+              nowMinuteUtc={simClockMinutes}
               fetchInventory={isOpsActive ? api.getOpsAirportInventory : api.getAirportInventory}
+              umbralVerde={threshold - 20}
+              umbralRojo={threshold}
             />
             {flightSource === 'panel' && (
               <DrawerVuelo

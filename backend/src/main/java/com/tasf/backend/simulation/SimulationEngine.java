@@ -919,65 +919,108 @@ public class SimulationEngine {
             .collect(Collectors.toList());
     }
 
-    public synchronized com.tasf.backend.dto.AirportInventoryDTO getAirportInventory(String iata) {
+    public synchronized com.tasf.backend.dto.AirportInventoryDTO getAirportInventory(String iata, Integer nowMinUtc) {
         Map<String, Envio> envioById = envios.stream()
             .collect(Collectors.toMap(Envio::getIdEnvio, e -> e, (a, b) -> a));
 
-        // Envíos actualmente en almacén — use end-of-current-day as ref so that bags registered
-        // throughout the day (fechaHoraIngreso > horaInicio) appear in the inventory.
-        // This is consistent with updateWarehouseOccupation(endOfDay) used in inicializar().
-        LocalDateTime simRef = fechaSimulada != null
-            ? fechaSimulada.toLocalDate().plusDays(1).atStartOfDay()
-            : null;
-        Set<String> idsEnAlmacen = maletas.stream()
-            .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN && iata.equals(m.getUbicacionActual()))
-            .filter(m -> simRef == null || m.getFechaHoraLlegadaUbicacion() == null
-                || !m.getFechaHoraLlegadaUbicacion().isAfter(simRef))
-            .map(com.tasf.backend.domain.Maleta::getIdEnvio)
-            .collect(Collectors.toSet());
-        Map<String, Long> maletasPorEnvio = maletas.stream()
-            .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN && iata.equals(m.getUbicacionActual()))
-            .filter(m -> simRef == null || m.getFechaHoraLlegadaUbicacion() == null
-                || !m.getFechaHoraLlegadaUbicacion().isAfter(simRef))
-            .collect(Collectors.groupingBy(com.tasf.backend.domain.Maleta::getIdEnvio, Collectors.counting()));
+        // Point-in-time inventory: a bag is physically in `iata`'s warehouse right now iff its
+        // plan's capacity window for that airport covers `ref`. Reuses the same projection as
+        // updateWarehouseOccupation() so the list is consistent with the occupancy percentage.
+        // `maletas`/EstadoMaleta is NOT usable here: avanzarDia() resolves a whole simulated day
+        // in one shot (endLimit=null) before the frontend finishes animating it, so bag state is
+        // already fast-forwarded to end-of-day while the UI is still mid-day.
+        final LocalDateTime ref = (nowMinUtc != null && fechaSimulada != null)
+            ? fechaSimulada.toLocalDate().atStartOfDay().plusMinutes(nowMinUtc)
+            : fechaSimulada;
 
-        // Determine which envíos have an active plan so the UI can show "Con ruta" vs "Sin ruta".
-        Set<String> conRuta = planes.stream()
-            .filter(PlanDeViaje::isEsActivo)
-            .map(PlanDeViaje::getIdEnvio)
-            .collect(Collectors.toSet());
+        Map<String, PlanDeViaje> latestPlan = buildLatestPlanByEnvio();
+        Map<String, Long> activeBagCountByEnvio = maletas.stream()
+            .filter(m -> m.getEstado() != EstadoMaleta.ENTREGADA && m.getEstado() != EstadoMaleta.CANCELADA)
+            .collect(Collectors.groupingBy(Maleta::getIdEnvio, Collectors.counting()));
 
-        List<com.tasf.backend.dto.EnvioSummaryDTO> enAlmacen = idsEnAlmacen.stream()
-            .map(id -> {
-                Envio e = envioById.get(id);
-                if (e == null) return null;
-                return com.tasf.backend.dto.EnvioSummaryDTO.builder()
-                    .idEnvio(id)
-                    .aeropuertoOrigen(e.getAeropuertoOrigen())
-                    .aeropuertoDestino(e.getAeropuertoDestino())
-                    .cantidadMaletas(maletasPorEnvio.getOrDefault(id, 0L).intValue())
-                    .estado(e.getEstado().name())
-                    .planificado(conRuta.contains(id))
-                    .build();
-            })
-            .filter(java.util.Objects::nonNull)
-            .sorted(java.util.Comparator.comparing(com.tasf.backend.dto.EnvioSummaryDTO::getIdEnvio))
-            .collect(Collectors.toList());
+        // Bags are shown while physically waiting in a warehouse in any of the 3 states:
+        //  · origen  — ingresó, espera su primer vuelo        (windowsForPlan: origin window)
+        //  · escala  — llegó a un hub, espera la conexión     (windowsForPlan: hub windows)
+        //  · destino — llegó al destino final, espera recojo  (llegadaFinal + minutosRecogidaDestino)
+        // Estado ENTREGADO/EN_TRANSITO NO se filtra: avanzarDia() resuelve el día completo antes
+        // de que el frontend lo anime, así que el estado va adelantado — la presencia se deriva
+        // de las ventanas del plan contra `ref`, no del EstadoEnvio.
+        final int recogida = params != null ? params.getMinutosRecogidaDestino() : 15;
+        List<com.tasf.backend.dto.EnvioSummaryDTO> enAlmacen = new ArrayList<>();
+        for (Envio e : envios) {
+            if (e.getEstado() == EstadoEnvio.CANCELADO) continue;
+            long qty = activeBagCountByEnvio.getOrDefault(e.getIdEnvio(), 0L);
+            int displayQty = (int) (qty > 0 ? qty : e.getCantidadMaletas());
+            if (displayQty <= 0) continue;
+            PlanDeViaje plan = latestPlan.get(e.getIdEnvio());
+
+            boolean presente;
+            if (plan == null) {
+                // PENDIENTE (no plan yet): bags sit at the origin from fechaHoraIngreso onward.
+                presente = iata.equals(e.getAeropuertoOrigen())
+                    && (ref == null || !e.getFechaHoraIngreso().isAfter(ref));
+            } else {
+                // windowsForPlan now covers origen + escalas + destino (bounded by `recogida`),
+                // same helper updateWarehouseOccupation() uses — keeps the list and the % aligned.
+                presente = WarehouseOccupationCalculator
+                    .windowsForPlan(plan, e.getAeropuertoOrigen(), e.getFechaHoraIngreso(), recogida)
+                    .stream()
+                    .anyMatch(w -> iata.equals(w.airport())
+                        && (ref == null || !w.from().isAfter(ref))
+                        && (w.to() == null || ref == null || w.to().isAfter(ref)));
+            }
+            if (!presente) continue;
+
+            enAlmacen.add(com.tasf.backend.dto.EnvioSummaryDTO.builder()
+                .idEnvio(e.getIdEnvio())
+                .aeropuertoOrigen(e.getAeropuertoOrigen())
+                .aeropuertoDestino(e.getAeropuertoDestino())
+                .cantidadMaletas(displayQty)
+                .estado(e.getEstado().name())
+                .planificado(plan != null)
+                .build());
+        }
+        enAlmacen.sort(Comparator.comparing(com.tasf.backend.dto.EnvioSummaryDTO::getIdEnvio));
 
         // Escalas planificadas hoy en este aeropuerto
         LocalDate today = fechaSimulada != null ? fechaSimulada.toLocalDate() : LocalDate.now();
         List<com.tasf.backend.dto.EnvioSummaryDTO> entrando = new java.util.ArrayList<>();
         List<com.tasf.backend.dto.EnvioSummaryDTO> saliendo = new java.util.ArrayList<>();
 
+        // Sc-gated reveal: day 1 plans every Sc block upfront (see inicializar()), so a shipment's
+        // route exists in memory long before its own Sc window would have closed in real time. To
+        // still surface "Planificado" incrementally (nothing in Sc 1, then each shipment's escalas
+        // appear once the Sc window it was ingested in has closed — never earlier), derive that
+        // shipment's Sc window end from its fechaHoraIngreso instead of relying on horizonPointer
+        // (which day 1 already fast-forwards past every window).
+        final LocalDateTime origin = (params != null && params.getFechaInicio() != null)
+            ? params.getFechaInicio().atTime(parseHoraInicio(params.getHoraInicio()))
+            : null;
+        final int scMinutos = params != null ? params.getScMinutos() : 0;
+
         planes.stream()
             .filter(PlanDeViaje::isEsActivo)
             .forEach(plan -> {
                 Envio e = envioById.get(plan.getIdEnvio());
                 if (e == null || e.getEstado() == EstadoEnvio.ENTREGADO || e.getEstado() == EstadoEnvio.CANCELADO) return;
-                for (Escala esc : plan.getEscalas()) {
-                    if (esc.isCompletada() || !iata.equals(esc.getCodigoAeropuerto())) continue;
-                    if (esc.getHoraLlegadaEst() != null && esc.getHoraLlegadaEst().toLocalDate().equals(today)) {
-                        int qty = plan.getCantidadMaletas() > 0 ? plan.getCantidadMaletas() : e.getCantidadMaletas();
+                boolean scOpen = ref == null || origin == null || scMinutos <= 0
+                    || !ref.isBefore(scWindowEnd(origin, scMinutos, e.getFechaHoraIngreso()));
+                if (!scOpen) return;
+                // escalas[j] models the leg LANDING at escalas[j].codigoAeropuerto: horaLlegadaEst
+                // is its arrival there, but horaSalidaEst is that leg's departure from the PREVIOUS
+                // stop (the envío's origen for j=0) — NOT from codigoAeropuerto. So arrivals key off
+                // codigoAeropuerto while departures key off the previous stop; the final destino
+                // never departs. Mirrors WarehouseOccupationCalculator.windowsForPlan().
+                List<Escala> escalas = plan.getEscalas();
+                for (int j = 0; j < escalas.size(); j++) {
+                    Escala esc = escalas.get(j);
+                    if (esc.isCompletada()) continue;
+                    String saleDesde = j == 0 ? e.getAeropuertoOrigen() : escalas.get(j - 1).getCodigoAeropuerto();
+                    int qty = plan.getCantidadMaletas() > 0 ? plan.getCantidadMaletas() : e.getCantidadMaletas();
+
+                    if (iata.equals(esc.getCodigoAeropuerto())
+                            && esc.getHoraLlegadaEst() != null && esc.getHoraLlegadaEst().toLocalDate().equals(today)
+                            && (ref == null || esc.getHoraLlegadaEst().isAfter(ref))) {
                         entrando.add(com.tasf.backend.dto.EnvioSummaryDTO.builder()
                             .idEnvio(plan.getIdEnvio())
                             .aeropuertoOrigen(e.getAeropuertoOrigen())
@@ -988,8 +1031,9 @@ public class SimulationEngine {
                             .hora(esc.getHoraLlegadaEst().toLocalTime().toString().substring(0, 5))
                             .build());
                     }
-                    if (esc.getHoraSalidaEst() != null && esc.getHoraSalidaEst().toLocalDate().equals(today)) {
-                        int qty = plan.getCantidadMaletas() > 0 ? plan.getCantidadMaletas() : e.getCantidadMaletas();
+                    if (iata.equals(saleDesde)
+                            && esc.getHoraSalidaEst() != null && esc.getHoraSalidaEst().toLocalDate().equals(today)
+                            && (ref == null || esc.getHoraSalidaEst().isAfter(ref))) {
                         saliendo.add(com.tasf.backend.dto.EnvioSummaryDTO.builder()
                             .idEnvio(plan.getIdEnvio())
                             .aeropuertoOrigen(e.getAeropuertoOrigen())
@@ -1528,75 +1572,92 @@ public class SimulationEngine {
             return;
         }
 
-        // ── Projection mode (ref != null): PEAK simultaneous occupancy per airport. ──
-        // A bag occupies its current warehouse only during [arrival, departure]. Counting every
-        // staged bag at once (the old behaviour) summed non-overlapping throughput and produced
-        // absurd numbers (e.g. 228% at a hub that never holds more than ~18% at any instant).
-        // Instead we sweep each bag's presence interval and report the true peak overlap, which
-        // is what the SA capacity model bounds to ≤ warehouse capacity.
+        // ── Projection mode (ref != null): real event-driven occupancy, continuous across days. ──
+        // Each active envío's assigned plan is walked leg-by-leg (mirroring
+        // RouteCandidate.getCapacityWindows()) to produce arrival(+qty)/departure(-qty) events
+        // per airport. No reset at day boundaries: baseline for the day is the true cumulative
+        // stock carried over from prior days, not a recomputed "peak of day".
         final Map<String, PlanDeViaje> latestPlan = buildLatestPlanByEnvio();
-        final Map<String, Envio> envioById = envios.stream()
-            .collect(Collectors.toMap(Envio::getIdEnvio, e -> e, (a, b) -> a));
         final java.time.ZoneOffset UTC = java.time.ZoneOffset.UTC;
 
-        // airport -> list of {epochSecond, delta} events (+1 on arrival, -1 on departure)
-        Map<String, List<long[]>> events = new HashMap<>();
-        for (Maleta m : maletas) {
-            if (m.getEstado() != EstadoMaleta.EN_ALMACEN || m.getUbicacionActual() == null) continue;
-            LocalDateTime arr = m.getFechaHoraLlegadaUbicacion();
-            long start = (arr == null ? LocalDateTime.MIN : arr).toEpochSecond(UTC);
-            LocalDateTime dep = departureFromLocation(m, latestPlan, envioById);
-            long end = (dep == null ? LocalDateTime.MAX : dep).toEpochSecond(UTC);
-            if (end <= start) end = start + 1;
-            List<long[]> list = events.computeIfAbsent(m.getUbicacionActual(), k -> new ArrayList<>());
-            list.add(new long[]{start, 1});
-            list.add(new long[]{end, -1});
-        }
+        Map<String, Long> activeBagCountByEnvio = maletas.stream()
+            .filter(m -> m.getEstado() != EstadoMaleta.ENTREGADA && m.getEstado() != EstadoMaleta.CANCELADA)
+            .collect(Collectors.groupingBy(Maleta::getIdEnvio, Collectors.counting()));
+        Map<String, Long> deliveredBagCountByEnvio = maletas.stream()
+            .filter(m -> m.getEstado() == EstadoMaleta.ENTREGADA)
+            .collect(Collectors.groupingBy(Maleta::getIdEnvio, Collectors.counting()));
+        final int recogidaMinutos = params != null ? params.getMinutosRecogidaDestino() : 15;
 
-        for (Aeropuerto a : aeropuertos) {
-            int peak = peakOverlap(events.get(a.getCodigoIATA()));
-            // Both endpoints = the day's realistic peak, so the frontend semáforo shows a
-            // steady honest value instead of interpolating between two inconsistent metrics
-            // (the old raw start count summed all same-day throughput and read ~81%).
-            a.setOcupacionActual(peak);
-            a.setOcupacionInicioDia(peak);
-        }
-    }
+        Map<String, List<long[]>> eventsByAirport = new HashMap<>();
+        for (Envio envio : envios) {
+            if (envio.getEstado() == EstadoEnvio.CANCELADO) continue;
+            PlanDeViaje plan = latestPlan.get(envio.getIdEnvio());
 
-    /** Maximum number of simultaneously-present bags from a list of (+1 arrival / -1 departure)
-     *  events. Ties at the same instant apply departures before arrivals so a bag that leaves
-     *  exactly when another arrives doesn't double-count. */
-    private int peakOverlap(List<long[]> evts) {
-        if (evts == null || evts.isEmpty()) return 0;
-        evts.sort((x, y) -> x[0] != y[0] ? Long.compare(x[0], y[0]) : Long.compare(x[1], y[1]));
-        int running = 0, peak = 0;
-        for (long[] e : evts) {
-            running += (int) e[1];
-            if (running > peak) peak = running;
-        }
-        return Math.max(0, peak);
-    }
+            // Delivered: only the destino "esperando recojo" window applies — bags already
+            // left origin/hubs. windowsForPlan's own destino window won't fire here because
+            // processDeliveries flips estado to ENTREGADO in the same avanzarDia pass as
+            // arrival, so this branch derives the window straight from the plan's last leg.
+            if (envio.getEstado() == EstadoEnvio.ENTREGADO) {
+                long deliveredQty = deliveredBagCountByEnvio.getOrDefault(envio.getIdEnvio(), 0L);
+                if (deliveredQty == 0 || plan == null) continue;
+                List<Escala> escs = plan.getEscalas();
+                if (escs == null || escs.isEmpty()) continue;
+                Escala last = escs.get(escs.size() - 1);
+                if (last.getHoraLlegadaEst() == null) continue;
+                List<long[]> list = eventsByAirport.computeIfAbsent(last.getCodigoAeropuerto(), k -> new ArrayList<>());
+                list.add(new long[]{last.getHoraLlegadaEst().toEpochSecond(UTC), deliveredQty});
+                list.add(new long[]{last.getHoraLlegadaEst().plusMinutes(recogidaMinutos).toEpochSecond(UTC), -deliveredQty});
+                continue;
+            }
 
-    /** Planned departure time of this bag from its CURRENT location, or null if it has no
-     *  onward leg from there (stays indefinitely). */
-    private LocalDateTime departureFromLocation(Maleta m,
-            Map<String, PlanDeViaje> latestPlan, Map<String, Envio> envioById) {
-        PlanDeViaje p = latestPlan.get(m.getIdEnvio());
-        if (p == null || p.getEscalas() == null || p.getEscalas().isEmpty()) return null;
-        Envio e = envioById.get(m.getIdEnvio());
-        String origen = e != null ? e.getAeropuertoOrigen() : null;
-        String loc = m.getUbicacionActual();
-        List<Escala> escalas = p.getEscalas();
-        for (int i = 0; i < escalas.size(); i++) {
-            // Leg i departs from: the envio origin (first leg) or the previous stop's airport.
-            String legOrigin = (i == 0) ? origen : escalas.get(i - 1).getCodigoAeropuerto();
-            if (loc != null && loc.equals(legOrigin)) {
-                return escalas.get(i).getHoraSalidaEst();
+            long qty = activeBagCountByEnvio.getOrDefault(envio.getIdEnvio(), 0L);
+
+            // PENDIENTE envíos without maletas/plan: the bags are physically at the origin
+            // airport warehouse from fechaHoraIngreso but haven't been generated yet (no
+            // plan assigned). Emit an open-ended arrival event so the warehouse projection
+            // counts them correctly. Without this, PENDIENTE envíos are invisible and the
+            // occupation under-reports actual warehouse usage.
+            if (qty == 0 || plan == null) {
+                long pendienteQty = envio.getCantidadMaletas();
+                if (pendienteQty > 0) {
+                    List<long[]> list = eventsByAirport.computeIfAbsent(envio.getAeropuertoOrigen(), k -> new ArrayList<>());
+                    list.add(new long[]{envio.getFechaHoraIngreso().toEpochSecond(UTC), pendienteQty});
+                    // No departure event: bags sit indefinitely until planned/departed
+                }
+                continue;
+            }
+            for (WarehouseOccupationCalculator.CapacityWindow w : WarehouseOccupationCalculator
+                    .windowsForPlan(plan, envio.getAeropuertoOrigen(), envio.getFechaHoraIngreso(), recogidaMinutos)) {
+                List<long[]> list = eventsByAirport.computeIfAbsent(w.airport(), k -> new ArrayList<>());
+                list.add(new long[]{w.from().toEpochSecond(UTC), qty});
+                if (w.to() != null) {
+                    list.add(new long[]{w.to().toEpochSecond(UTC), -qty});
+                }
             }
         }
-        return null;
-    }
 
+        // The projected day is the one containing the last instant BEFORE `ref`. Callers pass
+        // `ref` either as the EXCLUSIVE end-of-day boundary (next midnight, e.g. endOfDay1 =
+        // fechaInicio.plusDays(1)) or as the live fechaSimulada (mid-day). Using
+        // ref.toLocalDate() directly keyed every event to the NEXT day for the midnight
+        // callers, so the frontend (which evaluates at minute-of-current-day) saw a garbage
+        // timeline and the baseline swallowed the whole current day. Subtracting one second
+        // maps a midnight boundary back to the day it closes while leaving a mid-day ref on
+        // its own day.
+        LocalDateTime dayStart = ref.minusSeconds(1).toLocalDate().atStartOfDay();
+        long dayStartEpoch = dayStart.toEpochSecond(UTC);
+        long dayEndEpoch = dayStart.plusDays(1).toEpochSecond(UTC);
+        long nowEpoch = ref.toEpochSecond(UTC);
+
+        for (Aeropuerto a : aeropuertos) {
+            List<long[]> evts = eventsByAirport.getOrDefault(a.getCodigoIATA(), List.of());
+            WarehouseOccupationCalculator.DayProjection proj =
+                WarehouseOccupationCalculator.projectAirport(evts, dayStartEpoch, dayEndEpoch, nowEpoch);
+            a.setOcupacionInicioDia(proj.baseline());
+            a.setOcupacionActual(proj.ocupacionActual());
+            a.setEventosOcupacionDia(proj.eventos());
+        }
+    }
     private void accumulateOccupationSample() {
         for (Aeropuerto aeropuerto : aeropuertos) {
             int count = aeropuerto.getOcupacionActual();
@@ -1677,6 +1738,14 @@ public class SimulationEngine {
                 .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN)
                 .filter(m -> kpiToday == null || m.getFechaIngreso() == null || !m.getFechaIngreso().isAfter(kpiToday))
                 .collect(Collectors.groupingBy(Maleta::getUbicacionActual, Collectors.counting()));
+            // Include PENDIENTE envíos (no maletas yet) at their origin airport
+            Set<String> enviosConMaletas = maletas.stream().map(Maleta::getIdEnvio).collect(Collectors.toSet());
+            for (Envio e : envios) {
+                if (e.getEstado() != EstadoEnvio.PENDIENTE) continue;
+                if (enviosConMaletas.contains(e.getIdEnvio())) continue;
+                if (kpiToday != null && e.getFechaHoraIngreso().toLocalDate().isAfter(kpiToday)) continue;
+                liveOcupacion.merge(e.getAeropuertoOrigen(), (long) e.getCantidadMaletas(), Long::sum);
+            }
             ocupacionPromedio = aeropuertos.stream()
                 .mapToDouble(a -> {
                     if (a.getCapacidadAlmacen() == 0) return 0.0;
@@ -1706,6 +1775,16 @@ public class SimulationEngine {
             .filter(m -> m.getEstado() == EstadoMaleta.EN_ALMACEN)
             .filter(m -> today == null || m.getFechaIngreso() == null || !m.getFechaIngreso().isAfter(today))
             .count();
+        // PENDIENTE envíos have no maletas generated yet, but their bags are physically in the
+        // origin warehouse. Count them so the global occupation KPI reflects actual warehouse usage.
+        Set<String> enviosWithMaletas = maletas.stream().map(Maleta::getIdEnvio).collect(Collectors.toSet());
+        long pendienteBags = envios.stream()
+            .filter(e -> e.getEstado() == EstadoEnvio.PENDIENTE)
+            .filter(e -> !enviosWithMaletas.contains(e.getIdEnvio()))
+            .filter(e -> today == null || !e.getFechaHoraIngreso().toLocalDate().isAfter(today))
+            .mapToLong(Envio::getCantidadMaletas)
+            .sum();
+        cargaAlmacen += pendienteBags;
         long capAlmacen = aeropuertos.stream().mapToLong(Aeropuerto::getCapacidadAlmacen).sum();
         double ocupacionAlmacenes = capAlmacen == 0 ? 0.0 : cargaAlmacen * 100.0 / capAlmacen;
 
@@ -1771,6 +1850,12 @@ public class SimulationEngine {
             .capacidadAlmacen(capacidad)
             .ocupacionActual(ocupacion)
             .ocupacionInicioDia(airport.getOcupacionInicioDia())
+            .eventosOcupacionDia(airport.getEventosOcupacionDia().stream()
+                .map(e -> com.tasf.backend.dto.OcupacionEventoDTO.builder()
+                    .minuto(e.getMinuto())
+                    .delta(e.getDelta())
+                    .build())
+                .toList())
             .semaforo(semaforo)
             .maletasRecibidas(airport.getMaletasRecibidas())
             .maletasEnviadas(airport.getMaletasEnviadas())
@@ -2067,6 +2152,16 @@ public class SimulationEngine {
             }
         }
         return generated;
+    }
+
+    /** End of the Sc window (relative to `origin`, stepping by `scMinutos`) that would have
+     *  collected a shipment ingested at `fechaIngreso` — mirrors planificarSiguienteBloque()'s
+     *  windowing so "Planificado" can gate on it without needing horizonPointer (day 1 runs all
+     *  Sc blocks upfront, so horizonPointer alone can't tell which window is "current" in real time). */
+    private static LocalDateTime scWindowEnd(LocalDateTime origin, int scMinutos, LocalDateTime fechaIngreso) {
+        long minutosDesdeOrigen = Math.max(0, Duration.between(origin, fechaIngreso).toMinutes());
+        long ventana = minutosDesdeOrigen / scMinutos;
+        return origin.plusMinutes((ventana + 1) * scMinutos);
     }
 
     private PlanningResult planificarSiguienteBloque() {

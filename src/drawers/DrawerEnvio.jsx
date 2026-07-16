@@ -75,6 +75,7 @@ function estadoColor(estado) {
   const e = estado.toUpperCase()
   if (e === 'ENTREGADO') return 'var(--green)'
   if (e === 'RETRASADO') return 'var(--red)'
+  if (e === 'PENDIENTE') return 'var(--blue)'
   return 'var(--amber)'
 }
 

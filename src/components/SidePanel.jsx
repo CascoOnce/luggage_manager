@@ -49,6 +49,11 @@ function minutesToHHMM2(totalMin) {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 }
 
+function formatWait(mins) {
+  if (mins < 60) return `${mins}m`
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`
+}
+
 export function toLocalTime(utcHHMM, huso) {
   if (!utcHHMM || huso == null) return null
   const utcMin = parseTimeStr2(utcHHMM)
@@ -830,25 +835,29 @@ function AlmacenSection({ airports, threshold, theme, setMapSelectedAirport, onA
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>
                   {ap.id} — {ap.name}
-                  {sortField === 'nextDeparture' && ap.nextDepartureWait !== Infinity && (
-                    <span style={{ color: 'var(--blue)', marginLeft: 8, fontSize: 11 }}>Sale en {ap.nextDepartureWait}m</span>
-                  )}
-                  {sortField === 'nextArrival' && ap.nextArrivalWait !== Infinity && (
-                    <span style={{ color: 'var(--blue)', marginLeft: 8, fontSize: 11 }}>Llega en {ap.nextArrivalWait}m</span>
-                  )}
                   {sortField === 'nextDeparture' && ap.debugDep && ap.debugDep.length > 0 && ap.nextDepartureWait !== Infinity && (
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                       {(() => {
                          const d = ap.debugDep.find(x => x.wait === ap.nextDepartureWait)
-                         return d ? <div key={d.id}>{d.id}: Sale a {d.time} (Esp={d.wait}m)</div> : null
+                         return d ? (
+                           <div key={d.id}>
+                             <span style={{ color: 'var(--blue)' }}>Sale en {formatWait(d.wait)}</span>
+                             {` - ${d.id.replace(/-\d{2}:\d{2}$/, '')} ${d.time} UTC`}
+                           </div>
+                         ) : null
                       })()}
                     </div>
                   )}
                   {sortField === 'nextArrival' && ap.debugArr && ap.debugArr.length > 0 && ap.nextArrivalWait !== Infinity && (
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                       {(() => {
                          const d = ap.debugArr.find(x => x.wait === ap.nextArrivalWait)
-                         return d ? <div key={d.id}>{d.id}: Llega a {d.time} (Esp={d.wait}m)</div> : null
+                         return d ? (
+                           <div key={d.id}>
+                             <span style={{ color: 'var(--blue)' }}>Llega en {formatWait(d.wait)}</span>
+                             {` - ${d.id.replace(/-\d{2}:\d{2}$/, '')} ${d.time} UTC`}
+                           </div>
+                         ) : null
                       })()}
                     </div>
                   )}
@@ -875,7 +884,7 @@ function ConfigSection({ onSimulationStarted, onClose, theme }) {
   const [fechaInicio,              setFechaInicio]              = useState('2026-06-01')
   const [horaInicio,               setHoraInicio]               = useState('00:00')
   const [escalaMinima,             setEscalaMinima]             = useState(10)
-  const [tiempoRecogida,           setTiempoRecogida]           = useState(10)
+  const [tiempoRecogida,           setTiempoRecogida]           = useState(15)
   const [semaforo,                 setSemaforo]                 = useState({ verde: 60, ambar: 85 })
   const [umbralColapso,            setUmbralColapso]            = useState(50)
   const [cancelacionesAleatorias,  setCancelacionesAleatorias]  = useState(false)

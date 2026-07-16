@@ -585,7 +585,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
               })}
 
               <div style={{ marginTop: 20 }}>
-                <span style={sectionHeaderStyle()}>Fecha y hora de inicio</span>
+                <span style={sectionHeaderStyle()}>Fecha y hora de inicio (UTC)</span>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <CustomDateInput
                     value={fechaInicio}

@@ -55,23 +55,19 @@ public class SimulationController {
         java.time.LocalDateTime fin = inicio.plusDays(params.getDias());
         
         log.info("Querying envios from {} to {}", inicio, fin);
-        Map<String, Integer> husoByAirport = dataLoaderService.getAeropuertos().stream()
-            .collect(java.util.stream.Collectors.toMap(com.tasf.backend.domain.Aeropuerto::getCodigoIATA, com.tasf.backend.domain.Aeropuerto::getHuso));
 
+        // Los envíos en BD ya están en UTC: no se convierte (la ventana también es UTC).
         List<Envio> enviosSimulacion = envioRepository.findByFechaHoraIngresoBetween(inicio, fin).stream()
-            .map(e -> {
-                int husoOrigen = husoByAirport.getOrDefault(e.getIataOrigen(), 0);
-                return Envio.builder()
+            .map(e -> Envio.builder()
                     .idEnvio(e.getIdPedido())
                     .codigoAerolinea(e.getCodigoAerolinea())
                     .aeropuertoOrigen(e.getIataOrigen())
                     .aeropuertoDestino(e.getIataDestino())
-                    .fechaHoraIngreso(e.getFechaHoraIngreso().minusHours(husoOrigen))
+                    .fechaHoraIngreso(e.getFechaHoraIngreso())
                     .cantidadMaletas(e.getCantidadMaletas())
                     .sla(e.getSla())
                     .estado(com.tasf.backend.domain.EstadoEnvio.valueOf(e.getEstado()))
-                    .build();
-            })
+                    .build())
             .toList();
             
         log.info("Found {} envios for simulation period", enviosSimulacion.size());
@@ -177,8 +173,10 @@ public class SimulationController {
     }
 
     @GetMapping("/airports/{iata}/inventory")
-    public ResponseEntity<com.tasf.backend.dto.AirportInventoryDTO> airportInventory(@PathVariable String iata) {
+    public ResponseEntity<com.tasf.backend.dto.AirportInventoryDTO> airportInventory(
+            @PathVariable String iata,
+            @RequestParam(required = false) Integer nowMin) {
         if (!simulationEngine.estaInicializada()) return ResponseEntity.noContent().build();
-        return ResponseEntity.ok(simulationEngine.getAirportInventory(iata));
+        return ResponseEntity.ok(simulationEngine.getAirportInventory(iata, nowMin));
     }
 }

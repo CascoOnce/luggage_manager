@@ -19,9 +19,12 @@ public class ParametrosSimulacion {
     private Boolean esColapso = false;
     @Builder.Default
     private int minutosEscalaMinima = 10;
-    // Client (jun-2026): pickup time for bags at the FINAL destination warehouse = 15 min.
+    /** Tiempo de recojo de la maleta en su destino final (cliente jun-2026 = 15 min). */
     @Builder.Default
     private int minutosRecogidaDestino = 15;
+    /** Colchón entre que el envío ingresa en origen y puede abordar su primer vuelo. */
+    @Builder.Default
+    private int minutosPreparacionOrigen = 10;
     @Builder.Default
     private int umbralSemaforoVerde = 60;
     @Builder.Default

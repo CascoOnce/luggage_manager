@@ -14,7 +14,7 @@ const s = {
     position: 'absolute', left: 60, top: 10, bottom: 10, width: 340,
     background: 'rgba(22, 27, 34, 0.75)', backdropFilter: 'blur(12px)',
     border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: 16,
-    display: 'flex', flexDirection: 'column', overflowY: 'auto', zIndex: 2001,
+    display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', zIndex: 2001,
     boxShadow: '4px 4px 24px rgba(0, 0, 0, 0.5)',
   },
   header: {
@@ -83,6 +83,28 @@ const s = {
   },
   tlLabel: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', fontWeight: 600 },
   tlMeta: { fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 },
+  maletasPopupOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2010,
+  },
+  maletasPopup: {
+    position: 'absolute', left: '50%', top: 8, transform: 'translateX(-50%)', width: 220, maxHeight: 220,
+    background: 'rgba(22, 27, 34, 0.98)', backdropFilter: 'blur(8px)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 10, boxShadow: '0 6px 24px rgba(0,0,0,0.6)',
+    display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  },
+  maletasPopupHeader: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+    padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.08)',
+    fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: 'var(--text-bright)',
+    whiteSpace: 'nowrap',
+  },
+  maletasPopupList: { overflowY: 'auto', padding: '4px 6px' },
+  maletasPopupItem: {
+    display: 'flex', alignItems: 'center', gap: 6,
+    fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', padding: '5px 6px',
+    borderRadius: 6,
+  },
 }
 
 function loadColor(pct) {
@@ -124,6 +146,12 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvio
   const [enviosAsignados, setEnviosAsignados] = useState([])
   const [search, setSearch] = useState('')
   const [showConfirmCancel, setShowConfirmCancel] = useState(false)
+  const [maletasPopup, setMaletasPopup] = useState(null) // { idEnvio, cantidadMaletas } | null
+
+  // App re-derives a fresh `vuelo` object every poll tick (live load). Key effects on the
+  // flight code string, not the object identity, so polling doesn't reset UI state like the
+  // open maletas popup.
+  const flightCode = vuelo ? (vuelo.id || vuelo.codigoVuelo || null) : null
 
   useEffect(() => {
     if (!vuelo) return
@@ -133,13 +161,12 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvio
   }, [vuelo, onClose])
 
   useEffect(() => {
-    if (!vuelo) { setEnviosAsignados([]); return }
-    const code = vuelo.id || vuelo.codigoVuelo
-    if (!code) return
-    fetchEnvios(code)
+    if (!flightCode) { setEnviosAsignados([]); return }
+    setMaletasPopup(null)
+    fetchEnvios(flightCode)
       .then((data) => setEnviosAsignados(Array.isArray(data) ? data : []))
       .catch(() => setEnviosAsignados([]))
-  }, [vuelo, fetchEnvios])
+  }, [flightCode, fetchEnvios])
 
   if (!vuelo) return null
 
@@ -251,14 +278,18 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvio
         </div>
 
         {/* Envíos asignados */}
-        <div style={{ ...s.section, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{ ...s.section, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
           <span style={s.sectionTitle}>Envíos asignados ({enviosAsignados.length})</span>
           {enviosAsignados.length === 0 ? (
             <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>Sin envíos asignados</div>
           ) : (
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {enviosAsignados.map((e) => (
-                <div key={e.idEnvio} style={{ padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <div
+                  key={e.idEnvio}
+                  onClick={() => setMaletasPopup((p) => (p?.idEnvio === e.idEnvio ? null : { idEnvio: e.idEnvio, cantidadMaletas: e.cantidadMaletas || 0 }))}
+                  style={{ padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+                >
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--blue)' }}>{e.idEnvio}</span>
                     <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>{e.cantidadMaletas} maletas</span>
@@ -268,6 +299,28 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvio
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {maletasPopup && (
+            <div style={s.maletasPopupOverlay} onClick={() => setMaletasPopup(null)}>
+              <div style={s.maletasPopup} onClick={(ev) => ev.stopPropagation()}>
+                <div style={s.maletasPopupHeader}>
+                  <span style={{ color: 'var(--blue)' }}>{maletasPopup.idEnvio}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    🧳 {maletasPopup.cantidadMaletas}
+                  </span>
+                  <button style={s.closeBtn} onClick={() => setMaletasPopup(null)} aria-label="Cerrar">✕</button>
+                </div>
+                <div style={s.maletasPopupList}>
+                  {Array.from({ length: maletasPopup.cantidadMaletas }, (_, i) => (
+                    <div key={i} style={s.maletasPopupItem}>
+                      <span style={{ color: 'var(--blue)', fontSize: 18, lineHeight: 1 }}>•</span>
+                      <span>{maletasPopup.idEnvio}-{i + 1}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>

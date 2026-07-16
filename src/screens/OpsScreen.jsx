@@ -518,6 +518,8 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
             vuelos={visibleFlights}
             onClose={() => setSelectedAirport(null)}
             fetchInventory={api.getOpsAirportInventory}
+            umbralVerde={threshold - 20}
+            umbralRojo={threshold}
           />
       </div>
 

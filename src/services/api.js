@@ -263,8 +263,9 @@ export const api = {
     return request(`/ops/flights/${code}/envios`)
   }),
 
-  getAirportInventory: async (iata) => withHandling('getAirportInventory', async () => {
-    return request(`/airports/${iata}/inventory`)
+  getAirportInventory: async (iata, nowMin) => withHandling('getAirportInventory', async () => {
+    const qs = nowMin != null ? `?nowMin=${Math.floor(nowMin)}` : ''
+    return request(`/airports/${iata}/inventory${qs}`)
   }),
 
   getOpsAirportInventory: async (iata) => withHandling('getOpsAirportInventory', async () => {
