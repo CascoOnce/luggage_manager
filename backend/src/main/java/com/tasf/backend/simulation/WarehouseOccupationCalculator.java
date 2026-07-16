@@ -20,7 +20,7 @@ final class WarehouseOccupationCalculator {
     record CapacityWindow(String airport, LocalDateTime from, LocalDateTime to) {
     }
 
-    record DayProjection(int baseline, List<OcupacionEvento> eventos, int ocupacionActual) {
+    record DayProjection(int baseline, List<OcupacionEvento> eventos, int ocupacionActual, int peak) {
     }
 
     /** Mirrors RouteCandidate.getCapacityWindows()/toPlan(): escalas[i] is the leg landing
@@ -61,7 +61,9 @@ final class WarehouseOccupationCalculator {
     /** `events` are raw {epochSecond, delta} pairs for one airport, any order.
      *  baseline = cumulative delta strictly before dayStartEpoch.
      *  eventos = events within [dayStartEpoch, dayEndEpoch), minute-relative to dayStartEpoch.
-     *  ocupacionActual = cumulative delta up to and including nowEpoch. */
+     *  ocupacionActual = cumulative delta up to and including nowEpoch.
+     *  peak = highest physical occupancy reached at ANY instant during the day (baseline plus the
+     *  running cumulative of that day's events) — used to detect warehouse saturation/overflow. */
     static DayProjection projectAirport(List<long[]> events, long dayStartEpoch, long dayEndEpoch, long nowEpoch) {
         List<long[]> sorted = new ArrayList<>(events);
         sorted.sort((a, b) -> a[0] != b[0] ? Long.compare(a[0], b[0]) : Long.compare(a[1], b[1]));
@@ -80,6 +82,15 @@ final class WarehouseOccupationCalculator {
                 eventos.add(new OcupacionEvento((int) ((e[0] - dayStartEpoch) / 60), (int) e[1]));
             }
         }
-        return new DayProjection(baseline, eventos, Math.max(0, ocupacionActual));
+        // Intra-day peak: walk the day's events in time order from the carried-over baseline,
+        // tracking the highest instantaneous occupancy. `eventos` is already in time order
+        // (built from the sorted list above).
+        int peak = baseline;
+        int occ = baseline;
+        for (OcupacionEvento ev : eventos) {
+            occ += ev.getDelta();
+            if (occ > peak) peak = occ;
+        }
+        return new DayProjection(baseline, eventos, Math.max(0, ocupacionActual), peak);
     }
 }

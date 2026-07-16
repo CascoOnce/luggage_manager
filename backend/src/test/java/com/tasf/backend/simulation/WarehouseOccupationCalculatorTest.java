@@ -122,5 +122,25 @@ class WarehouseOccupationCalculatorTest {
         assertThat(proj.baseline()).isEqualTo(1);
         assertThat(proj.eventos()).isEmpty();
         assertThat(proj.ocupacionActual()).isEqualTo(1);
+        assertThat(proj.peak()).isEqualTo(1);
+    }
+
+    @Test
+    void projectAirport_peakIsIntradayMaximum_notEndpoint() {
+        // Occupancy rises to 100 then drains to 40: peak must report the 100 mid-day maximum
+        // (the value overflow detection cares about), NOT the 40 end-of-day figure.
+        LocalDateTime dayStart = LocalDateTime.of(2026, 7, 12, 0, 0);
+        long dayStartEpoch = dayStart.toEpochSecond(ZoneOffset.UTC);
+        long dayEndEpoch = dayStart.plusDays(1).toEpochSecond(ZoneOffset.UTC);
+        List<long[]> events = List.of(
+            new long[]{dayStartEpoch + 10 * 60, 100},
+            new long[]{dayStartEpoch + 20 * 60, -60}
+        );
+
+        WarehouseOccupationCalculator.DayProjection proj = WarehouseOccupationCalculator.projectAirport(
+            events, dayStartEpoch, dayEndEpoch, dayEndEpoch);
+
+        assertThat(proj.ocupacionActual()).isEqualTo(40);
+        assertThat(proj.peak()).isEqualTo(100);
     }
 }

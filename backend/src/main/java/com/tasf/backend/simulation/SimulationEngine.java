@@ -222,7 +222,8 @@ public class SimulationEngine {
             // Set the end-of-day interpolation endpoint to the full planned volume so the
             // frontend animation shows the warehouse gradually filling up during the day.
             // Using endOfDay1 counts all Day-1 maletas regardless of their fechaHoraIngreso time.
-            updateWarehouseOccupation(endOfDay1);
+            // Settled point (day 1 fully planned): peak > capacity is real overflow → colapso.
+            updateWarehouseOccupation(endOfDay1, endOfDay1, true);
         }
 
         String algoritmoInicial = params.getAlgoritmo() != null ? params.getAlgoritmo() : "N/A";
@@ -410,7 +411,8 @@ public class SimulationEngine {
      *  mid-planning intermediate where un-planned PENDIENTE bags are counted open-ended. */
     private synchronized void finalizarOcupacionDelDia(LocalDateTime endOfDay) {
         if (!enEjecucion || colapsoPunto != null) return;
-        updateWarehouseOccupation(endOfDay);
+        // Settled point: the whole day is planned, so any peak > capacity is real overflow → colapso.
+        updateWarehouseOccupation(endOfDay, endOfDay, true);
         this.cachedState = buildLightEstado();
     }
 
@@ -1582,6 +1584,15 @@ public class SimulationEngine {
      *  ocupacionActual at the day START — so ocupacionActual == carryover baseline, not the
      *  whole day's still-unplanned PENDIENTE bags piled open-ended at their origins (>100%). */
     private void updateWarehouseOccupation(LocalDateTime dayRef, LocalDateTime nowRef) {
+        updateWarehouseOccupation(dayRef, nowRef, false);
+    }
+
+    /** When checkColapsoAlmacen is true, after projecting each airport's day we compare its PEAK
+     *  physical occupancy against capacity; any airport whose peak exceeds capacity (even by 1 bag)
+     *  is a real warehouse overflow → operational collapse. Only settled callers (finalizarOcupacion
+     *  DelDia, day-1 init, sim end) pass true — never mid-planning, where unplanned PENDIENTE bags
+     *  pile open-ended and would trip a false overflow. */
+    private void updateWarehouseOccupation(LocalDateTime dayRef, LocalDateTime nowRef, boolean checkColapsoAlmacen) {
         LocalDateTime ref = dayRef;
         // ── Actual mode (ref == null): count every EN_ALMACEN bag as-is (internal accuracy). ──
         if (ref == null) {
@@ -1671,6 +1682,8 @@ public class SimulationEngine {
         long dayEndEpoch = dayStart.plusDays(1).toEpochSecond(UTC);
         long nowEpoch = nowRef.toEpochSecond(UTC);
 
+        Aeropuerto saturado = null;
+        int saturadoPeak = 0;
         for (Aeropuerto a : aeropuertos) {
             List<long[]> evts = eventsByAirport.getOrDefault(a.getCodigoIATA(), List.of());
             WarehouseOccupationCalculator.DayProjection proj =
@@ -1678,7 +1691,53 @@ public class SimulationEngine {
             a.setOcupacionInicioDia(proj.baseline());
             a.setOcupacionActual(proj.ocupacionActual());
             a.setEventosOcupacionDia(proj.eventos());
+
+            // Overflow = the day's PEAK physical occupancy exceeds the warehouse's hard capacity.
+            if (checkColapsoAlmacen && a.getCapacidadAlmacen() > 0 && proj.peak() > a.getCapacidadAlmacen()
+                    && proj.peak() > saturadoPeak) {
+                saturado = a;
+                saturadoPeak = proj.peak();
+            }
         }
+        if (saturado != null) {
+            dispararColapsoAlmacen(saturado, saturadoPeak);
+        }
+    }
+
+    /** Warehouse saturation collapse: a warehouse physically holds more bags than its capacity at
+     *  some point in the settled day. Ends the simulation immediately, mirroring checkColapso
+     *  Inmediato()'s machinery. Idempotent (guards on colapsoPunto/enEjecucion). */
+    private void dispararColapsoAlmacen(Aeropuerto a, int peak) {
+        if (colapsoPunto != null || !enEjecucion) {
+            return;
+        }
+        double pct = a.getCapacidadAlmacen() > 0 ? peak * 100.0 / a.getCapacidadAlmacen() : 0.0;
+        List<String> topAps = aeropuertos.stream()
+            .filter(x -> x.getCapacidadAlmacen() > 0)
+            .sorted(Comparator.comparingDouble((Aeropuerto x) ->
+                (double) x.getOcupacionActual() / x.getCapacidadAlmacen()).reversed())
+            .limit(5)
+            .map(Aeropuerto::getCodigoIATA)
+            .collect(Collectors.toList());
+        colapsoPunto = ColapsoPunto.builder()
+            .dia(diaActual)
+            .pctSlaVencido(Math.round(pct * 10.0) / 10.0)
+            .aeropuertoMasCritico(a.getCodigoIATA())
+            .topAeropuertos(topAps)
+            .build();
+        addOperationLog(String.format(
+            "[COLAPSO] Operación colapsó en Día %d — almacén %s saturado: %d/%d maletas (%.1f%%)",
+            diaActual, a.getCodigoIATA(), peak, a.getCapacidadAlmacen(), pct));
+
+        this.finalizada = true;
+        this.enEjecucion = false;
+        applySimulationEnd(fechaSimulada);
+        persistenceService.persistSimulationResults(
+            List.copyOf(planes),
+            List.copyOf(metricas),
+            List.copyOf(logOperaciones),
+            List.copyOf(envios)
+        );
     }
     private void accumulateOccupationSample() {
         for (Aeropuerto aeropuerto : aeropuertos) {
