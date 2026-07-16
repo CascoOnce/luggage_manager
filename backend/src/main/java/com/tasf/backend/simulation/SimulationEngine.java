@@ -369,6 +369,11 @@ public class SimulationEngine {
                 while (more) {
                     more = planNextBatch(endOfDay);
                 }
+                // Recompute + publish warehouse occupancy ONCE, after the whole day is planned.
+                // Doing it per-batch exposed a transient spike (>100%): mid-planning most of the
+                // day's envíos are still PENDIENTE and get counted open-ended, so the intermediate
+                // cachedState briefly showed the whole day's bags piled at their origins.
+                finalizarOcupacionDelDia(endOfDay);
             } catch (Exception e) {
                 log.error("Background planning error: {}", e.getMessage(), e);
             }
@@ -387,19 +392,21 @@ public class SimulationEngine {
         aplicarResultadoPlanificacion(batchResult);
         bumpEnviosVersion();  // new plans/maletas → envios table changed
         addOperationLog("Rolling plan: batch up to " + horizonPointer + " — " + batchResult.getPlanes().size() + " new plans");
-        // Skip the occupancy interpolation if aplicarResultadoPlanificacion() above already
-        // triggered checkColapsoInmediato() and closed the simulation: same reasoning as the
-        // matching guard in inicializar() — endOfDay is a point in time the run never actually
-        // reached, so interpolating occupancy forward to it would misrepresent the collapse.
-        // getEstado() still runs unconditionally so cachedState reflects the collapse.
-        if (colapsoPunto == null) {
-            // Use endOfDay as ref so that new-day bags (fechaHoraIngreso > midnight) are counted.
-            // Without this, currentOccupation == ocupacionInicioDia and the frontend interpolation is flat.
-            updateWarehouseOccupation(endOfDay);
-        }
-        // Background path — cache light directly (never build the ~21k envios here).
+        // NOTE: warehouse occupancy is NOT recomputed per-batch here — mid-planning most of the
+        // day's envíos are still PENDIENTE (counted open-ended), which produced a transient >100%
+        // spike. It is recomputed once by finalizarOcupacionDelDia() after the whole day is planned.
+        // We still publish cachedState so polling sees new plans (envios freshness) as they land.
         this.cachedState = buildLightEstado();
         return horizonPointer != null && horizonPointer.isBefore(endOfDay);
+    }
+
+    /** Recompute + publish warehouse occupancy once the day's rolling planning has finished, so
+     *  the polled state reflects the settled (all-envíos-planned) occupancy instead of a
+     *  mid-planning intermediate where un-planned PENDIENTE bags are counted open-ended. */
+    private synchronized void finalizarOcupacionDelDia(LocalDateTime endOfDay) {
+        if (!enEjecucion || colapsoPunto != null) return;
+        updateWarehouseOccupation(endOfDay);
+        this.cachedState = buildLightEstado();
     }
 
     public synchronized SimulationStateDTO reiniciar() {
@@ -847,6 +854,63 @@ public class SimulationEngine {
             .filter(envio -> envio.getIdEnvio().equals(idEnvio))
             .findFirst()
             .map(envio -> toEnvioDto(envio, true, latestPlanByEnvio.get(envio.getIdEnvio())));
+    }
+
+    /** All routes an envío's bags take. A split envío has several versions (one route each);
+     *  the frontend draws them all on the map with their escala detail. */
+    public synchronized List<com.tasf.backend.dto.RutaDTO> getRutasDeEnvio(String idEnvio) {
+        Envio envio = envios.stream()
+            .filter(e -> e.getIdEnvio().equals(idEnvio))
+            .findFirst().orElse(null);
+        if (envio == null) return List.of();
+        return planes.stream()
+            .filter(p -> p.getIdEnvio().equals(idEnvio))
+            .sorted(Comparator.comparingInt(PlanDeViaje::getVersion))
+            .map(p -> toRutaDto(envio, p))
+            .collect(Collectors.toList());
+    }
+
+    /** The single route a specific maleta follows (the plan version matching its planVersion). */
+    public synchronized Optional<com.tasf.backend.dto.RutaDTO> getRutaDeMaleta(String idMaleta) {
+        Maleta maleta = maletas.stream()
+            .filter(m -> m.getIdMaleta().equals(idMaleta))
+            .findFirst().orElse(null);
+        if (maleta == null) return Optional.empty();
+        Envio envio = envios.stream()
+            .filter(e -> e.getIdEnvio().equals(maleta.getIdEnvio()))
+            .findFirst().orElse(null);
+        if (envio == null) return Optional.empty();
+        return planes.stream()
+            .filter(p -> p.getIdEnvio().equals(maleta.getIdEnvio()) && p.getVersion() == maleta.getPlanVersion())
+            .findFirst()
+            .map(p -> toRutaDto(envio, p));
+    }
+
+    private com.tasf.backend.dto.RutaDTO toRutaDto(Envio envio, PlanDeViaje plan) {
+        List<Escala> escalas = plan.getEscalas() != null ? plan.getEscalas() : List.of();
+        List<com.tasf.backend.dto.EscalaDetalleDTO> detalle = new ArrayList<>();
+        for (int i = 0; i < escalas.size(); i++) {
+            Escala e = escalas.get(i);
+            // Escala stores only the leg destination; the origin is the envío origin for the
+            // first leg, or the previous stop's airport otherwise.
+            String origen = (i == 0) ? envio.getAeropuertoOrigen() : escalas.get(i - 1).getCodigoAeropuerto();
+            detalle.add(com.tasf.backend.dto.EscalaDetalleDTO.builder()
+                .orden(e.getOrden())
+                .codigoVuelo(e.getCodigoVuelo())
+                .aeropuertoOrigen(origen)
+                .aeropuertoDestino(e.getCodigoAeropuerto())
+                .horaSalidaEst(e.getHoraSalidaEst() != null ? e.getHoraSalidaEst().format(TS_FORMAT) : null)
+                .horaLlegadaEst(e.getHoraLlegadaEst() != null ? e.getHoraLlegadaEst().format(TS_FORMAT) : null)
+                .completada(e.isCompletada())
+                .build());
+        }
+        return com.tasf.backend.dto.RutaDTO.builder()
+            .version(plan.getVersion())
+            .cantidadMaletas(plan.getCantidadMaletas())
+            .aeropuertoOrigen(envio.getAeropuertoOrigen())
+            .aeropuertoDestino(envio.getAeropuertoDestino())
+            .escalas(detalle)
+            .build();
     }
 
     public synchronized List<EnvioDTO> getEnviosByFlight(String codigoVuelo) {
@@ -1864,23 +1928,32 @@ public class SimulationEngine {
         // state omits it. EnviosScreen falls back to the backend estado when absent.
         List<EscalaResumenDTO> escalasResumen = List.of();
         List<String> vuelosAsignados = List.of();
+        List<String> aeropuertosRuta = List.of();
         String fechaSalidaPrimerVuelo = null;
         String fechaLlegadaUltimoVuelo = null;
         if (plan != null && plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
             List<Escala> escalas = plan.getEscalas();
-            
+
             if (escalas.get(0).getHoraSalidaEst() != null) {
                 fechaSalidaPrimerVuelo = escalas.get(0).getHoraSalidaEst().format(TS_FORMAT);
             }
             if (escalas.get(escalas.size() - 1).getHoraLlegadaEst() != null) {
                 fechaLlegadaUltimoVuelo = escalas.get(escalas.size() - 1).getHoraLlegadaEst().format(TS_FORMAT);
             }
-            
+
             // Siempre enviamos los códigos de vuelo, es muy liviano y permite al frontend
             // calcular el estado EN_TRANSITO reactivamente
             vuelosAsignados = escalas.stream()
                 .map(Escala::getCodigoVuelo)
                 .collect(Collectors.toList());
+
+            // Camino completo: origen + destino de cada escala. Deja al panel filtrar por
+            // aeropuerto "en el tramo" (cualquier parada), no solo por origen/destino de ruta.
+            aeropuertosRuta = new java.util.ArrayList<>();
+            aeropuertosRuta.add(envio.getAeropuertoOrigen());
+            for (Escala e : escalas) {
+                aeropuertosRuta.add(e.getCodigoAeropuerto());
+            }
 
             if (includePlanDetail) {
                 int last = escalas.size() - 1;
@@ -1912,6 +1985,7 @@ public class SimulationEngine {
             .planDetalle(includePlanDetail ? plan : null)
             .escalasResumen(escalasResumen)
             .vuelosAsignados(vuelosAsignados)
+            .aeropuertosRuta(aeropuertosRuta)
             .build();
     }
 

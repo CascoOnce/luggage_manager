@@ -297,6 +297,7 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
 
 // ── SECTION: ENVÍOS ─────────────────────────────────────────────────────────
 const ESTADO_COLOR = {
+  PLANIFICADO: '#a78bfa',
   PENDIENTE:   '#4d9fff',
   EN_TRANSITO: '#f5a623',
   ENTREGADO:   '#22d07a',
@@ -347,7 +348,7 @@ function EscalasDetalle({ escalas }) {
   )
 }
 
-function BuscarRutaPanel({ simState, onShowEnvioRoute, appMode }) {
+function BuscarRutaPanel({ simState, onShowEnvioRoute, onShowMaletaRoute, appMode }) {
   const [searchMode, setSearchMode] = useState('envio')   // 'maleta' | 'envio'
   const [inputId,  setInputId]  = useState('')
   const [loading,  setLoading]  = useState(false)
@@ -359,13 +360,20 @@ function BuscarRutaPanel({ simState, onShowEnvioRoute, appMode }) {
     if (!id) return
     setLoading(true); setError(null); setResult(null)
     try {
+      // Por maleta: dibuja la ruta de ESA maleta (su planVersion). Por envío: todas sus rutas.
+      if (searchMode === 'maleta' && appMode !== 'ops' && onShowMaletaRoute) {
+        const ruta = await api.getMaletaRuta(id)
+        setResult({ envioId: parseEnvioIdFromMaletaId(id) || id, escalas: ruta?.escalas || [], origen: ruta?.aeropuertoOrigen, destino: ruta?.aeropuertoDestino })
+        onShowMaletaRoute(id)
+        return
+      }
       let envioId = id
       if (searchMode === 'maleta') {
         const parsed = parseEnvioIdFromMaletaId(id)
         if (parsed) envioId = parsed
       }
-      const envio = appMode === 'ops' 
-        ? await api.getOpsEnvioById(envioId) 
+      const envio = appMode === 'ops'
+        ? await api.getOpsEnvioById(envioId)
         : await api.getEnvioById(envioId)
       const escalas = envio?.planDetalle?.escalas || []
       setResult({ envioId: envio.idEnvio, escalas, origen: envio.aeropuertoOrigen, destino: envio.aeropuertoDestino })
@@ -581,11 +589,13 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
   )
 }
 
-function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocation, onSelectFlight, onEnvioSelect, mode, nowMin }) {
+function EnviosSection({ simState, onShowEnvioRoute, onShowMaletaRoute, airports, onFocusMapLocation, onSelectFlight, onEnvioSelect, mode, nowMin }) {
   const [view,       setView]       = useState('lista')
   const [estado,     setEstado]     = useState('')
   const [filterOrig, setFilterOrig] = useState('')
   const [filterDest, setFilterDest] = useState('')
+  // 'ruta' = filtra por origen/destino del envío completo; 'tramo' = por cualquier escala.
+  const [filtroModo, setFiltroModo] = useState('ruta')
 
   const apMap = useMemo(() => {
     const m = {}
@@ -611,24 +621,39 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
 
   const allEnvios = simState?.envios || []
 
-  const origOptions = useMemo(() =>
-    [...new Set(allEnvios.map(e => e.aeropuertoOrigen).filter(Boolean))].sort()
-  , [allEnvios])
+  // Path completo de un envío (origen + destinos de escala); fallback a [origen, destino].
+  const rutaDe = (e) => (e.aeropuertosRuta && e.aeropuertosRuta.length ? e.aeropuertosRuta : [e.aeropuertoOrigen, e.aeropuertoDestino].filter(Boolean))
+  const legOrigins = (e) => rutaDe(e).slice(0, -1)   // aeropuertos de los que SALE en algún tramo
+  const legDests   = (e) => rutaDe(e).slice(1)       // aeropuertos a los que LLEGA en algún tramo
 
-  const destOptions = useMemo(() =>
-    [...new Set(allEnvios.map(e => e.aeropuertoDestino).filter(Boolean))].sort()
-  , [allEnvios])
+  const origOptions = useMemo(() => {
+    const s = new Set()
+    allEnvios.forEach(e => (filtroModo === 'tramo' ? legOrigins(e) : [e.aeropuertoOrigen]).forEach(a => a && s.add(a)))
+    return [...s].sort()
+  }, [allEnvios, filtroModo])
+
+  const destOptions = useMemo(() => {
+    const s = new Set()
+    allEnvios.forEach(e => (filtroModo === 'tramo' ? legDests(e) : [e.aeropuertoDestino]).forEach(a => a && s.add(a)))
+    return [...s].sort()
+  }, [allEnvios, filtroModo])
 
   const list = useMemo(() =>
     allEnvios.filter(e => {
       if (estado && e.estado !== estado) return false
-      if (filterOrig && e.aeropuertoOrigen !== filterOrig) return false
-      if (filterDest && e.aeropuertoDestino !== filterDest) return false
+      if (filterOrig) {
+        const ok = filtroModo === 'tramo' ? legOrigins(e).includes(filterOrig) : e.aeropuertoOrigen === filterOrig
+        if (!ok) return false
+      }
+      if (filterDest) {
+        const ok = filtroModo === 'tramo' ? legDests(e).includes(filterDest) : e.aeropuertoDestino === filterDest
+        if (!ok) return false
+      }
       return true
     })
-  , [allEnvios, estado, filterOrig, filterDest])
+  , [allEnvios, estado, filterOrig, filterDest, filtroModo])
 
-  const ESTADOS = ['PENDIENTE', 'EN_TRANSITO', 'ENTREGADO', 'RETRASADO']
+  const ESTADOS = ['PLANIFICADO', 'PENDIENTE', 'EN_TRANSITO', 'ENTREGADO', 'RETRASADO']
 
   const selectStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '3px 4px', borderRadius: 2, outline: 'none', width: '100%', appearance: 'none', WebkitAppearance: 'none' }
 
@@ -649,7 +674,18 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
         <EntregadosPanel mode={mode} simState={simState} nowMin={nowMin} airports={airports} />
       ) : (
         <>
-          <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} appMode={mode} />
+          <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} onShowMaletaRoute={onShowMaletaRoute} appMode={mode} />
+          {/* Filtro: en la RUTA (origen/destino final) o en el TRAMO (cualquier escala) */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: 1, alignSelf: 'center' }}>FILTRAR EN</span>
+            {[{ k: 'ruta', l: 'Ruta' }, { k: 'tramo', l: 'Tramo' }].map(({ k, l }) => (
+              <button key={k} onClick={() => setFiltroModo(k)}
+                style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 11, padding: '3px 0', borderRadius: 3, border: `1px solid ${filtroModo === k ? '#3d8bff88' : 'var(--border)'}`, background: filtroModo === k ? 'rgba(61,139,255,0.12)' : 'transparent', color: filtroModo === k ? 'var(--blue)' : 'var(--muted)', cursor: 'pointer', letterSpacing: 0.5, textTransform: 'uppercase' }}
+                title={k === 'tramo' ? 'Coincide si el envío pasa por ese aeropuerto en cualquier escala' : 'Coincide con el origen/destino final del envío'}>
+                {l}
+              </button>
+            ))}
+          </div>
           {/* Origen / Destino dropdowns */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 6 }}>
             <div>
@@ -692,7 +728,7 @@ function EnviosSection({ simState, onShowEnvioRoute, airports, onFocusMapLocatio
                       {e.aeropuertoOrigen} → {e.aeropuertoDestino}
                     </div>
                     <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                      {e.idEnvio} · {e.cantidadMaletas} 🧳
+                      {e.idEnvio} · {e.cantidadMaletas} 🧳{e.tiempoRestante ? <> · <span style={{ color: '#f5a623' }} title="UT (tiempo restante para el SLA)">⏱ {e.tiempoRestante}</span></> : ''}
                     </div>
                   </div>
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 6px', borderRadius: 3, background: `${color}18`, color, border: `1px solid ${color}40`, flexShrink: 0 }}>
@@ -1186,6 +1222,7 @@ export default function SidePanel({
   // Envíos
   simState,
   onShowEnvioRoute,
+  onShowMaletaRoute,
   // Almacén
   airports,
   threshold,
@@ -1276,7 +1313,7 @@ export default function SidePanel({
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} cancelledFlights={cancelledFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} onVueloFilterChange={onVueloFilterChange} nowMin={nowMin} />}
-            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} onSelectFlight={setSelectedFlight} onEnvioSelect={setSelectedEnvio} mode={mode} nowMin={nowMin} />}
+            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} onShowMaletaRoute={onShowMaletaRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} onSelectFlight={setSelectedFlight} onEnvioSelect={setSelectedEnvio} mode={mode} nowMin={nowMin} />}
             {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} onAirportFilterChange={onAirportFilterChange} onFocusMapLocation={onFocusMapLocation} />}
             {activeSection === 'config'  && <ConfigSection  onSimulationStarted={onSimulationStarted} onClose={() => onSectionChange(null)} theme={theme} />}
             {activeSection === 'filtros' && <FiltrosSection airports={airports} originIds={originIds} setOriginIds={setOriginIds} destIds={destIds} setDestIds={setDestIds} threshold={threshold} setThreshold={setThreshold} />}

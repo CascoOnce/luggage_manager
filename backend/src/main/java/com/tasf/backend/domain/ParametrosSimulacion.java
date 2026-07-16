@@ -19,7 +19,7 @@ public class ParametrosSimulacion {
     private Boolean esColapso = false;
     @Builder.Default
     private int minutosEscalaMinima = 10;
-    /** Tiempo de recojo de la maleta en su destino final. */
+    /** Tiempo de recojo de la maleta en su destino final (cliente jun-2026 = 15 min). */
     @Builder.Default
     private int minutosRecogidaDestino = 15;
     /** Colchón entre que el envío ingresa en origen y puede abordar su primer vuelo. */
