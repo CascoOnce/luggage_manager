@@ -1,14 +1,15 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../services/api.js'
 
 const s = {
   overlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2000,
-    display: 'flex', pointerEvents: 'auto',
+    display: 'flex', pointerEvents: 'none',
   },
   backdrop: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    background: 'transparent', border: 'none', cursor: 'pointer',
+    background: 'transparent', border: 'none', cursor: 'default',
+    pointerEvents: 'none',
   },
   panel: {
     position: 'absolute', left: 60, top: 10, bottom: 10, width: 340,
@@ -16,6 +17,7 @@ const s = {
     border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: 16,
     display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', zIndex: 2001,
     boxShadow: '4px 4px 24px rgba(0, 0, 0, 0.5)',
+    pointerEvents: 'auto',
   },
   header: {
     display: 'flex', alignItems: 'center', gap: 10,
@@ -87,10 +89,10 @@ const s = {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2010,
   },
   maletasPopup: {
-    position: 'absolute', left: 60 + (340 - 220) / 2, top: 60, width: 220, maxHeight: 220,
+    position: 'absolute', right: 12, width: 200, maxHeight: 200,
     background: 'rgba(22, 27, 34, 0.98)', backdropFilter: 'blur(8px)',
     border: '1px solid rgba(255,255,255,0.12)',
-    borderRadius: 10, boxShadow: '0 6px 24px rgba(0,0,0,0.6)',
+    borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
     display: 'flex', flexDirection: 'column', overflow: 'hidden',
   },
   maletasPopupHeader: {
@@ -135,6 +137,8 @@ const sumarMaletas = (lista) => {
   return lista.reduce((total, e) => total + (e.cantidadMaletas || 0), 0);
 }
 
+const pad2 = (n) => String(n).padStart(2, '0')
+
 // Clasifica envíos en almacén según el rol del aeropuerto actual en su ruta.
 function agruparPorRol(lista, iata) {
   const salida = [], llegada = [], escala = []
@@ -171,13 +175,13 @@ function EnvioRow({ e, singleLine, onClick }) {
         </span>
 
         {e.hora && (
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--amber)', flexShrink: 0 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--amber)', flexShrink: 0, textAlign: 'right' }}>
             {e.hora}
           </span>
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', flexShrink: 0 }}>
-          {e.cantidadMaletas} 🧳
+          {pad2(e.cantidadMaletas)} 🧳
         </div>
 
         {e.sla != null && (
@@ -192,26 +196,34 @@ function EnvioRow({ e, singleLine, onClick }) {
   return (
     <div
       onClick={onClick}
-      style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: onClick ? 'pointer' : 'default' }}
+      style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: onClick ? 'pointer' : 'default' }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--blue)' }}>{e.idEnvio}</span>
-        {e.hora && <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--amber)' }}>{e.hora}</span>}
-      </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-        {e.rutaCompleta && e.rutaCompleta.length > 2
-          ? e.rutaCompleta.join(' → ')
-          : <>{e.aeropuertoOrigen} → {e.aeropuertoDestino}</>
-        }
-        {e.codigoVuelo && <span style={{ color: 'var(--text)' }}> · {e.codigoVuelo}</span>}
-        <span style={{ marginLeft: 6 }}>{e.cantidadMaletas} 🧳</span>
-      </div>
-      <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
-        {e.sla != null && (
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 3, padding: '0 4px' }}>
-            SLA {e.sla}d
+        {(e.fecha || e.hora) && (
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--amber)', display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            {e.fecha && <span style={{ color: 'var(--muted)' }}>{e.fecha.includes('-') ? e.fecha.split('-').slice(1).reverse().join('/') : e.fecha}</span>}
+            <span>{e.hora}</span>
+            <span style={{ fontSize: 9, color: 'var(--muted)', padding: '0 3px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 3 }}>UTC</span>
           </span>
         )}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>
+          {e.codigoVuelo ? (
+            <span style={{ color: 'var(--text-bright)' }}>✈️ {e.codigoVuelo.replace(/-\d{2}:\d{2}$/, '')}</span>
+          ) : (
+            <span style={{ opacity: 0.5 }}>Sin vuelo</span>
+          )}
+          {e.sla != null && (
+            <span style={{ fontSize: 10, padding: '1px 4px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 3 }}>
+              SLA {e.sla}d
+            </span>
+          )}
+        </div>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-bright)' }}>
+          {pad2(e.cantidadMaletas)} 🧳
+        </div>
       </div>
     </div>
   )
@@ -224,14 +236,16 @@ function localTimeLabel(huso, nowMinuteUtc) {
   const hh = String(Math.floor(localMin / 60)).padStart(2, '0')
   const mm = String(localMin % 60).padStart(2, '0')
   const sign = huso >= 0 ? '+' : '-'
-  return `${hh}:${mm} local · UTC${sign}${Math.abs(huso)}`
+  return `${hh}:${mm} LCL · UTC${sign}${Math.abs(huso)}`
 }
 
 export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInventoryTabs = false, nowMinuteUtc = null, fetchInventory = api.getAirportInventory, umbralVerde = 60, umbralRojo = 85 }) {
   const [tab, setTab] = useState('info')
   const [inventory, setInventory] = useState(null)
   const [loadingInv, setLoadingInv] = useState(false)
-  const [maletasPopup, setMaletasPopup] = useState(null) // { idEnvio, cantidadMaletas } | null
+  const [maletasPopup, setMaletasPopup] = useState(null) // { idEnvio, cantidadMaletas, top } | null
+  const [vueloPopup, setVueloPopup] = useState(null)     // { codigoVuelo, fecha, hora, envios, top } | null
+  const panelRef = useRef(null)
   
   const [expandedIn, setExpandedIn] = useState(true)
   const [expandedOut, setExpandedOut] = useState(true)
@@ -248,6 +262,7 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
     setTab('info')
     setInventory(null)
     setMaletasPopup(null)
+    setVueloPopup(null)
   }, [airport?.id])
 
   useEffect(() => {
@@ -286,13 +301,13 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
   return (
     <div style={s.overlay}>
       <button aria-label="Cerrar" style={s.backdrop} onClick={onClose} />
-      <aside style={s.panel}>
+      <aside style={s.panel} ref={panelRef}>
 
         {/* Header */}
         <div style={s.header}>
           <span style={s.iata}>{airport.id}</span>
           {localTimeLabel(airport.huso, nowMinuteUtc) && (
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginLeft: 8 }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>
               {localTimeLabel(airport.huso, nowMinuteUtc)}
             </span>
           )}
@@ -303,16 +318,35 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
 
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          <button style={TAB_STYLE(tab === 'info')} onClick={() => setTab('info')}>Info</button>
-          {!hideInventoryTabs && <button style={TAB_STYLE(tab === 'inventario')} onClick={() => setTab('inventario')}>Inventario</button>}
-          {!hideInventoryTabs && <button style={TAB_STYLE(tab === 'planificado')} onClick={() => setTab('planificado')}>Planificado</button>}
+          <button style={TAB_STYLE(tab === 'info')} onClick={() => { setTab('info'); setMaletasPopup(null); setVueloPopup(null); }}>Info</button>
+          {!hideInventoryTabs && <button style={TAB_STYLE(tab === 'inventario')} onClick={() => { setTab('inventario'); setMaletasPopup(null); setVueloPopup(null); }}>Inventario</button>}
+          {!hideInventoryTabs && <button style={TAB_STYLE(tab === 'planificado')} onClick={() => { setTab('planificado'); setMaletasPopup(null); setVueloPopup(null); }}>Planificado</button>}
         </div>
 
         {tab === 'inventario' && (() => {
           const { salida, llegada, escala } = agruparPorRol(inventory?.enAlmacen, iata)
-          const rowClick = (e) => () => setMaletasPopup((p) => (p?.idEnvio === e.idEnvio ? null : { idEnvio: e.idEnvio, cantidadMaletas: e.cantidadMaletas || 0 }))
+          const rowClick = (e) => (ev) => {
+            const panel = panelRef.current
+            if (!panel) return
+            const panelRect = panel.getBoundingClientRect()
+            const itemRect = ev.currentTarget.getBoundingClientRect()
+            const sectionNode = ev.currentTarget.closest('.seccion-container')
+            
+            // top relative to panel (accounting for scroll)
+            let topPos = itemRect.top - panelRect.top + panel.scrollTop
+            
+            if (sectionNode) {
+              const sr = sectionNode.getBoundingClientRect()
+              const sTop = sr.top - panelRect.top + panel.scrollTop
+              const sBottom = sr.bottom - panelRect.top + panel.scrollTop
+              const estimatedHeight = Math.min(220, 45 + ((e.cantidadMaletas || 0) * 26))
+              if (topPos + estimatedHeight > sBottom) topPos = sBottom - estimatedHeight
+              if (topPos < sTop) topPos = sTop
+            }
+            setMaletasPopup((p) => (p?.idEnvio === e.idEnvio ? null : { idEnvio: e.idEnvio, cantidadMaletas: e.cantidadMaletas || 0, top: topPos, fecha: e.fecha, hora: e.hora }))
+          }
           const seccion = (title, color, lista, expanded, setExpanded, borderTop) => (
-            <div style={{ display: 'flex', flexDirection: 'column', flex: expanded ? 1 : 'none', minHeight: 0 }}>
+            <div className="seccion-container" style={{ display: 'flex', flexDirection: 'column', flex: expanded ? 1 : 'none', minHeight: 0 }}>
               <div
                 onClick={() => setExpanded(!expanded)}
                 style={{
@@ -356,90 +390,149 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
           )
         })()}
 
-        {maletasPopup && (
-          <div style={s.maletasPopupOverlay} onClick={() => setMaletasPopup(null)}>
-            <div style={s.maletasPopup} onClick={(ev) => ev.stopPropagation()}>
-              <div style={s.maletasPopupHeader}>
-                <span style={{ color: 'var(--blue)' }}>{maletasPopup.idEnvio}</span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  🧳 {maletasPopup.cantidadMaletas}
-                </span>
-                <button style={s.closeBtn} onClick={() => setMaletasPopup(null)} aria-label="Cerrar">✕</button>
-              </div>
-              <div style={s.maletasPopupList}>
-                {Array.from({ length: maletasPopup.cantidadMaletas }, (_, i) => (
-                  <div key={i} style={s.maletasPopupItem}>
-                    <span style={{ color: 'var(--blue)', fontSize: 18, lineHeight: 1 }}>•</span>
-                    <span>{maletasPopup.idEnvio}-{i + 1}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
 
         {tab === 'planificado' && (() => {
-          const rowClick = (e) => () => setMaletasPopup((p) => (p?.idEnvio === e.idEnvio ? null : { idEnvio: e.idEnvio, cantidadMaletas: e.cantidadMaletas || 0 }))
-          return (
-          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-            {loadingInv && <div style={{ padding: '14px 16px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Cargando...</div>}
-            {!loadingInv && !inventory && (
-              <div style={{ padding: '14px 16px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', opacity: 0.6 }}>
-                Sin datos — simulación no activa
-              </div>
-            )}
-            {!loadingInv && inventory && (
-              <>
-                {/* ENTRADAS */}
-                <div style={{ display: 'flex', flexDirection: 'column', flex: expandedIn ? 1 : 'none', minHeight: 0 }}>
-                  <div 
-                    onClick={() => setExpandedIn(!expandedIn)}
-                    style={{ 
-                      padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                      cursor: 'pointer', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.05)' 
-                    }}
-                  >
-                    <span style={{ ...s.sectionTitle, color: 'var(--text-bright)', marginBottom: 0 }}>
-                      Por entrar hoy: {inventory.planificadosEntrando?.length ?? 0} envíos ({sumarMaletas(inventory.planificadosEntrando)} maletas)
-                    </span>
-                    <span style={{ color: 'var(--muted)', fontSize: 12 }}>{expandedIn ? '▲' : '▼'}</span>
-                  </div>
-                  {expandedIn && (
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
-                      {(inventory.planificadosEntrando?.length ?? 0) === 0
-                        ? <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Sin llegadas planificadas</div>
-                        : inventory.planificadosEntrando.map((e, i) => <EnvioRow key={`in-${i}`} e={e} onClick={rowClick(e)} />)
-                      }
-                    </div>
-                  )}
-                </div>
+          // Helper: compute local datetime string from UTC fecha+hora and airport huso
+          const toLocal = (fecha, hora) => {
+            if (!fecha || !hora || airport.huso == null) return null
+            const [yyyy, mm, dd] = fecha.split('-')
+            const [hh, min] = hora.split(':')
+            const d = new Date(Date.UTC(yyyy, mm - 1, dd, hh, min))
+            d.setUTCHours(d.getUTCHours() + airport.huso)
+            const lH = String(d.getUTCHours()).padStart(2, '0')
+            const lMin = String(d.getUTCMinutes()).padStart(2, '0')
+            const lD = String(d.getUTCDate()).padStart(2, '0')
+            const lM = String(d.getUTCMonth() + 1).padStart(2, '0')
+            const lY = d.getUTCFullYear()
+            return { hora: `${lH}:${lMin}`, fecha: `${lY}-${lM}-${lD}` }
+          }
 
-                {/* SALIDAS */}
-                <div style={{ display: 'flex', flexDirection: 'column', flex: expandedOut ? 1 : 'none', minHeight: 0 }}>
-                  <div 
-                    onClick={() => setExpandedOut(!expandedOut)}
-                    style={{ 
-                      padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                      cursor: 'pointer', background: 'rgba(255,255,255,0.03)', borderTop: '1px solid var(--border)', borderBottom: '1px solid rgba(255,255,255,0.05)' 
-                    }}
-                  >
-                    <span style={{ ...s.sectionTitle, color: 'var(--text-bright)', marginBottom: 0 }}>
-                      Por salir hoy: {inventory.planificadosSaliendo?.length ?? 0} envíos ({sumarMaletas(inventory.planificadosSaliendo)} maletas)
-                    </span>
-                    <span style={{ color: 'var(--muted)', fontSize: 12 }}>{expandedOut ? '▲' : '▼'}</span>
-                  </div>
-                  {expandedOut && (
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
-                      {(inventory.planificadosSaliendo?.length ?? 0) === 0
-                        ? <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Sin salidas planificadas</div>
-                        : inventory.planificadosSaliendo.map((e, i) => <EnvioRow key={`out-${i}`} e={e} onClick={rowClick(e)} />)
-                      }
+          // Group a list of envíos by codigoVuelo
+          const groupByVuelo = (lista) => {
+            const map = new Map()
+            for (const e of (lista || [])) {
+              const key = e.codigoVuelo || '__sin_vuelo__'
+              if (!map.has(key)) map.set(key, { envios: [], hora: e.hora, fecha: e.fecha })
+              map.get(key).envios.push(e)
+            }
+            return Array.from(map.entries()).map(([cod, v]) => ({ codigoVuelo: cod, ...v, totalMaletas: sumarMaletas(v.envios) }))
+          }
+
+          const fmtFecha = (f) => f && f.includes('-') ? f.split('-').slice(1).reverse().join('/') + '/' + f.split('-')[0].slice(2) : f
+
+          const onVueloClick = (grupo) => (ev) => {
+            const panel = panelRef.current
+            if (!panel) return
+            const panelRect = panel.getBoundingClientRect()
+            const itemRect = ev.currentTarget.getBoundingClientRect()
+            const sectionNode = ev.currentTarget.closest('.seccion-container')
+
+            let topPos = itemRect.top - panelRect.top + panel.scrollTop
+
+            if (sectionNode) {
+              const sr = sectionNode.getBoundingClientRect()
+              const sTop = sr.top - panelRect.top + panel.scrollTop
+              const sBottom = sr.bottom - panelRect.top + panel.scrollTop
+              const estimatedH = Math.min(280, 70 + grupo.envios.length * 32)
+              if (topPos + estimatedH > sBottom) topPos = sBottom - estimatedH
+              if (topPos < sTop) topPos = sTop
+            }
+            setVueloPopup((p) => p?.codigoVuelo === grupo.codigoVuelo ? null : { ...grupo, top: topPos })
+            setMaletasPopup(null)
+          }
+
+          const onEnvioClick = (e) => (ev) => {
+            const panel = panelRef.current
+            if (!panel) return
+            const panelRect = panel.getBoundingClientRect()
+            const itemRect = ev.currentTarget.getBoundingClientRect()
+            let topPos = itemRect.top - panelRect.top + panel.scrollTop
+            const estimatedH = Math.min(220, 45 + (e.cantidadMaletas || 0) * 26)
+            if (topPos + estimatedH > panelRef.current.scrollHeight - 20) topPos -= estimatedH
+            setMaletasPopup((p) => p?.idEnvio === e.idEnvio ? null : { idEnvio: e.idEnvio, cantidadMaletas: e.cantidadMaletas || 0, top: topPos, fecha: e.fecha, hora: e.hora })
+          }
+
+          const renderVueloList = (grupos, emptyMsg) => (
+            grupos.length === 0
+              ? <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', padding: '10px 0' }}>{emptyMsg}</div>
+              : grupos.map((g) => {
+                  const local = toLocal(g.fecha, g.hora)
+                  const isActive = vueloPopup?.codigoVuelo === g.codigoVuelo
+                  return (
+                    <div
+                      key={g.codigoVuelo}
+                      onClick={onVueloClick(g)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '8px 0',
+                        borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer',
+                        background: isActive ? 'rgba(99,152,255,0.06)' : 'transparent',
+                        borderRadius: isActive ? 4 : 0,
+                      }}
+                    >
+                      <span style={{ fontSize: 12 }}>✈️</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-bright)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {g.codigoVuelo === '__sin_vuelo__' ? 'Sin vuelo' : g.codigoVuelo.replace(/-\d{2}:\d{2}$/, '')}
+                      </span>
+                      {g.hora && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--amber)', flexShrink: 0 }}>{g.hora}</span>}
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', padding: '0 3px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 3, flexShrink: 0 }}>UTC</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>· {pad2(g.totalMaletas)} 🧳</span>
                     </div>
-                  )}
+                  )
+                })
+          )
+
+          const gruposEntrando = groupByVuelo(inventory?.planificadosEntrando)
+          const gruposSaliendo = groupByVuelo(inventory?.planificadosSaliendo)
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', position: 'relative' }}>
+              {loadingInv && <div style={{ padding: '14px 16px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Cargando...</div>}
+              {!loadingInv && !inventory && (
+                <div style={{ padding: '14px 16px', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', opacity: 0.6 }}>
+                  Sin datos — simulación no activa
                 </div>
-              </>
-            )}
-          </div>
+              )}
+              {!loadingInv && inventory && (
+                <>
+                  {/* ENTRADAS */}
+                  <div className="seccion-container" style={{ display: 'flex', flexDirection: 'column', flex: expandedIn ? 1 : 'none', minHeight: 0 }}>
+                    <div
+                      onClick={() => setExpandedIn(!expandedIn)}
+                      style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+                    >
+                      <span style={{ ...s.sectionTitle, color: 'var(--text-bright)', marginBottom: 0 }}>
+                        Por entrar hoy: {gruposEntrando.length} vuelos ({sumarMaletas(inventory.planificadosEntrando)} maletas)
+                      </span>
+                      <span style={{ color: 'var(--muted)', fontSize: 12 }}>{expandedIn ? '▲' : '▼'}</span>
+                    </div>
+                    {expandedIn && (
+                      <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px' }}>
+                        {renderVueloList(gruposEntrando, 'Sin llegadas planificadas')}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SALIDAS */}
+                  <div className="seccion-container" style={{ display: 'flex', flexDirection: 'column', flex: expandedOut ? 1 : 'none', minHeight: 0 }}>
+                    <div
+                      onClick={() => setExpandedOut(!expandedOut)}
+                      style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', borderTop: '1px solid var(--border)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+                    >
+                      <span style={{ ...s.sectionTitle, color: 'var(--text-bright)', marginBottom: 0 }}>
+                        Por salir hoy: {gruposSaliendo.length} vuelos ({sumarMaletas(inventory.planificadosSaliendo)} maletas)
+                      </span>
+                      <span style={{ color: 'var(--muted)', fontSize: 12 }}>{expandedOut ? '▲' : '▼'}</span>
+                    </div>
+                    {expandedOut && (
+                      <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px' }}>
+                        {renderVueloList(gruposSaliendo, 'Sin salidas planificadas')}
+                      </div>
+                    )}
+                  </div>
+
+                </>
+              )}
+            </div>
           )
         })()}
 
@@ -493,12 +586,41 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
               const load = v.maletasAsignadas ?? v.currentLoad ?? v.cargaActual ?? 0
               const vcap = v.capacity ?? v.capacidadTotal ?? 300
               const c = flightColor(load, vcap)
-              const displayCode = code.replace(`${iata}-`, '')
+              
+              let displayCode = code.replace(`${iata}-`, '')
+              let flightTime = ''
+              let localTimeStr = ''
+              if (/\d{2}:\d{2}$/.test(displayCode)) {
+                flightTime = displayCode.slice(-5)
+                displayCode = displayCode.slice(0, -6)
+                if (airport.huso != null) {
+                  const [hh, mm] = flightTime.split(':').map(Number)
+                  const localH = (((hh + airport.huso) % 24) + 24) % 24
+                  localTimeStr = `${String(localH).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+                }
+              }
+
               return (
-                <div key={`s-${code}`} style={s.flightItem}>
-                  <div style={s.dot(c)} />
-                  <span style={s.flightCode}>{displayCode}</span>
-                  <span style={{ ...s.flightMeta, color: c }}>→ {((load / vcap) * 100).toFixed(2)}%</span>
+                <div key={`s-${code}`} style={{ ...s.flightItem, justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={s.dot(c)} />
+                    <span style={s.flightCode}>{displayCode}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {flightTime && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {flightTime} <span style={{ fontSize: 9, color: 'var(--muted)', padding: '0 3px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 3 }}>UTC</span>
+                        </span>
+                        {localTimeStr && (
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-bright)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {localTimeStr} <span style={{ fontSize: 9, color: 'var(--blue)', padding: '0 3px', border: '1px solid rgba(99,152,255,0.2)', borderRadius: 3, background: 'rgba(99,152,255,0.1)' }}>LCL</span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    <span style={{ ...s.flightMeta, color: c, width: 45, textAlign: 'right' }}>{((load / vcap) * 100).toFixed(0)}%</span>
+                  </div>
                 </div>
               )
             })}
@@ -514,12 +636,41 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
               const load = v.maletasAsignadas ?? v.currentLoad ?? v.cargaActual ?? 0
               const vcap = v.capacity ?? v.capacidadTotal ?? 300
               const c = flightColor(load, vcap)
-              const displayCode = code.replace(`-${iata}`, '')
+              
+              let displayCode = code.replace(`-${iata}`, '')
+              let flightTime = ''
+              let localTimeStr = ''
+              if (/\d{2}:\d{2}$/.test(displayCode)) {
+                flightTime = displayCode.slice(-5)
+                displayCode = displayCode.slice(0, -6)
+                if (airport.huso != null) {
+                  const [hh, mm] = flightTime.split(':').map(Number)
+                  const localH = (((hh + airport.huso) % 24) + 24) % 24
+                  localTimeStr = `${String(localH).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+                }
+              }
+
               return (
-                <div key={`l-${code}`} style={s.flightItem}>
-                  <div style={s.dot(c)} />
-                  <span style={s.flightCode}>{displayCode}</span>
-                  <span style={{ ...s.flightMeta, color: c }}>→ {((load / vcap) * 100).toFixed(2)}%</span>
+                <div key={`l-${code}`} style={{ ...s.flightItem, justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={s.dot(c)} />
+                    <span style={s.flightCode}>{displayCode}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {flightTime && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {flightTime} <span style={{ fontSize: 9, color: 'var(--muted)', padding: '0 3px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 3 }}>UTC</span>
+                        </span>
+                        {localTimeStr && (
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-bright)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {localTimeStr} <span style={{ fontSize: 9, color: 'var(--blue)', padding: '0 3px', border: '1px solid rgba(99,152,255,0.2)', borderRadius: 3, background: 'rgba(99,152,255,0.1)' }}>LCL</span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    <span style={{ ...s.flightMeta, color: c, width: 45, textAlign: 'right' }}>{((load / vcap) * 100).toFixed(0)}%</span>
+                  </div>
                 </div>
               )
             })}
@@ -545,7 +696,140 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
         </div>
         </>}
 
+        {/* VUELO POPUP (nivel 1) */}
+        {vueloPopup && (
+          <div style={s.maletasPopupOverlay} onClick={() => { setVueloPopup(null); setMaletasPopup(null) }}>
+            <div
+              style={{ ...s.maletasPopup, top: vueloPopup.top ?? 60, width: 240, maxHeight: 280 }}
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <div style={s.maletasPopupHeader}>
+                <span style={{ color: 'var(--blue)' }}>✈️ {vueloPopup.codigoVuelo === '__sin_vuelo__' ? 'Sin vuelo' : vueloPopup.codigoVuelo.replace(/-\d{2}:\d{2}$/, '')}</span>
+                <button style={s.closeBtn} onClick={() => { setVueloPopup(null); setMaletasPopup(null) }} aria-label="Cerrar">✕</button>
+              </div>
+              {(vueloPopup.fecha || vueloPopup.hora) && (() => {
+                let local = null;
+                if (vueloPopup.fecha && vueloPopup.hora && airport.huso != null) {
+                  const [yyyy, mm, dd] = vueloPopup.fecha.split('-')
+                  const [hh, min] = vueloPopup.hora.split(':')
+                  const d = new Date(Date.UTC(yyyy, mm - 1, dd, hh, min))
+                  d.setUTCHours(d.getUTCHours() + airport.huso)
+                  local = {
+                    hora: `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`,
+                    fecha: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+                  }
+                }
+                return (
+                  <div style={{ padding: '6px 10px', fontFamily: 'var(--mono)', fontSize: 11, borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--amber)' }}>
+                      <span style={{ color: 'var(--muted)' }}>⏱</span>
+                      {vueloPopup.fecha && <span style={{ color: 'var(--muted)' }}>{vueloPopup.fecha}</span>}
+                      {vueloPopup.hora && <span>{vueloPopup.hora}</span>}
+                      <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--muted)', padding: '0 3px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 3 }}>UTC</span>
+                    </div>
+                    {local && (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--text-bright)' }}>
+                        <span style={{ color: 'transparent' }}>⏱</span>
+                        <span style={{ color: 'var(--muted)' }}>{local.fecha}</span>
+                        <span>{local.hora}</span>
+                        <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--blue)', padding: '0 3px', border: '1px solid rgba(99,152,255,0.2)', borderRadius: 3, background: 'rgba(99,152,255,0.1)' }}>LCL</span>
+                      </div>
+                    )}
+                    <div style={{ color: 'var(--muted)', marginTop: 2 }}>{vueloPopup.envios.length} envíos · {pad2(vueloPopup.totalMaletas)} 🧳</div>
+                  </div>
+                )
+              })()}
+              <div style={s.maletasPopupList}>
+                {vueloPopup.envios.map((e, i) => (
+                  <div
+                    key={`vp-${e.idEnvio}-${i}`}
+                    onClick={(ev) => {
+                      const panel = panelRef.current
+                      if (!panel) return
+                      const panelRect = panel.getBoundingClientRect()
+                      const itemRect = ev.currentTarget.getBoundingClientRect()
+                      let topPos = itemRect.top - panelRect.top + panel.scrollTop
+                      const estimatedH = Math.min(220, 45 + (e.cantidadMaletas || 0) * 26)
+                      if (topPos + estimatedH > panel.scrollHeight - 20) topPos -= estimatedH
+                      setMaletasPopup((p) => p?.idEnvio === e.idEnvio ? null : { idEnvio: e.idEnvio, cantidadMaletas: e.cantidadMaletas || 0, top: topPos, fecha: e.fecha, hora: e.hora, hideTime: true })
+                    }}
+                    style={{
+                      ...s.maletasPopupItem,
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      background: maletasPopup?.idEnvio === e.idEnvio ? 'rgba(99,152,255,0.1)' : 'transparent',
+                      borderRadius: 4,
+                    }}
+                  >
+                    <span style={{ color: 'var(--blue)', fontSize: 12 }}>{e.idEnvio}</span>
+                    <span style={{ color: 'var(--text-bright)', fontSize: 12 }}>{pad2(e.cantidadMaletas)} 🧳</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {maletasPopup && (
+          <div style={s.maletasPopupOverlay} onClick={() => setMaletasPopup(null)}>
+            <div style={{ ...s.maletasPopup, top: maletasPopup.top ?? 60 }} onClick={(ev) => ev.stopPropagation()}>
+              <div style={s.maletasPopupHeader}>
+                <span style={{ color: 'var(--blue)' }}>{maletasPopup.idEnvio}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  🧳 {pad2(maletasPopup.cantidadMaletas)}
+                </span>
+                <button style={s.closeBtn} onClick={() => setMaletasPopup(null)} aria-label="Cerrar">✕</button>
+              </div>
+              {(!maletasPopup.hideTime && (maletasPopup.fecha || maletasPopup.hora)) && (() => {
+                let localDatetime = null;
+                if (maletasPopup.fecha && maletasPopup.hora && airport.huso != null) {
+                  const [yyyy, mm, dd] = maletasPopup.fecha.split('-');
+                  const [hh, min] = maletasPopup.hora.split(':');
+                  const d = new Date(Date.UTC(yyyy, mm - 1, dd, hh, min));
+                  d.setUTCHours(d.getUTCHours() + airport.huso);
+                  const lY = d.getUTCFullYear();
+                  const lM = String(d.getUTCMonth() + 1).padStart(2, '0');
+                  const lD = String(d.getUTCDate()).padStart(2, '0');
+                  const lH = String(d.getUTCHours()).padStart(2, '0');
+                  const lMin = String(d.getUTCMinutes()).padStart(2, '0');
+                  localDatetime = `${lY}-${lM}-${lD} ${lH}:${lMin}`;
+                }
+                return (
+                  <div style={{
+                    padding: '6px 10px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--amber)',
+                    borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: 4
+                  }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <span style={{ color: 'var(--muted)' }}>⏱</span>
+                      {maletasPopup.fecha && <span>{maletasPopup.fecha}</span>}
+                      {maletasPopup.hora && <span>{maletasPopup.hora}</span>}
+                      <span style={{ color: 'var(--muted)', fontSize: 10, marginLeft: 'auto', border: '1px solid rgba(255,255,255,0.1)', padding: '0 4px', borderRadius: 3 }}>UTC</span>
+                    </div>
+                    {localDatetime && (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--text-bright)' }}>
+                        <span style={{ color: 'transparent' }}>⏱</span>
+                        <span>{localDatetime.split(' ')[0]}</span>
+                        <span>{localDatetime.split(' ')[1]}</span>
+                        <span style={{ color: 'var(--blue)', fontSize: 10, marginLeft: 'auto', border: '1px solid rgba(99,152,255,0.2)', padding: '0 4px', borderRadius: 3, background: 'rgba(99,152,255,0.1)' }}>LCL</span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+              <div style={s.maletasPopupList}>
+                {Array.from({ length: maletasPopup.cantidadMaletas }, (_, i) => (
+                  <div key={i} style={s.maletasPopupItem}>
+                    <span style={{ color: 'var(--blue)', fontSize: 18, lineHeight: 1 }}>•</span>
+                    <span>{maletasPopup.idEnvio}-{i + 1}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
       </aside>
+
     </div>
   )
 }

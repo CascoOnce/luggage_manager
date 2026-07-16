@@ -18,6 +18,8 @@ public class EnvioSummaryDTO {
     private String estado;
     private String codigoVuelo;
     private String hora;
+    /** Fecha de la acción relevante (ISO local date, ej. 2026-07-16). */
+    private String fecha;
     /** SLA en días (1 mismo continente, 2 intercontinental). */
     private Integer sla;
     /** true si el envío tiene un plan de ruta calculado. */

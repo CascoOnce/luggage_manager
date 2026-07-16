@@ -48,8 +48,8 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
   const [selectedFlight, setSelectedFlight] = useState(null)
   const [selectedVueloData, setSelectedVueloData] = useState(null)
   const [flightSource, setFlightSource] = useState(null) // 'map' | 'panel'
-  const selectFlightFromMap   = (id) => { setFlightSource('map'); setSelectedFlight(id) }
-  const selectFlightFromPanel = (id) => { setFlightSource('panel'); setSelectedFlight(id) }
+  const selectFlightFromMap   = (id) => { setFlightSource('map'); setSelectedFlight(id); if (id) setSelectedAirport(null); }
+  const selectFlightFromPanel = (id) => { setFlightSource('panel'); setSelectedFlight(id); if (id) setSelectedAirport(null); }
   
   const [opsBase, setOpsBase] = useState(() => {
     return sessionStorage.getItem('opsBase') || null
@@ -450,7 +450,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
             selectedFlight={selectedFlight}
             setSelectedFlight={selectFlightFromMap}
             selectedFlightData={selectedFlightData}
-            onAirportClick={(ap) => { setSelectedAirport(ap); setMapFlyTo(ap) }}
+            onAirportClick={(ap) => { setSelectedAirport(ap); setMapFlyTo(ap); handleCloseVuelo(); }}
             onMapClick={() => {
               setSelectedAirport(null)
               setSelectedFlight(null)
@@ -500,7 +500,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
               opsBase={opsBase}
               onShowEnvioRoute={handleShowEnvioRoute}
               onFocusMapLocation={setMapFlyTo}
-              setMapSelectedAirport={(ap) => { setSelectedAirport(ap); setMapFlyTo(ap) }}
+              setMapSelectedAirport={(ap) => { setSelectedAirport(ap); setMapFlyTo(ap); handleCloseVuelo(); }}
             />
           </div>
 

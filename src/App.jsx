@@ -1182,8 +1182,8 @@ export default function App() {
     : null
   const handleCloseAirport = useCallback(() => setMapSelectedAirport(null), [])
   const handleCloseVuelo   = useCallback(() => { setMapSelectedVuelo(null); setSelectedFlight(null); setFlightSource(null) }, [])
-  const selectFlightFromMap   = useCallback((id) => { setFlightSource('map'); setSelectedFlight(id) }, [])
-  const selectFlightFromPanel = useCallback((id) => { setFlightSource('panel'); setSelectedFlight(id) }, [])
+  const selectFlightFromMap   = useCallback((id) => { setFlightSource('map'); setSelectedFlight(id); if (id) setMapSelectedAirport(null); }, [])
+  const selectFlightFromPanel = useCallback((id) => { setFlightSource('panel'); setSelectedFlight(id); if (id) setMapSelectedAirport(null); }, [])
 
   // Turn backend RutaDTO[] into map-ready routes (legs with coords + escala detail) and the
   // bounding box that frames them all. Returns null when no leg has known airport coords.
@@ -1386,8 +1386,8 @@ export default function App() {
                 selectedFlight={selectedFlight}
                 setSelectedFlight={selectFlightFromMap}
                 selectedFlightData={mapSelectedVuelo}
-                onAirportClick={setMapSelectedAirport}
-                onMapClick={() => { handleCloseVuelo(); setHighlightedRoute(null) }}
+                onAirportClick={(ap) => { setMapSelectedAirport(ap); handleCloseVuelo(); }}
+                onMapClick={() => { handleCloseVuelo(); handleCloseAirport(); setHighlightedRoute(null) }}
                 theme={theme}
                 threshold={threshold}
                 highlightedRoute={highlightedRoute}
@@ -1399,14 +1399,20 @@ export default function App() {
             <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, zIndex: 700, display: 'flex' }}>
               <SidePanel
                 activeSection={activeSideSection}
-                onSectionChange={setActiveSideSection}
+                onSectionChange={(section) => {
+                  setActiveSideSection(section)
+                  if (section) {
+                    handleCloseAirport()
+                    handleCloseVuelo()
+                  }
+                }}
                 flights={backendFlights}
                 plannedFlights={backendPlannedFlights}
                 cancelledFlights={backendCancelledFlights}
                 selectedFlight={selectedFlight}
                 setSelectedFlight={selectFlightFromPanel}
                 setMapSelectedVuelo={setMapSelectedVuelo}
-                setMapSelectedAirport={setMapSelectedAirport}
+                setMapSelectedAirport={(ap) => { setMapSelectedAirport(ap); handleCloseVuelo(); }}
                 simState={simState}
                 onShowEnvioRoute={handleShowEnvioRoute}
                 onShowMaletaRoute={handleShowMaletaRoute}

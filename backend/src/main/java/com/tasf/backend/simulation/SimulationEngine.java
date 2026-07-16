@@ -985,6 +985,36 @@ public class SimulationEngine {
             }
             if (!presente) continue;
 
+            // For enAlmacen: find the most relevant scheduled time at `iata`
+            // (the arrival to iata, or ingreso if it's the origin with no plan)
+            String horaEnAlmacen = null;
+            String fechaEnAlmacen = null;
+            if (plan != null) {
+                List<Escala> escalas = plan.getEscalas();
+                // Find first escala whose destination is iata — that's when it arrived here
+                for (int j = 0; j < escalas.size(); j++) {
+                    Escala esc = escalas.get(j);
+                    if (iata.equals(esc.getCodigoAeropuerto()) && esc.getHoraLlegadaEst() != null) {
+                        horaEnAlmacen = esc.getHoraLlegadaEst().toLocalTime().toString().substring(0, 5);
+                        fechaEnAlmacen = esc.getHoraLlegadaEst().toLocalDate().toString();
+                        break;
+                    }
+                }
+                // If it's the origin (no arrival — it started here), use next departure time
+                if (horaEnAlmacen == null && !escalas.isEmpty() && iata.equals(e.getAeropuertoOrigen())) {
+                    Escala first = escalas.get(0);
+                    if (first.getHoraSalidaEst() != null) {
+                        horaEnAlmacen = first.getHoraSalidaEst().toLocalTime().toString().substring(0, 5);
+                        fechaEnAlmacen = first.getHoraSalidaEst().toLocalDate().toString();
+                    }
+                }
+            } else {
+                // PENDIENTE: use the ingreso time as reference
+                if (e.getFechaHoraIngreso() != null) {
+                    horaEnAlmacen = e.getFechaHoraIngreso().toLocalTime().toString().substring(0, 5);
+                    fechaEnAlmacen = e.getFechaHoraIngreso().toLocalDate().toString();
+                }
+            }
             enAlmacen.add(com.tasf.backend.dto.EnvioSummaryDTO.builder()
                 .idEnvio(e.getIdEnvio())
                 .aeropuertoOrigen(e.getAeropuertoOrigen())
@@ -992,6 +1022,8 @@ public class SimulationEngine {
                 .cantidadMaletas(displayQty)
                 .estado(e.getEstado().name())
                 .planificado(plan != null)
+                .hora(horaEnAlmacen)
+                .fecha(fechaEnAlmacen)
                 .build());
         }
         enAlmacen.sort(Comparator.comparing(com.tasf.backend.dto.EnvioSummaryDTO::getIdEnvio));
@@ -1043,6 +1075,7 @@ public class SimulationEngine {
                             .estado(e.getEstado().name())
                             .codigoVuelo(esc.getCodigoVuelo())
                             .hora(esc.getHoraLlegadaEst().toLocalTime().toString().substring(0, 5))
+                            .fecha(esc.getHoraLlegadaEst().toLocalDate().toString())
                             .build());
                     }
                     if (iata.equals(saleDesde)
@@ -1056,6 +1089,7 @@ public class SimulationEngine {
                             .estado(e.getEstado().name())
                             .codigoVuelo(esc.getCodigoVuelo())
                             .hora(esc.getHoraSalidaEst().toLocalTime().toString().substring(0, 5))
+                            .fecha(esc.getHoraSalidaEst().toLocalDate().toString())
                             .build());
                     }
                 }

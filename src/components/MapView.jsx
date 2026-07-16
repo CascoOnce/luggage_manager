@@ -577,7 +577,7 @@ export default function MapView({
       style={{ position: 'relative', width: '100%', height: '100%' }}
       onMouseLeave={() => setHoveredAirport(null)}
     >
-      <div style={{ position: 'absolute', bottom: 16, left: 20, zIndex: 500, pointerEvents: 'none' }}>
+      <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 500, pointerEvents: 'none' }}>
         <DraggableWidget
           ref={widgetRef}
           containerRef={containerRef}

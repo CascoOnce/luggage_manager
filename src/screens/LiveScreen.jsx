@@ -194,6 +194,7 @@ export default function LiveScreen({ liveState, theme, onBack }) {
   function handleVueloClick(f) {
     setSelectedFlight(f.id)
     setSelectedVueloData(f)
+    if (f) setSelectedAirport(null)
   }
 
   function handleCloseVuelo() {
@@ -281,10 +282,10 @@ export default function LiveScreen({ liveState, theme, onBack }) {
             airports={visibleAirports}
             flights={visibleFlights}
             selectedFlight={selectedFlight}
-            setSelectedFlight={setSelectedFlight}
+            setSelectedFlight={(id) => { setSelectedFlight(id); if (id) setSelectedAirport(null); }}
             selectedFlightData={selectedFlightData}
-            onAirportClick={setSelectedAirport}
-            onMapClick={handleCloseVuelo}
+            onAirportClick={(ap) => { setSelectedAirport(ap); handleCloseVuelo(); }}
+            onMapClick={() => { handleCloseVuelo(); setSelectedAirport(null) }}
             theme={theme}
           />
 

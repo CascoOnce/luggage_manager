@@ -4,11 +4,12 @@ import { api } from '../services/api.js'
 const s = {
   overlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2000,
-    display: 'flex', pointerEvents: 'auto',
+    display: 'flex', pointerEvents: 'none',
   },
   backdrop: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    background: 'transparent', border: 'none', cursor: 'pointer',
+    background: 'transparent', border: 'none', cursor: 'default',
+    pointerEvents: 'none',
   },
   panel: {
     position: 'absolute', left: 60, top: 10, bottom: 10, width: 340,
@@ -16,6 +17,7 @@ const s = {
     border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: 16,
     display: 'flex', flexDirection: 'column', overflowY: 'auto', zIndex: 2001,
     boxShadow: '4px 4px 24px rgba(0, 0, 0, 0.5)',
+    pointerEvents: 'auto',
   },
   header: {
     display: 'flex', alignItems: 'center', gap: 10,
