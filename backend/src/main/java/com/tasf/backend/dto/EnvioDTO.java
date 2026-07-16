@@ -29,4 +29,7 @@ public class EnvioDTO {
     private PlanDeViaje planDetalle;
     private List<EscalaResumenDTO> escalasResumen;
     private List<String> vuelosAsignados;
+    /** Camino completo de la ruta: [origen, destino de cada escala…]. Permite al panel filtrar
+     *  por aeropuerto "en el tramo" (cualquier escala) además de "en la ruta" (origen/destino). */
+    private List<String> aeropuertosRuta;
 }

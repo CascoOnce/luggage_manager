@@ -1928,23 +1928,32 @@ public class SimulationEngine {
         // state omits it. EnviosScreen falls back to the backend estado when absent.
         List<EscalaResumenDTO> escalasResumen = List.of();
         List<String> vuelosAsignados = List.of();
+        List<String> aeropuertosRuta = List.of();
         String fechaSalidaPrimerVuelo = null;
         String fechaLlegadaUltimoVuelo = null;
         if (plan != null && plan.getEscalas() != null && !plan.getEscalas().isEmpty()) {
             List<Escala> escalas = plan.getEscalas();
-            
+
             if (escalas.get(0).getHoraSalidaEst() != null) {
                 fechaSalidaPrimerVuelo = escalas.get(0).getHoraSalidaEst().format(TS_FORMAT);
             }
             if (escalas.get(escalas.size() - 1).getHoraLlegadaEst() != null) {
                 fechaLlegadaUltimoVuelo = escalas.get(escalas.size() - 1).getHoraLlegadaEst().format(TS_FORMAT);
             }
-            
+
             // Siempre enviamos los códigos de vuelo, es muy liviano y permite al frontend
             // calcular el estado EN_TRANSITO reactivamente
             vuelosAsignados = escalas.stream()
                 .map(Escala::getCodigoVuelo)
                 .collect(Collectors.toList());
+
+            // Camino completo: origen + destino de cada escala. Deja al panel filtrar por
+            // aeropuerto "en el tramo" (cualquier parada), no solo por origen/destino de ruta.
+            aeropuertosRuta = new java.util.ArrayList<>();
+            aeropuertosRuta.add(envio.getAeropuertoOrigen());
+            for (Escala e : escalas) {
+                aeropuertosRuta.add(e.getCodigoAeropuerto());
+            }
 
             if (includePlanDetail) {
                 int last = escalas.size() - 1;
@@ -1976,6 +1985,7 @@ public class SimulationEngine {
             .planDetalle(includePlanDetail ? plan : null)
             .escalasResumen(escalasResumen)
             .vuelosAsignados(vuelosAsignados)
+            .aeropuertosRuta(aeropuertosRuta)
             .build();
     }
 
