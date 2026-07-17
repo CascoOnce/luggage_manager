@@ -1,9 +1,15 @@
 import React from 'react'
 
+function occColor(pct) {
+  if (pct >= 85) return 'var(--red)'
+  if (pct >= 60) return 'var(--amber)'
+  return 'var(--green)'
+}
+
 export default function FloatingKPIs({ kpis, hasSimulation }) {
   const data = [
-    { label: 'Ocup. Vuelos',   value: hasSimulation ? `${Number(kpis.globalFleetOccupancy).toFixed(1)}%` : '—', color: hasSimulation ? (kpis.globalFleetOccupancy > 90 ? 'var(--red)' : kpis.globalFleetOccupancy > 75 ? 'var(--amber)' : 'var(--blue-bright)') : 'var(--muted)' },
-    { label: 'Ocup. Almacenes',value: hasSimulation ? `${Number(kpis.globalWarehouseOccupancy).toFixed(1)}%` : '—', color: hasSimulation ? (kpis.globalWarehouseOccupancy > 90 ? 'var(--red)' : kpis.globalWarehouseOccupancy > 75 ? 'var(--amber)' : 'var(--green)') : 'var(--muted)' },
+    { label: 'Ocup. Vuelos',   value: hasSimulation ? `${Number(kpis.globalFleetOccupancy).toFixed(1)}%` : '—', color: hasSimulation ? occColor(kpis.globalFleetOccupancy) : 'var(--muted)' },
+    { label: 'Ocup. Almacenes',value: hasSimulation ? `${Number(kpis.globalWarehouseOccupancy).toFixed(1)}%` : '—', color: hasSimulation ? occColor(kpis.globalWarehouseOccupancy) : 'var(--muted)' },
     { label: 'Espacio Disp. (V)', value: hasSimulation ? kpis.freeFleetSpace.toLocaleString() : '—', color: hasSimulation ? 'var(--text-bright)' : 'var(--muted)' },
     { label: 'Espacio Disp. (A)', value: hasSimulation ? kpis.freeWarehouseSpace.toLocaleString() : '—', color: hasSimulation ? 'var(--text-bright)' : 'var(--muted)' },
   ]

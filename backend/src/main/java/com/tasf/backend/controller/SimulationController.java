@@ -83,12 +83,14 @@ public class SimulationController {
     }
 
     @GetMapping("/simulation/state")
-    public ResponseEntity<SimulationStateDTO> state() {
+    public ResponseEntity<SimulationStateDTO> state(@RequestParam(required = false) Integer nowMin) {
         if (!simulationEngine.estaInicializada()) {
             return ResponseEntity.noContent().build();
         }
-        SimulationStateDTO cached = simulationEngine.getCachedEstado();
-        return cached != null ? ResponseEntity.ok(cached) : ResponseEntity.noContent().build();
+        // Occupancy KPIs are re-projected to the current simulated minute (per service cycle);
+        // everything else comes from the cached light state.
+        SimulationStateDTO estado = simulationEngine.getEstadoInstantaneo(nowMin);
+        return estado != null ? ResponseEntity.ok(estado) : ResponseEntity.noContent().build();
     }
 
     @PostMapping("/simulation/stop")

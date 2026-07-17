@@ -105,6 +105,9 @@ public class SimulationEngine {
     // NOTE: the cached copy is intentionally LIGHT (envios omitted) — /state polling carries
     // only enviosVersion, and the frontend refetches /envios lazily when that value changes.
     private volatile SimulationStateDTO cachedState;
+    // Immutable per-day occupancy projection, rebuilt alongside cachedState. Lets /state polling
+    // re-project fleet/warehouse occupancy to the current simulated minute without taking the lock.
+    private volatile OccupancySnapshot occupancySnapshot;
     private volatile boolean initialized = false;
 
     // Monotonic (never reset) version bumped whenever `envios` materially change: day
@@ -304,9 +307,15 @@ public class SimulationEngine {
 
         logDepartureDiagnostics(vueloByCode);
 
-        // End of the day just processed = start of the next calendar day (24h boundary),
-        // for every day including the last.
-        LocalDateTime currentStepEndTime = params.getFechaInicio().plusDays(diaActual).atStartOfDay();
+        // End of the day just processed = horaInicio of the next simulated day. The SLA window
+        // must run from the true start (día 1 horaInicio) for a full N×24h, so the per-envío
+        // deadline (fechaHoraIngreso + sla, which carries its ingreso time-of-day) is compared
+        // against a clock that also carries horaInicio. Using atStartOfDay() here truncated the
+        // window to midnight, flagging RETRASADO up to horaInicio hours early (112h vs 120h for
+        // an 08:00 start). NOTE: this clock is SLA-only — it is NOT fed to updateWarehouseOccupation,
+        // whose day-keying (ref.minusSeconds(1).toLocalDate()) still requires midnight boundaries.
+        LocalDateTime currentStepEndTime = params.getFechaInicio().plusDays(diaActual)
+            .atTime(parseHoraInicio(params.getHoraInicio()));
         checkSlaViolations(maletasByEnvio, currentStepEndTime);
 
         // Post-processing: recalculate actual warehouse state for internal accuracy
@@ -331,12 +340,18 @@ public class SimulationEngine {
         bumpEnviosVersion();
 
         if (colapsoPunto == null && diaActual >= params.getDiasSimulacion()) {
-            // Simulation ends at the end of the last full day = start of day N+1 (N×24h window).
-            LocalDateTime simEndTime = params.getFechaInicio().plusDays(params.getDiasSimulacion()).atStartOfDay();
-            updateWarehouseOccupation(simEndTime);
+            // Two distinct end instants, on purpose:
+            //  - occupancy uses the calendar-midnight boundary (day-keying in
+            //    updateWarehouseOccupation requires midnight);
+            //  - the SLA cutoff runs the full N×24h from the true start (horaInicio), so the
+            //    last horaInicio hours of the window are honoured (day6 08:00, not day6 00:00).
+            LocalDateTime simEndOccupancy = params.getFechaInicio().plusDays(params.getDiasSimulacion()).atStartOfDay();
+            LocalDateTime simEndSla = params.getFechaInicio().plusDays(params.getDiasSimulacion())
+                .atTime(parseHoraInicio(params.getHoraInicio()));
+            updateWarehouseOccupation(simEndOccupancy);
             this.finalizada = true;
             this.enEjecucion = false;
-            applySimulationEnd(simEndTime);
+            applySimulationEnd(simEndSla);
             addOperationLog("Simulation completed - Day " + diaActual);
             persistenceService.persistSimulationResults(
                 List.copyOf(planes),
@@ -671,6 +686,158 @@ public class SimulationEngine {
         return cachedState;
     }
 
+    /**
+     * Point-in-time (per service-cycle) overlay of the occupancy KPIs onto the cached light
+     * state. The cached state's KPIs are day-granular (frozen between avanzarDia steps), so
+     * fleet/warehouse occupation would otherwise stay static all day while the frontend clock
+     * advances.
+     *
+     * This method is deliberately NOT synchronized and touches only the two volatile fields
+     * (cachedState, occupancySnapshot): the polling path must never block behind avanzarDia's
+     * multi-minute planning lock, and must never iterate the live domain collections (which
+     * that lock mutates). The snapshot is an immutable projection captured under lock whenever
+     * the cache is rebuilt (buildEstado); occupancy at any minute is a pure function of it, so
+     * we can evaluate it lock-free here per poll.
+     *
+     * `nowMin` is the frontend's minute-of-day (0..1440, up to 1920 on the final day). When
+     * absent, or once the simulation is finalised (occupancy then comes from historical
+     * averages baked into the cache), the cached state is returned unchanged.
+     */
+    public SimulationStateDTO getEstadoInstantaneo(Integer nowMin) {
+        SimulationStateDTO cached = cachedState;
+        if (cached == null) return null;
+        OccupancySnapshot snap = occupancySnapshot;
+        if (nowMin == null || cached.isFinalizada() || snap == null) {
+            return cached;
+        }
+        KpisDTO base = cached.getKpis();
+        if (base == null) return cached;
+        LocalDateTime ref = snap.dayStart().plusMinutes(nowMin);
+
+        // Warehouse occupancy at `ref`: bags whose plan window covers this instant.
+        Map<String, Long> bagsPerAirport = new HashMap<>();
+        for (OccWindow w : snap.windows()) {
+            if (!w.from().isAfter(ref) && (w.to() == null || w.to().isAfter(ref))) {
+                bagsPerAirport.merge(w.airport(), w.qty(), Long::sum);
+            }
+        }
+        long cargaAlmacen = bagsPerAirport.values().stream().mapToLong(Long::longValue).sum();
+        double ocupacionAlmacenes = snap.capAlmacenTotal() == 0 ? 0.0
+            : cargaAlmacen * 100.0 / snap.capAlmacenTotal();
+        double ocupacionPromedio = snap.capByAirport().isEmpty() ? 0.0
+            : snap.capByAirport().entrySet().stream()
+                .mapToDouble(en -> en.getValue() == 0 ? 0.0
+                    : bagsPerAirport.getOrDefault(en.getKey(), 0L) * 100.0d / en.getValue())
+                .average()
+                .orElse(0.0d);
+
+        // Fleet occupancy at `ref`: flights currently airborne (salida <= ref < llegada).
+        long cargaFlota = 0;
+        long capFlota = 0;
+        int vuelosActivos = 0;
+        for (FlightInterval f : snap.flights()) {
+            if (!f.salida().isAfter(ref) && f.llegada().isAfter(ref)) {
+                cargaFlota += f.load();
+                capFlota += f.cap();
+                vuelosActivos++;
+            }
+        }
+        double ocupacionFlota = capFlota == 0 ? 0.0 : cargaFlota * 100.0 / capFlota;
+
+        KpisDTO merged = base.toBuilder()
+            .vuelosActivos(vuelosActivos)
+            .ocupacionFlota(ocupacionFlota)
+            .ocupacionAlmacenes(ocupacionAlmacenes)
+            .ocupacionPromedioAlmacen(ocupacionPromedio)
+            .build();
+        return cached.toBuilder().kpis(merged).build();
+    }
+
+    /** One warehouse-presence window carrying its bag quantity (immutable KPI snapshot). */
+    private record OccWindow(String airport, LocalDateTime from, LocalDateTime to, long qty) {
+    }
+
+    /** One flight's airborne interval with its projected load and capacity (immutable). */
+    private record FlightInterval(String code, LocalDateTime salida, LocalDateTime llegada,
+            long load, long cap) {
+    }
+
+    /** Immutable projection of the current plan set, captured under lock at each cache rebuild.
+     *  getEstadoInstantaneo() evaluates occupancy at any minute against this, lock-free. */
+    private record OccupancySnapshot(LocalDateTime dayStart, List<OccWindow> windows,
+            List<FlightInterval> flights, long capAlmacenTotal, Map<String, Long> capByAirport) {
+    }
+
+    /** Builds the immutable occupancy snapshot from the live domain state. MUST be called under
+     *  the engine lock (it reads planes/maletas/envios/vuelos/aeropuertos). */
+    private OccupancySnapshot buildOccupancySnapshot() {
+        if (fechaSimulada == null || params == null) return null;
+        LocalDateTime dayStart = fechaSimulada.toLocalDate().atStartOfDay();
+        int recogida = params.getMinutosRecogidaDestino();
+        Map<String, PlanDeViaje> latestPlan = buildLatestPlanByEnvio();
+
+        Map<String, Long> activeBagByEnvio = maletas.stream()
+            .filter(m -> m.getEstado() != EstadoMaleta.ENTREGADA && m.getEstado() != EstadoMaleta.CANCELADA)
+            .collect(Collectors.groupingBy(Maleta::getIdEnvio, Collectors.counting()));
+
+        List<OccWindow> windows = new ArrayList<>();
+        for (Envio e : envios) {
+            if (e.getEstado() == EstadoEnvio.CANCELADO) continue;
+            long qty = activeBagByEnvio.getOrDefault(e.getIdEnvio(), 0L);
+            long displayQty = qty > 0 ? qty : e.getCantidadMaletas();
+            if (displayQty <= 0) continue;
+            PlanDeViaje plan = latestPlan.get(e.getIdEnvio());
+            if (plan == null) {
+                // PENDIENTE (no plan yet): bags sit at the origin from fechaHoraIngreso onward.
+                windows.add(new OccWindow(e.getAeropuertoOrigen(), e.getFechaHoraIngreso(), null, displayQty));
+            } else {
+                for (WarehouseOccupationCalculator.CapacityWindow w :
+                        WarehouseOccupationCalculator.windowsForPlan(
+                            plan, e.getAeropuertoOrigen(), e.getFechaHoraIngreso(), recogida)) {
+                    windows.add(new OccWindow(w.airport(), w.from(), w.to(), displayQty));
+                }
+            }
+        }
+
+        Set<String> cancelados = vuelos.stream()
+            .filter(Vuelo::isCancelado)
+            .map(Vuelo::getCodigoVuelo)
+            .collect(Collectors.toSet());
+        Map<String, Vuelo> vueloByCode = vuelos.stream()
+            .collect(Collectors.toMap(Vuelo::getCodigoVuelo, v -> v, (a, b) -> a));
+        // One pass over the plans accumulates, per flight code, its projected load and the
+        // scheduled leg times (identical across every plan that rides that flight).
+        Map<String, long[]> loadByFlight = new HashMap<>();          // code -> {load}
+        Map<String, LocalDateTime[]> timesByFlight = new HashMap<>(); // code -> {salida, llegada}
+        for (PlanDeViaje p : latestPlan.values()) {
+            if (p.getEscalas() == null) continue;
+            for (Escala esc : p.getEscalas()) {
+                if (esc.getHoraSalidaEst() == null || esc.getHoraLlegadaEst() == null) continue;
+                if (cancelados.contains(esc.getCodigoVuelo())) continue;
+                loadByFlight.computeIfAbsent(esc.getCodigoVuelo(), k -> new long[1])[0] += p.getCantidadMaletas();
+                timesByFlight.putIfAbsent(esc.getCodigoVuelo(),
+                    new LocalDateTime[] {esc.getHoraSalidaEst(), esc.getHoraLlegadaEst()});
+            }
+        }
+        List<FlightInterval> flights = new ArrayList<>();
+        for (Map.Entry<String, long[]> en : loadByFlight.entrySet()) {
+            Vuelo v = vueloByCode.get(en.getKey());
+            LocalDateTime[] t = timesByFlight.get(en.getKey());
+            if (v == null || t == null) continue;
+            flights.add(new FlightInterval(en.getKey(), t[0], t[1], en.getValue()[0], v.getCapacidadTotal()));
+        }
+
+        Map<String, Long> capByAirport = new HashMap<>();
+        long capAlmacenTotal = 0;
+        for (Aeropuerto a : aeropuertos) {
+            capByAirport.put(a.getCodigoIATA(), (long) a.getCapacidadAlmacen());
+            capAlmacenTotal += a.getCapacidadAlmacen();
+        }
+
+        return new OccupancySnapshot(dayStart, List.copyOf(windows), List.copyOf(flights),
+            capAlmacenTotal, Map.copyOf(capByAirport));
+    }
+
     /** Bump the envio version whenever envios/plans/estados change (drives lazy client refetch). */
     private void bumpEnviosVersion() {
         this.enviosVersion++;
@@ -686,6 +853,10 @@ public class SimulationEngine {
     }
 
     private SimulationStateDTO buildEstado(boolean includeEnvios) {
+
+        // Refresh the immutable occupancy projection alongside every cache rebuild (under lock),
+        // so /state polling can re-project fleet/warehouse occupancy to the live clock lock-free.
+        this.occupancySnapshot = buildOccupancySnapshot();
 
         if (params == null) {
             return SimulationStateDTO.builder()
@@ -1685,11 +1856,19 @@ public class SimulationEngine {
             // counts them correctly. Without this, PENDIENTE envíos are invisible and the
             // occupation under-reports actual warehouse usage.
             if (qty == 0 || plan == null) {
-                long pendienteQty = envio.getCantidadMaletas();
-                if (pendienteQty > 0) {
-                    List<long[]> list = eventsByAirport.computeIfAbsent(envio.getAeropuertoOrigen(), k -> new ArrayList<>());
-                    list.add(new long[]{envio.getFechaHoraIngreso().toEpochSecond(UTC), pendienteQty});
-                    // No departure event: bags sit indefinitely until planned/departed
+                // PENDIENTE bags are counted open-ended (arrival, no departure) ONLY at the settled
+                // point (checkColapsoAlmacen). Mid-planning, the WHOLE day's envíos are still
+                // PENDIENTE and would pile open-ended at their origins — a transient >100% that is
+                // not the real occupancy (they get routed within seconds). Counting them only when
+                // settled means a leftover PENDIENTE is a genuinely unroutable/stuck bag → real
+                // overflow that legitimately contributes to saturation/collapse.
+                if (checkColapsoAlmacen) {
+                    long pendienteQty = envio.getCantidadMaletas();
+                    if (pendienteQty > 0) {
+                        List<long[]> list = eventsByAirport.computeIfAbsent(envio.getAeropuertoOrigen(), k -> new ArrayList<>());
+                        list.add(new long[]{envio.getFechaHoraIngreso().toEpochSecond(UTC), pendienteQty});
+                        // No departure event: bags sit indefinitely until planned/departed
+                    }
                 }
                 continue;
             }

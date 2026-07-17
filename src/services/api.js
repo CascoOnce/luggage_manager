@@ -188,8 +188,10 @@ export async function batchSaveOpsEnvios(dtos) {
 export const api = {
   startSimulation,
 
-  getState: async () => withHandling('getState', async () => {
-    return request('/simulation/state', {}, 30000)  // VM uplink lenta: estado puede tardar >10s
+  getState: async (nowMin) => withHandling('getState', async () => {
+    // nowMin = minuto simulado actual → KPIs de ocupación proyectados por ciclo de servicio.
+    const qs = nowMin != null ? `?nowMin=${Math.floor(nowMin)}` : ''
+    return request(`/simulation/state${qs}`, {}, 30000)  // VM uplink lenta: estado puede tardar >10s
   }),
 
   stepSimulation: async () => withHandling('stepSimulation', async () => {

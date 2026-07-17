@@ -43,6 +43,9 @@ export default function App() {
   const [mapSelectedVuelo, setMapSelectedVuelo] = useState(null)
   const [highlightedRoute, setHighlightedRoute] = useState(null)
   const [simClockMinutes, setSimClockMinutes] = useState(0)
+  // Mirror of simClockMinutes for stable access inside the polling closure (which is
+  // created once in startPolling and would otherwise capture a stale clock value).
+  const simClockMinutesRef = useRef(0)
   const [mapFlyTo, setMapFlyTo] = useState(null)
   const [vueloMapFilter, setVueloMapFilter] = useState({ origin: '', dest: '', semaforo: [], query: '' })
   const [airportMapFilter, setAirportMapFilter] = useState({ continent: '', pattern: '', semaforo: [] })
@@ -58,6 +61,12 @@ export default function App() {
   const prefetchFiredRef = useRef(false)
   const colapsoPuntoAlertedRef = useRef(false)
   const simStartMinuteRef = useRef(0)
+  // Clock cap for the CURRENT day. Normal days end at midnight (1440). The LAST day runs an
+  // extra horaInicio minutes past midnight (→ 1440 + simStartMinute) so the total elapsed is a
+  // full N×24h measured from día 1 horaInicio (e.g. 08:00), ending at día N+1 horaInicio
+  // (día 6 08:00 = 120h) instead of stopping at midnight (día 6 00:00 = 112h). Read by the
+  // ticker/visibility handlers which only depend on [autoStep] and can't see fresh backendState.
+  const dayClockCapRef = useRef(1440)
   const prevSimStateRef = useRef(null)
   // Envio delta-protocol cache: last full envios array + the version it corresponds to.
   const lastEnviosRef = useRef(null)
@@ -148,6 +157,7 @@ export default function App() {
 
   function onReset() {
     setAutoStep(false)
+    dayClockCapRef.current = 1440
     setSimStartedAt(null)
     setSelectedFlight(null)
     setMapSelectedAirport(null)
@@ -189,6 +199,11 @@ export default function App() {
     return state
   }, [])
 
+  // Keep the polling-closure's clock mirror current.
+  useEffect(() => {
+    simClockMinutesRef.current = simClockMinutes
+  }, [simClockMinutes])
+
   const startPolling = useCallback(() => {
     stopPolling()
     pollingErrorsRef.current = 0
@@ -199,7 +214,7 @@ export default function App() {
       if (pollInFlightRef.current) return
       pollInFlightRef.current = true
       try {
-        const state = await api.getState()
+        const state = await api.getState(simClockMinutesRef.current)
 
         // Ignore stale responses if this polling session was stopped or restarted
         if (pollingRef.current !== id) return
@@ -226,7 +241,11 @@ export default function App() {
             if (state.diaInicioTimestampUtc && state.enEjecucion && !state.finalizada) {
               const dayStartMinute = state.diaActual <= 1 ? (state.horaInicioMin || 0) : 0
               const elapsed = ((Date.now() - state.diaInicioTimestampUtc) / 1000) * SIM_MIN_PER_REAL_SEC
-              setSimClockMinutes(Math.min(dayStartMinute + elapsed, 1439))
+              // Last day runs past midnight to horaInicio (día N+1) so the elapsed reaches N×24h;
+              // other days clamp just below midnight so the ticker (not the poll) triggers /step.
+              const isLastDay = (state.diaActual || 1) >= (state.totalDias || state.totalDays || 5)
+              const ceiling = isLastDay ? (1440 + (state.horaInicioMin || 0)) : 1439
+              setSimClockMinutes(Math.min(dayStartMinute + elapsed, ceiling))
             }
           }
           wasSimRunningRef.current = true
@@ -278,6 +297,14 @@ export default function App() {
     }
   }, [backendState?.finalizada])
 
+  // Keep the current day's clock cap in sync. Only the last day extends past midnight so the
+  // elapsed clock reaches the true N×24h mark (see dayClockCapRef doc).
+  useEffect(() => {
+    const isLastDay = !!backendState
+      && (backendState.diaActual || 1) >= (backendState.totalDias || backendState.totalDays || 5)
+    dayClockCapRef.current = 1440 + (isLastDay ? (simStartMinuteRef.current || 0) : 0)
+  }, [backendState?.diaActual, backendState?.totalDias, backendState?.totalDays])
+
   function onIniciar() {
     if (!backendState) {
       setActiveSideSection('config')
@@ -303,7 +330,7 @@ export default function App() {
   // On mount: check if a simulation is already running (another tab/user started it).
   // Always start polling so B detects new simulations started by A after B has loaded.
   useEffect(() => {
-    api.getState().then(async (state) => {
+    api.getState(simClockMinutesRef.current).then(async (state) => {
       if (state && (state.enEjecucion || state.finalizada)) {
         await hydrateEnvios(state)  // light state → fetch envios once
         wasSimRunningRef.current = true  // So external-cancel detection triggers correctly
@@ -322,7 +349,9 @@ export default function App() {
         if (state.diaInicioTimestampUtc && state.enEjecucion && !state.finalizada) {
           const dayStartMinute = state.diaActual <= 1 ? (state.horaInicioMin || 0) : 0
           const elapsedSimMin  = ((Date.now() - state.diaInicioTimestampUtc) / 1000) * SIM_MIN_PER_REAL_SEC
-          const estimated = Math.min(dayStartMinute + elapsedSimMin, 1439)
+          const isLastDay = (state.diaActual || 1) >= (state.totalDias || state.totalDays || 5)
+          const ceiling = isLastDay ? (1440 + (state.horaInicioMin || 0)) : 1439
+          const estimated = Math.min(dayStartMinute + elapsedSimMin, ceiling)
           setSimClockMinutes(estimated)
         }
         if (state.finalizada) setScreen('resultados')
@@ -391,7 +420,7 @@ export default function App() {
     function startTick() {
       autoStepRef.current = setInterval(() => {
         if (stepInProgressRef.current) return
-        setSimClockMinutes((current) => Math.min(current + SIM_MINUTES_PER_REAL_SECOND, 1440))
+        setSimClockMinutes((current) => Math.min(current + SIM_MINUTES_PER_REAL_SECOND, dayClockCapRef.current))
       }, 250)
     }
 
@@ -409,7 +438,7 @@ export default function App() {
         const hiddenSec = (Date.now() - hiddenAt) / 1000
         hiddenAt = null
         const missedMin = hiddenSec * SIM_MINUTES_PER_REAL_SECOND * 4
-        setSimClockMinutes((current) => Math.min(current + missedMin, 1440))
+        setSimClockMinutes((current) => Math.min(current + missedMin, dayClockCapRef.current))
         startTick()
       }
     }
@@ -425,11 +454,16 @@ export default function App() {
   // Animation resumes for the next day while /step processes. When response arrives,
   // setBackendState swaps in new day data. Brief window (~1-4s) of prior-day flight
   // data is acceptable and masked by fine-grained ticks.
-  // Every day — including the last — animates the full 24h (0→1440) so that a
-  // simulation of N días covers N×24h.
+  // Every day animates the full 24h (0→1440) so that N días covers N×24h. The LAST day
+  // additionally animates the horaInicio-minutes tail past midnight (→ dayClockCapRef =
+  // 1440 + simStartMinute) BEFORE firing the final /step, so the clock lands on día N+1
+  // horaInicio (e.g. día 6 08:00 = 120h) instead of midnight (día 6 00:00 = 112h). The
+  // backend finalises on this step regardless of clock (diaActual ≥ diasSimulacion).
   useEffect(() => {
     if (!autoStep) return
-    const dayEndMin = 1440
+    const isLastDay = !!backendState
+      && (backendState.diaActual || 1) >= (backendState.totalDias || backendState.totalDays || 5)
+    const dayEndMin = 1440 + (isLastDay ? (simStartMinuteRef.current || 0) : 0)
     if (simClockMinutes < dayEndMin) return
     if (stepInProgressRef.current) return  // already fired this step
 
@@ -452,7 +486,7 @@ export default function App() {
       console.error('Auto-step error:', err)
       stepInProgressRef.current = false
     })
-  }, [simClockMinutes, autoStep, backendState?.diaActual, backendState?.totalDias])
+  }, [simClockMinutes, autoStep, backendState?.diaActual, backendState?.totalDias, backendState?.totalDays])
 
 
 
@@ -1025,7 +1059,12 @@ export default function App() {
       const state = await api.restartSimulation()
       if (state) {
         hydrateEnvios(state)  // full response → cache envios
-        setBackendState(state)
+        // Same as handleSimulationStarted: zero out day-aggregate KPIs to avoid a
+        // brief flash of stale occupancy; the first poll corrects with nowMin.
+        const patchedState = state?.kpis
+          ? { ...state, kpis: { ...state.kpis, ocupacionAlmacenes: 0, ocupacionFlota: 0 } }
+          : state
+        setBackendState(patchedState)
         setScreen('main')
         startPolling()
       }
@@ -1293,7 +1332,14 @@ export default function App() {
     setIsOwner(true)
     wasSimRunningRef.current = true
     hydrateEnvios(state)  // full /start response → seed the envios cache
-    setBackendState(state)
+    // The initial state's KPIs contain day-aggregate ocupacionAlmacenes (all day-1 bags
+    // counted at once → ~73%), not the time-zero value (~0%). Patch them to 0 so the
+    // first rendered frame doesn't flash a high occupancy. The next poll (within ~2s)
+    // provides the correct time-projected values via getEstadoInstantaneo(nowMin).
+    const patchedState = state?.kpis
+      ? { ...state, kpis: { ...state.kpis, ocupacionAlmacenes: 0, ocupacionFlota: 0 } }
+      : state
+    setBackendState(patchedState)
     setLastParams(params)
     const [h = 0, m = 0] = (params?.horaInicio || '00:00').split(':').map(Number)
     const startMin = h * 60 + m

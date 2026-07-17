@@ -24,6 +24,18 @@ const DraggableWidget = forwardRef(({ children, style, containerRef, hideVisibil
     setVisibility: (v) => setIsVisible(v),
   }))
 
+  useEffect(() => {
+    const handleRestore = () => {
+      setDragOffset({ x: 0, y: 0 })
+      hasDraggedRef.current = false
+      prevBaseRectRef.current = null
+      anchorYRef.current = 'bottom'
+      setIsVisible(true)
+    }
+    window.addEventListener('restoreWidgets', handleRestore)
+    return () => window.removeEventListener('restoreWidgets', handleRestore)
+  }, [])
+
   const handleMouseDown = (e) => {
     // Only drag if left click and not clicking a button
     if (e.button !== 0 || e.target.closest('button')) return
