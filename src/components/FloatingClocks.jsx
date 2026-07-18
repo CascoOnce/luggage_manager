@@ -20,7 +20,7 @@ function useWallClock() {
   return now
 }
 
-export default function FloatingClocks({ backendState, simClockMinutes, simStartMinute = 0, simStartedAt }) {
+export default function FloatingClocks({ backendState, simClockMinutes, simStartMinute = 0, simStartedAt, esColapso = false }) {
   const now = useWallClock()
 
   // -- REAL CLOCK --
@@ -119,7 +119,7 @@ export default function FloatingClocks({ backendState, simClockMinutes, simStart
           </div>
           {backendState && (
             <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--amber)', background: 'rgba(251,191,36,0.15)', padding: '1px 5px', borderRadius: 3 }}>
-              Día {diaActual}/{totalDias}
+              Día {diaActual}{esColapso ? '' : `/${totalDias}`}
             </div>
           )}
         </div>

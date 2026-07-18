@@ -1580,7 +1580,7 @@ export default function App() {
                 <FloatingKPIs kpis={activeKpis} hasSimulation={Boolean(backendState)} />
               </DraggableWidget>
               <DraggableWidget ref={clockWidgetRef} containerRef={mapContainerRef}>
-                <FloatingClocks backendState={backendState} simClockMinutes={simClockMinutes} simStartMinute={simStartMinuteRef.current} simStartedAt={simStartedAt} />
+                <FloatingClocks backendState={backendState} simClockMinutes={simClockMinutes} simStartMinute={simStartMinuteRef.current} simStartedAt={simStartedAt} esColapso={lastParams?.esColapso} />
               </DraggableWidget>
               {backendState && !backendState?.finalizada && (
                 <button

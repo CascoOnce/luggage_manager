@@ -50,28 +50,23 @@ public class SimulationController {
         log.info("startSimulation request: fechaInicio={}, dias={}, esColapso={}, algoritmo={}",
             params.getFechaInicio(), params.getDias(), params.getEsColapso(), params.getAlgoritmo());
         
-        // Fase 4: Cargar solo los envíos necesarios para el periodo de simulación
-        java.time.LocalDateTime inicio = params.getFechaInicio().atStartOfDay();
-        java.time.LocalDateTime fin = inicio.plusDays(params.getDias());
-        
-        log.info("Querying envios from {} to {}", inicio, fin);
+        // Colapso: el motor carga los envíos por ventanas (rolling horizon), no se precargan todos.
+        // Simulación normal: se carga solo el periodo simulado en un query.
+        List<Envio> enviosSimulacion;
+        if (Boolean.TRUE.equals(params.getEsColapso())) {
+            enviosSimulacion = java.util.List.of();
+            log.info("Colapso: el motor cargará envíos por ventanas de días");
+        } else {
+            java.time.LocalDateTime inicio = params.getFechaInicio().atStartOfDay();
+            java.time.LocalDateTime fin = inicio.plusDays(params.getDias());
+            log.info("Querying envios from {} to {}", inicio, fin);
+            // Los envíos en BD ya están en UTC: no se convierte (la ventana también es UTC).
+            enviosSimulacion = envioRepository.findByFechaHoraIngresoBetween(inicio, fin).stream()
+                .map(com.tasf.backend.service.EnvioMapper::fromEntity)
+                .toList();
+            log.info("Found {} envios for simulation period", enviosSimulacion.size());
+        }
 
-        // Los envíos en BD ya están en UTC: no se convierte (la ventana también es UTC).
-        List<Envio> enviosSimulacion = envioRepository.findByFechaHoraIngresoBetween(inicio, fin).stream()
-            .map(e -> Envio.builder()
-                    .idEnvio(e.getIdPedido())
-                    .codigoAerolinea(e.getCodigoAerolinea())
-                    .aeropuertoOrigen(e.getIataOrigen())
-                    .aeropuertoDestino(e.getIataDestino())
-                    .fechaHoraIngreso(e.getFechaHoraIngreso())
-                    .cantidadMaletas(e.getCantidadMaletas())
-                    .sla(e.getSla())
-                    .estado(com.tasf.backend.domain.EstadoEnvio.valueOf(e.getEstado()))
-                    .build())
-            .toList();
-            
-        log.info("Found {} envios for simulation period", enviosSimulacion.size());
-        
         simulationEngine.inicializar(params, enviosSimulacion);
         log.info("startSimulation initialized successfully");
         return ResponseEntity.ok(simulationEngine.getEstado());

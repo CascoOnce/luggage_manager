@@ -59,6 +59,7 @@ public class SimulationEngine {
     private final DataLoaderService dataLoaderService;
     private final PlanningService planningService;
     private final SimulationPersistenceService persistenceService;
+    private final com.tasf.backend.repository.EnvioRepository envioRepository;
     private final Random random = new Random();
 
     private ParametrosSimulacion params;
@@ -89,6 +90,8 @@ public class SimulationEngine {
     // Point of colapso is to find WHICH day it fails, so we never commit to the full span up front.
     private static final int COLAPSO_CHUNK_DIAS = 10;
     private int colapsoHardCap = 0;
+    // Half-open upper bound [.., colapsoLoadedUntil) of envíos already loaded from BD for colapso.
+    private LocalDateTime colapsoLoadedUntil = null;
 
     // Rolling planning state — persist across planning cycles
     private AirportTimeline sharedTimeline;
@@ -130,10 +133,13 @@ public class SimulationEngine {
     });
     private volatile Future<?> backgroundPlanningFuture;
 
-    public SimulationEngine(DataLoaderService dataLoaderService, PlanningService planningService, SimulationPersistenceService persistenceService) {
+    public SimulationEngine(DataLoaderService dataLoaderService, PlanningService planningService,
+                            SimulationPersistenceService persistenceService,
+                            com.tasf.backend.repository.EnvioRepository envioRepository) {
         this.dataLoaderService = dataLoaderService;
         this.planningService = planningService;
         this.persistenceService = persistenceService;
+        this.envioRepository = envioRepository;
     }
 
     public synchronized void inicializar(ParametrosSimulacion params, List<Envio> todosLosEnvios) {
@@ -162,8 +168,15 @@ public class SimulationEngine {
 
         List<Envio> filteredEnvios;
         if (esColapso) {
-            filteredEnvios = todosLosEnvios.stream()
-                .filter(e -> !e.getFechaHoraIngreso().isBefore(inicioExacto))
+            // Rolling horizon: techo = día del último envío; se carga solo la primera ventana desde BD.
+            LocalDateTime maxIngreso = envioRepository.findMaxFechaIngresoDesde(inicioExacto);
+            this.colapsoHardCap = maxIngreso == null ? 1
+                : (int) Math.max(1, maxIngreso.toLocalDate().toEpochDay() - fechaInicio.toEpochDay() + 1);
+            int firstWindow = Math.min(COLAPSO_CHUNK_DIAS, colapsoHardCap);
+            this.colapsoLoadedUntil = fechaInicio.plusDays(firstWindow).atStartOfDay();
+            filteredEnvios = envioRepository
+                .findByFechaHoraIngresoGreaterThanEqualAndFechaHoraIngresoLessThan(inicioExacto, colapsoLoadedUntil)
+                .stream().map(com.tasf.backend.service.EnvioMapper::fromEntity)
                 .collect(Collectors.toCollection(ArrayList::new));
         } else {
             LocalDate dateEnd = fechaInicio.plusDays(filterDias);
@@ -180,8 +193,7 @@ public class SimulationEngine {
         if (params.getDiasSimulacion() > 0) {
             diasSimulacion = params.getDiasSimulacion();
         } else if (esColapso) {
-            // Ceiling = last envio's day; start with the first rolling window only.
-            this.colapsoHardCap = computeDiasColapso(fechaInicio, filteredEnvios);
+            // colapsoHardCap already computed from BD above; start with the first rolling window only.
             diasSimulacion = Math.min(COLAPSO_CHUNK_DIAS, colapsoHardCap);
         } else {
             diasSimulacion = filterDias;
@@ -354,8 +366,18 @@ public class SimulationEngine {
                 && diaActual >= params.getDiasSimulacion()
                 && params.getDiasSimulacion() < colapsoHardCap) {
             params.setDiasSimulacion(Math.min(params.getDiasSimulacion() + COLAPSO_CHUNK_DIAS, colapsoHardCap));
-            addOperationLog("Colapso: sin colapso al Día " + diaActual
-                + " — horizonte extendido a Día " + params.getDiasSimulacion());
+            // Load the newly-covered days' envíos from BD and append (rolling horizon).
+            LocalDateTime newEnd = params.getFechaInicio().plusDays(params.getDiasSimulacion()).atStartOfDay();
+            List<Envio> nuevos = envioRepository
+                .findByFechaHoraIngresoGreaterThanEqualAndFechaHoraIngresoLessThan(colapsoLoadedUntil, newEnd)
+                .stream().map(com.tasf.backend.service.EnvioMapper::fromEntity)
+                .collect(Collectors.toList());
+            nuevos.forEach(e -> e.setEstado(EstadoEnvio.PENDIENTE));
+            this.envios.addAll(deepCopyEnvios(nuevos));
+            this.colapsoLoadedUntil = newEnd;
+            addOperationLog("Colapso: sin colapso al Día " + diaActual + " — horizonte extendido a Día "
+                + params.getDiasSimulacion() + " (+" + nuevos.size() + " envíos)");
+            bumpEnviosVersion();
         }
 
         if (colapsoPunto == null && diaActual >= params.getDiasSimulacion()) {
@@ -995,6 +1017,7 @@ public class SimulationEngine {
         this.enEjecucion = false;
         this.finalizada = false;
         this.colapsoHardCap = 0;
+        this.colapsoLoadedUntil = null;
         this.logOperaciones = new ArrayList<>();
         this.logBuffer.clear();
         this.maletaVueloActual.clear();
@@ -2647,15 +2670,6 @@ public class SimulationEngine {
             return p.getDiasSimulacion();
         }
         throw new IllegalArgumentException("dias must be greater than zero");
-    }
-
-    private int computeDiasColapso(LocalDate fechaInicio, List<Envio> envios) {
-        LocalDate lastDate = envios.stream()
-            .map(Envio::getFechaHoraIngreso)
-            .map(LocalDateTime::toLocalDate)
-            .max(LocalDate::compareTo)
-            .orElse(fechaInicio);
-        return (int) Math.max(1, lastDate.toEpochDay() - fechaInicio.toEpochDay() + 1);
     }
 
     private static class DeliveryStats {

@@ -18,6 +18,13 @@ public interface EnvioRepository extends JpaRepository<EnvioEntity, Long> {
      */
     List<EnvioEntity> findByFechaHoraIngresoBetween(LocalDateTime desde, LocalDateTime hasta);
 
+    /** Half-open window [desde, hasta) — usado por el colapso para cargar envíos por tramos sin duplicar el borde. */
+    List<EnvioEntity> findByFechaHoraIngresoGreaterThanEqualAndFechaHoraIngresoLessThan(LocalDateTime desde, LocalDateTime hasta);
+
+    /** Fecha de ingreso del último envío desde :desde — techo del colapso (hasta qué día extender). */
+    @Query("SELECT MAX(e.fechaHoraIngreso) FROM EnvioEntity e WHERE e.fechaHoraIngreso >= :desde")
+    LocalDateTime findMaxFechaIngresoDesde(@Param("desde") LocalDateTime desde);
+
     /**
      * Verifica si ya existe un envío por su id_pedido de dominio.
      * Usado por el seeder y el upload para evitar duplicados.
