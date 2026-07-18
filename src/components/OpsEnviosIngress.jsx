@@ -56,7 +56,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
   const [destino, setDestino] = useState('')
   const [cantidad, setCantidad] = useState(1)
   const [hora, setHora] = useState(getNowHHMM)
-  const [codigoCliente, setCodigoCliente] = useState('')
+  const [codigoAerolinea, setCodigoAerolinea] = useState('')
   const [formError, setFormError] = useState(null)
 
   // ── planificar state ───────────────────────────────────────────────
@@ -162,7 +162,8 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
   function handleAddEnvio(event) {
     event.preventDefault()
     if (!origen || !destino || !hora) return
-    if (!codigoCliente.trim()) { setFormError('Código de cliente requerido'); return }
+    if (!codigoAerolinea.trim()) { setFormError('Código de aerolínea requerido'); return }
+    if (codigoAerolinea.trim().length > 10) { setFormError('Código de aerolínea: máximo 10 caracteres'); return }
     setFormError(null)
     const airport = airports.find(a => a.id === origen)
     const huso = airport ? (airport.huso ?? 0) : 0
@@ -172,7 +173,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
     const offsetSign = huso >= 0 ? '+' : '-'
     const fechaHoraIngreso = `${today}T${hora}:00${offsetSign}${String(absOffset).padStart(2, '0')}:00`
     const horaSlice = hora.slice(0, 5)
-    const idCliente = codigoCliente.trim()
+    const codigoAerolineaVal = codigoAerolinea.trim()
 
     setPendingEnvios(prev => {
       // Merge: same manual origin+destino+hora → sum cantidades
@@ -181,7 +182,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
         e.iataOrigen === origen &&
         e.iataDestino === destino &&
         e.fechaHoraIngreso.slice(11, 16) === horaSlice &&
-        (e.idCliente ?? null) === idCliente
+        (e.codigoAerolinea ?? null) === codigoAerolineaVal
       )
       if (matchIdx !== -1) {
         const copy = [...prev]
@@ -195,7 +196,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
         _localId: `${Date.now()}-${Math.random()}`,
         _isManual: true,
         idPedido,
-        idCliente,
+        codigoAerolinea: codigoAerolineaVal,
         iataOrigen: origen,
         iataDestino: destino,
         cantidadMaletas: Number(cantidad),
@@ -214,9 +215,9 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
     setPlanError(null)
     try {
       if (pendingEnvios.length > 0) {
-        const dtos = pendingEnvios.map(({ idPedido, idCliente, iataOrigen, iataDestino, cantidadMaletas, fechaHoraIngreso }) => ({
+        const dtos = pendingEnvios.map(({ idPedido, codigoAerolinea, iataOrigen, iataDestino, cantidadMaletas, fechaHoraIngreso }) => ({
           idPedido: idPedido ?? null,
-          idCliente: idCliente ?? null,
+          codigoAerolinea: codigoAerolinea ?? null,
           iataOrigen,
           iataDestino,
           cantidadMaletas,
@@ -245,7 +246,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
 
   useEffect(() => {
     if (!origen) return
-    
+
     const updateTime = () => {
       const ap = airports.find(a => a.id === origen)
       const off = ap?.huso ?? null
@@ -255,7 +256,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
       const local = new Date(localMs)
       setHora(`${String(local.getUTCHours()).padStart(2, '0')}:${String(local.getUTCMinutes()).padStart(2, '0')}`)
     }
-    
+
     updateTime()
     const id = setInterval(updateTime, 10000) // update every 10 seconds
     return () => clearInterval(id)
@@ -508,12 +509,13 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
             </div>
 
             <div>
-              <label style={labelStyle}>Código de cliente</label>
+              <label style={labelStyle}>Código de aerolínea</label>
               <input
                 type="text"
-                value={codigoCliente}
-                onChange={e => setCodigoCliente(e.target.value)}
+                value={codigoAerolinea}
+                onChange={e => setCodigoAerolinea(e.target.value)}
                 placeholder="ej. 0002850"
+                maxLength={10}
                 required
                 style={{ ...inputStyle }}
               />
@@ -521,7 +523,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
 
             <button
               type="submit"
-              disabled={!origen || !destino || !codigoCliente.trim()}
+              disabled={!origen || !destino || !codigoAerolinea.trim()}
               style={{
                 padding: '8px 12px',
                 background: 'rgba(34,197,94,0.1)',
@@ -531,8 +533,8 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
                 fontSize: 14,
                 textTransform: 'uppercase',
                 letterSpacing: 1,
-                cursor: (!origen || !destino || !codigoCliente.trim()) ? 'not-allowed' : 'pointer',
-                opacity: (!origen || !destino || !codigoCliente.trim()) ? 0.5 : 1,
+                cursor: (!origen || !destino || !codigoAerolinea.trim()) ? 'not-allowed' : 'pointer',
+                opacity: (!origen || !destino || !codigoAerolinea.trim()) ? 0.5 : 1,
               }}
             >
               + Agregar
@@ -565,8 +567,8 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
                       <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>{e.iataDestino}</span>
                       <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{String(e.cantidadMaletas).padStart(2, '0')} {horaDisplay}</span>
                     </div>
-                    {e.idCliente && (
-                      <span style={{ color: 'var(--blue)', fontSize: 12, opacity: 0.8 }}>{e.idCliente}</span>
+                    {e.codigoAerolinea && (
+                      <span style={{ color: 'var(--blue)', fontSize: 12, opacity: 0.8 }}>{e.codigoAerolinea}</span>
                     )}
                   </div>
                   <button onClick={() => setPendingEnvios(prev => prev.filter(x => x._localId !== e._localId))}
@@ -599,7 +601,7 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
             opacity: planLoading ? 0.6 : 1,
           }}
         >
-          {planLoading ? 'Planificando...' : '▶ Planificar rutas (SA)'}
+          {planLoading ? 'Planificando...' : '▶ Planificar rutas'}
         </button>
 
         {planResult && !planLoading && (

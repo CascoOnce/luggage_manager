@@ -14,6 +14,7 @@ public class LiveStateDTO {
 
     private List<LiveAeropuertoDTO> aeropuertos;
     private List<LiveVueloDTO> vuelos;
+    private List<LiveCancelacionDTO> cancelaciones;
 
     @Data
     @Builder
@@ -26,6 +27,7 @@ public class LiveStateDTO {
         private String continente;
         private double lat;
         private double lng;
+        private int huso;
         private int capacidadAlmacen;
         private int maletasPendientes;
         private double ocupacionPct;
@@ -51,5 +53,23 @@ public class LiveStateDTO {
         private boolean enUso;
         private boolean inFlight;
         private boolean cancelacionProgramada;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class LiveCancelacionDTO {
+        private String id;
+        private String codigoVuelo;
+        private String origen;
+        private String destino;
+        private String horaSalida;
+        private String horaLlegada;
+        private String tipo;
+        private int capacidadTotal;
+        private String fecha;
+        private String motivo;
+        private int maletasAfectadas;
     }
 }

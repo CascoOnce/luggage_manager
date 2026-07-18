@@ -1322,10 +1322,19 @@ export default function App() {
   // (see api.cancelLiveFlight) — it is not backed by SimulationEngine.
   const handleCancelOpsFlight = useCallback(async (codigoVuelo, aplicaDesde = 'HOY') => {
     try {
-      await api.cancelLiveFlight(codigoVuelo, aplicaDesde)
+      await api.cancelOpsFlight(codigoVuelo, aplicaDesde)
       refreshOps()
     } catch (err) {
       alert('Error al cancelar vuelo: ' + (err instanceof Error ? err.message : String(err)))
+    }
+  }, [])
+
+  const handleClearOpsCancellations = useCallback(async () => {
+    try {
+      await api.clearOpsCancellations()
+      refreshOps()
+    } catch (err) {
+      alert('Error al limpiar cancelaciones: ' + (err instanceof Error ? err.message : String(err)))
     }
   }, [])
   const handleBackToMain   = useCallback(() => setScreen(isOpsActive ? 'ops' : 'main'), [isOpsActive])
@@ -1492,6 +1501,8 @@ export default function App() {
                 onOpenOps={handleOpenOps}
                 isOwner={isOwner}
                 hasSimulation={Boolean(backendState)}
+                onClearCancellations={isOpsActive ? handleClearOpsCancellations : undefined}
+                mode={isOpsActive ? 'ops' : 'simulacion'}
               />
             </div>
 
@@ -1582,6 +1593,7 @@ export default function App() {
               onBack={() => { stopOps(); handleNavigate('config') }}
               onRefreshOps={() => { refreshOps(); refreshOpsViewData() }}
               onCancelFlight={handleCancelOpsFlight}
+              onClearCancellations={handleClearOpsCancellations}
               openSectionRequest={opsOpenSectionRequest}
             />
           </div>

@@ -141,4 +141,18 @@ public class OpsController {
         }
         return ResponseEntity.ok(opsService.computeOccupation(fromDateTime));
     }
+
+    @PostMapping("/cancel-flight/{codigoVuelo}")
+    public ResponseEntity<Void> cancelFlight(
+            @PathVariable String codigoVuelo,
+            @RequestParam(defaultValue = "HOY") String aplicaDesde) {
+        opsService.cancelFlight(codigoVuelo, aplicaDesde);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/cancellations")
+    public ResponseEntity<Void> clearCancellations() {
+        opsService.clearCancellations();
+        return ResponseEntity.ok().build();
+    }
 }

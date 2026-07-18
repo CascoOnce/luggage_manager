@@ -21,7 +21,7 @@ public interface OpsEnvioRepository extends JpaRepository<EnvioEntity, Long> {
     List<Object[]> sumMaletasPendientesByAeropuerto(@Param("from") LocalDateTime from);
 
     @Query("SELECT e.iataOrigen, SUM(e.cantidadMaletas) FROM EnvioEntity e " +
-           "WHERE e.estado = 'PENDIENTE' " +
+           "WHERE e.estado IN ('PENDIENTE', 'PLANIFICADO') " +
            "GROUP BY e.iataOrigen")
     List<Object[]> sumAllMaletasPendientesByAeropuerto();
 
@@ -33,6 +33,8 @@ public interface OpsEnvioRepository extends JpaRepository<EnvioEntity, Long> {
     long countByIataOrigen(String iataOrigen);
 
     List<EnvioEntity> findAllByEstadoAndIataOrigen(String estado, String iataOrigen);
+
+    List<EnvioEntity> findAllByEstadoInAndIataOrigen(List<String> estados, String iataOrigen);
 
     List<EnvioEntity> findAllByEstado(String estado);
 

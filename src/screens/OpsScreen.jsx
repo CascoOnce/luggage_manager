@@ -44,7 +44,7 @@ function mod1440(m) {
   return ((m % 1440) + 1440) % 1440
 }
 
-export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onRefreshOps, onCancelFlight, openSectionRequest }) {
+export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onRefreshOps, onCancelFlight, onClearCancellations, openSectionRequest }) {
   const [selectedFlight, setSelectedFlight] = useState(null)
   const [selectedVueloData, setSelectedVueloData] = useState(null)
   const [flightSource, setFlightSource] = useState(null) // 'map' | 'panel'
@@ -91,6 +91,8 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
   const [threshold, setThreshold] = useState(80)
   const [activeSideSection, setActiveSideSection] = useState(null)
   const [highlightedRoute, setHighlightedRoute] = useState(null)
+  const [vueloMapFilter, setVueloMapFilter] = useState({ origin: '', dest: '', semaforo: [], query: '' })
+  const [airportMapFilter, setAirportMapFilter] = useState({ continent: '', pattern: '', semaforo: [] })
   
   const handleShowEnvioRoute = async (envioId) => {
     try {
@@ -305,6 +307,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
       continent: a.continente,
       lat: a.lat,
       lng: a.lng,
+      huso: a.huso,
       warehouseCapacity: a.capacidadAlmacen ?? 600,
       currentOccupation: a.ocupacionPct != null
         ? Math.round((a.ocupacionPct / 100) * (a.capacidadAlmacen ?? 600))
@@ -329,16 +332,16 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
       return {
         id: c.codigoVuelo,
         uid: c.id,
-        origin: v?.origen || '?',
-        destination: v?.destino || '?',
-        type: v?.tipo,
+        origin: c.origen || v?.origen || '?',
+        destination: c.destino || v?.destino || '?',
+        type: c.tipo || v?.tipo,
         status: 'cancelled',
-        capacity: v?.capacidadTotal ?? 0,
+        capacity: c.capacidadTotal ?? v?.capacidadTotal ?? 0,
         currentLoad: c.maletasAfectadas ?? 0,
         fecha: c.fecha,
         hora: c.hora,
-        horaSalida: v?.horaSalida,
-        horaLlegada: v?.horaLlegada,
+        horaSalida: c.horaSalida || v?.horaSalida,
+        horaLlegada: c.horaLlegada || v?.horaLlegada,
         motivo: c.motivo,
         isCancelled: true
       }
@@ -362,6 +365,44 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
       (!destSet || destSet.has(f.destination))
     ),
   [cancelledFlights, originSet, destSet])
+
+  // Búsqueda/semáforo del side panel (Vuelos, Almacén) también filtran el mapa — mismo
+  // comportamiento que en simulación (App.jsx mapFilteredFlights/mapFilteredAirports).
+  const mapFilteredFlights = useMemo(() => {
+    const { origin, dest, semaforo, query } = vueloMapFilter
+    if (!origin && !dest && semaforo.length === 0 && !query) return visibleFlights
+    return visibleFlights.filter(f => {
+      if (origin && f.origin !== origin) return false
+      if (dest && f.destination !== dest) return false
+      if (semaforo.length > 0) {
+        const pct = f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
+        const s = pct === 0 ? 'vacio' : pct >= 60 ? (pct >= 85 ? 'rojo' : 'ambar') : 'verde'
+        if (!semaforo.includes(s)) return false
+      }
+      if (query && !(f.id?.toLowerCase().includes(query) || f.origin?.toLowerCase().includes(query) || f.destination?.toLowerCase().includes(query))) return false
+      return true
+    })
+  }, [visibleFlights, vueloMapFilter])
+
+  const mapFilteredAirports = useMemo(() => {
+    const { continent, pattern, semaforo } = airportMapFilter
+    if (!continent && !pattern && semaforo.length === 0) return visibleAirports
+    return visibleAirports.filter(a => {
+      if (continent && (a.continent || a.continente || '') !== continent) return false
+      if (pattern) {
+        const pat = pattern.toLowerCase()
+        if (!(a.id || '').toLowerCase().includes(pat)) return false
+      }
+      if (semaforo.length > 0) {
+        const occ = a.currentOccupation ?? 0
+        const cap = a.warehouseCapacity ?? 600
+        const pct = cap > 0 ? (occ / cap) * 100 : 0
+        const s = pct === 0 ? 'vacio' : pct >= threshold ? 'rojo' : pct >= threshold - 20 ? 'ambar' : 'verde'
+        if (!semaforo.includes(s)) return false
+      }
+      return true
+    })
+  }, [visibleAirports, airportMapFilter, threshold])
 
   const selectedFlightData = useMemo(() => {
     const foundActive = visibleFlights.find((f) => f.id === selectedFlight)
@@ -445,8 +486,8 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
         }}>
           {/* Map Layer */}
           <MapView
-            airports={visibleAirports}
-            flights={visibleFlights}
+            airports={mapFilteredAirports}
+            flights={mapFilteredFlights}
             selectedFlight={selectedFlight}
             setSelectedFlight={selectFlightFromMap}
             selectedFlightData={selectedFlightData}
@@ -457,7 +498,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
               setHighlightedRoute(null)
               setFlightSource(null)
             }}
-            theme="dark"
+            theme={theme}
             highlightedRoute={highlightedRoute}
             flyToTarget={mapFlyTo}
           />
@@ -500,7 +541,10 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
               opsBase={opsBase}
               onShowEnvioRoute={handleShowEnvioRoute}
               onFocusMapLocation={setMapFlyTo}
+              onVueloFilterChange={setVueloMapFilter}
+              onAirportFilterChange={setAirportMapFilter}
               setMapSelectedAirport={(ap) => { setSelectedAirport(ap); setMapFlyTo(ap); handleCloseVuelo(); }}
+              onClearCancellations={onClearCancellations}
             />
           </div>
 
@@ -515,7 +559,8 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
           )}
           <DrawerAeropuerto
             airport={selectedAirport}
-            vuelos={visibleFlights}
+            vuelos={[...visibleFlights, ...visiblePlannedFlights]}
+            nowMinuteUtc={Math.floor(liveNowMinutes)}
             onClose={() => setSelectedAirport(null)}
             fetchInventory={api.getOpsAirportInventory}
             umbralVerde={threshold - 20}

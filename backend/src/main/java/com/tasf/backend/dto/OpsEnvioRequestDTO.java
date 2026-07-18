@@ -32,6 +32,6 @@ public class OpsEnvioRequestDTO {
      */
     private String idPedido;
 
-    /** Código de cliente opcional (ej. "CLI-001"). Persiste en id_cliente. */
-    private String idCliente;
+    /** Código de aerolínea opcional (ej. "0002850"). Persiste en codigo_aerolinea (varchar(10)). */
+    private String codigoAerolinea;
 }

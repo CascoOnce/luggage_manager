@@ -222,7 +222,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
   const [opsFormError, setOpsFormError] = useState(null)
   const [pendingEnvios, setPendingEnvios] = useState([])
   const [opsIniciarLoading, setOpsIniciarLoading] = useState(false)
-  const [opsCodigoCliente, setOpsCodigoCliente] = useState('')
+  const [opsCodigoAerolinea, setOpsCodigoAerolinea] = useState('')
 
   useEffect(() => {
     if (!opsUploadFileError) return
@@ -466,14 +466,15 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
     e.preventDefault()
     if (!opsOrigen || !opsDestino || opsCantidad < 1) { setOpsFormError('Origen, destino y cantidad requeridos'); return }
     if (opsOrigen === opsDestino) { setOpsFormError('Origen y destino deben ser distintos'); return }
-    if (!opsCodigoCliente.trim()) { setOpsFormError('Código de cliente requerido'); return }
+    if (!opsCodigoAerolinea.trim()) { setOpsFormError('Código de aerolínea requerido'); return }
+    if (opsCodigoAerolinea.trim().length > 10) { setOpsFormError('Código de aerolínea: máximo 10 caracteres'); return }
     const ap = opsAirports.find(a => a.id === opsOrigen)
     const utcOffset = ap?.huso ?? 0
     const today = new Date().toISOString().slice(0, 10)
     const sign = utcOffset >= 0 ? '+' : '-'
     const absOff = Math.abs(utcOffset)
     const fechaHoraIngreso = `${today}T${opsHora}:00${sign}${String(absOff).padStart(2, '0')}:00`
-    const idCliente = opsCodigoCliente.trim()
+    const codigoAerolinea = opsCodigoAerolinea.trim()
 
     setPendingEnvios(prev => {
       // Merge: same manual origin+destino+hora → sum cantidades
@@ -482,7 +483,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
         entry.iataOrigen === opsOrigen &&
         entry.iataDestino === opsDestino &&
         entry.fechaHoraIngreso.slice(11, 16) === opsHora.slice(0, 5) &&
-        (entry.idCliente ?? null) === idCliente
+        (entry.codigoAerolinea ?? null) === codigoAerolinea
       )
       if (matchIdx !== -1) {
         const copy = [...prev]
@@ -495,7 +496,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
         _localId: `${Date.now()}-${Math.random()}`,
         _isManual: true,
         idPedido,
-        idCliente,
+        codigoAerolinea,
         iataOrigen: opsOrigen,
         iataDestino: opsDestino,
         cantidadMaletas: Number(opsCantidad),
@@ -511,9 +512,9 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
   async function handleOpsIniciar() {
     setOpsIniciarLoading(true)
     try {
-      const dtos = pendingEnvios.map(({ idPedido, idCliente, iataOrigen, iataDestino, cantidadMaletas, fechaHoraIngreso }) => ({
+      const dtos = pendingEnvios.map(({ idPedido, codigoAerolinea, iataOrigen, iataDestino, cantidadMaletas, fechaHoraIngreso }) => ({
         idPedido: idPedido ?? null,
-        idCliente: idCliente ?? null,
+        codigoAerolinea: codigoAerolinea ?? null,
         iataOrigen,
         iataDestino,
         cantidadMaletas,
@@ -993,10 +994,11 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                   </div>
                   <div>
                     <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
-                      Código de cliente
+                      Código de aerolínea
                     </div>
-                    <input type="text" value={opsCodigoCliente} onChange={e => setOpsCodigoCliente(e.target.value)}
+                    <input type="text" value={opsCodigoAerolinea} onChange={e => setOpsCodigoAerolinea(e.target.value)}
                       placeholder="ej. 0002850"
+                      maxLength={10}
                       required
                       style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 8px', boxSizing: 'border-box' }} />
                   </div>
@@ -1022,7 +1024,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--mono)', fontSize: 11 }}>
                       <thead>
                         <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                          {['ID Pedido', 'Origen', 'Destino', 'Maletas', 'Hora', 'Cliente', ''].map(h => (
+                          {['ID Pedido', 'Origen', 'Destino', 'Maletas', 'Hora', 'Aerolínea', ''].map(h => (
                             <th key={h} style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 400, fontSize: 10 }}>{h}</th>
                           ))}
                         </tr>
@@ -1037,7 +1039,7 @@ export default function ConfigScreen({ onCancel, onSimulationStarted, onOperacio
                               <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.iataDestino}</td>
                               <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{String(e.cantidadMaletas).padStart(2, '0')}</td>
                               <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{horaDisplay}</td>
-                              <td style={{ padding: '5px 8px', color: 'var(--blue)', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.idCliente ?? '—'}</td>
+                              <td style={{ padding: '5px 8px', color: 'var(--blue)', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.codigoAerolinea ?? '—'}</td>
                               <td style={{ padding: '5px 8px' }}>
                                 <button onClick={() => setPendingEnvios(prev => prev.filter(x => x._localId !== e._localId))}
                                   title="Eliminar"

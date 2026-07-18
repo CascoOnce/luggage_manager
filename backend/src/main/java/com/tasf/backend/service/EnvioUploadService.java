@@ -175,7 +175,7 @@ public class EnvioUploadService {
         List<com.tasf.backend.dto.OpsEnvioPreviewDTO> items = parsed.envios().stream()
             .map(e -> com.tasf.backend.dto.OpsEnvioPreviewDTO.builder()
                 .idPedido(e.getIdEnvio())
-                .idCliente(e.getCodigoAerolinea())
+                .codigoAerolinea(e.getCodigoAerolinea())
                 .iataOrigen(e.getAeropuertoOrigen())
                 .iataDestino(e.getAeropuertoDestino())
                 .cantidadMaletas(e.getCantidadMaletas())

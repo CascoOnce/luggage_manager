@@ -1,5 +1,8 @@
 package com.tasf.backend.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.tasf.backend.domain.Aeropuerto;
 import com.tasf.backend.domain.Envio;
 import com.tasf.backend.domain.Vuelo;
@@ -15,11 +18,15 @@ import com.tasf.backend.repository.VueloRepository;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,6 +38,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -56,10 +64,15 @@ public class DataLoaderService {
     private List<Aeropuerto> aeropuertos = new ArrayList<>();
     private List<Vuelo> vuelos = new ArrayList<>();
     private Map<String, Set<String>> airportGraph = new HashMap<>();
-    // Flight code -> calendar date it's cancelled for. No scheduled reset needed: a HOY
-    // cancellation stops matching "today" once the real date rolls over, and a MANANA
-    // cancellation starts matching once tomorrow becomes today.
+    // Flight code -> calendar date it's cancelled for. A HOY cancellation stops matching
+    // "today" once the real date rolls over, and a MANANA cancellation starts matching
+    // once tomorrow becomes today. Persisted to a JSON file so cancellations survive
+    // backend restarts; entries older than 7 days are purged daily.
     private final Map<String, LocalDate> sessionCancelledFlightDates = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final String CANCEL_FILE = "ops_cancellations.json";
+    private static final int CANCEL_RETENTION_DAYS = 7;
+    private final ObjectMapper cancelMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
     public DataLoaderService(
             AeropuertoRepository aeropuertoRepository,
@@ -80,6 +93,7 @@ public class DataLoaderService {
     public void init() {
         seedDatabaseIfEmpty();
         loadStaticDataFromDb();
+        loadCancellationsFromFile();
     }
 
     private void seedDatabaseIfEmpty() {
@@ -230,6 +244,7 @@ public class DataLoaderService {
     public void cancelFlightForSession(String codigoVuelo, String aplicaDesde) {
         LocalDate fecha = "MANANA".equalsIgnoreCase(aplicaDesde) ? LocalDate.now().plusDays(1) : LocalDate.now();
         sessionCancelledFlightDates.put(codigoVuelo, fecha);
+        persistCancellationsToFile();
     }
 
     public boolean isFlightCancelledForSession(String codigoVuelo) {
@@ -242,6 +257,76 @@ public class DataLoaderService {
 
     public void clearSessionCancellations() {
         sessionCancelledFlightDates.clear();
+        persistCancellationsToFile();
+    }
+
+    /** Returns an unmodifiable view of all session cancellations (code → date). */
+    public Map<String, LocalDate> getSessionCancelledFlightDates() {
+        return Collections.unmodifiableMap(sessionCancelledFlightDates);
+    }
+
+    // ── File-based persistence for Ops cancellations ──────────────────────────
+
+    private Path getCancelFilePath() {
+        // Store next to the running JAR / working directory
+        return Paths.get(CANCEL_FILE);
+    }
+
+    private void loadCancellationsFromFile() {
+        Path path = getCancelFilePath();
+        if (!Files.exists(path)) {
+            log.info("No cancellation file found at {}, starting fresh", path.toAbsolutePath());
+            return;
+        }
+        try {
+            Map<String, String> raw = cancelMapper.readValue(path.toFile(),
+                    new TypeReference<Map<String, String>>() {});
+            LocalDate cutoff = LocalDate.now().minusDays(CANCEL_RETENTION_DAYS);
+            int loaded = 0;
+            for (Map.Entry<String, String> entry : raw.entrySet()) {
+                LocalDate date = LocalDate.parse(entry.getValue());
+                if (!date.isBefore(cutoff)) {
+                    sessionCancelledFlightDates.put(entry.getKey(), date);
+                    loaded++;
+                }
+            }
+            log.info("Loaded {} active cancellations from {} ({} total in file)",
+                    loaded, path.toAbsolutePath(), raw.size());
+        } catch (Exception e) {
+            log.warn("Failed to load cancellations from {}: {}", path.toAbsolutePath(), e.getMessage());
+        }
+    }
+
+    private void persistCancellationsToFile() {
+        try {
+            // Convert LocalDate values to strings for JSON
+            Map<String, String> raw = new HashMap<>();
+            for (Map.Entry<String, LocalDate> entry : sessionCancelledFlightDates.entrySet()) {
+                raw.put(entry.getKey(), entry.getValue().toString());
+            }
+            cancelMapper.writerWithDefaultPrettyPrinter()
+                    .writeValue(getCancelFilePath().toFile(), raw);
+        } catch (Exception e) {
+            log.error("Failed to persist cancellations to file: {}", e.getMessage());
+        }
+    }
+
+    /** Runs daily at midnight: remove cancellations older than 7 days and re-persist. */
+    @Scheduled(cron = "0 0 0 * * *")
+    public void cleanupOldCancellations() {
+        LocalDate cutoff = LocalDate.now().minusDays(CANCEL_RETENTION_DAYS);
+        int removed = 0;
+        Iterator<Map.Entry<String, LocalDate>> it = sessionCancelledFlightDates.entrySet().iterator();
+        while (it.hasNext()) {
+            if (it.next().getValue().isBefore(cutoff)) {
+                it.remove();
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            log.info("Cleaned up {} old cancellations (before {})", removed, cutoff);
+            persistCancellationsToFile();
+        }
     }
 
     // Nota: El método getTodosLosEnvios() se elimina porque ya no cargamos todo en memoria.

@@ -59,6 +59,17 @@ async function request(path, options = {}, timeoutMs = 10000) {
     if (!response.ok) {
       throw new Error(await toApiError(response))
     }
+    // Some endpoints (e.g. LiveController.cancelFlight) return 200 with an
+    // empty body (ResponseEntity<Void>). Attempting response.json() on an
+    // empty body throws "Unexpected end of JSON input". Guard against that.
+    const contentLength = response.headers.get('content-length')
+    if (contentLength === '0') {
+      return null
+    }
+    const contentType = response.headers.get('content-type') || ''
+    if (!contentType.includes('application/json')) {
+      return null
+    }
     return response.json()
   } catch (error) {
     clearTimeout(timer)
@@ -240,6 +251,14 @@ export const api = {
 
   cancelLiveFlight: async (codigoVuelo, aplicaDesde = 'HOY') => withHandling('cancelLiveFlight', async () => {
     return request(`/live/cancel-flight/${codigoVuelo}?aplicaDesde=${aplicaDesde}`, { method: 'POST' })
+  }),
+
+  cancelOpsFlight: async (codigoVuelo, aplicaDesde = 'HOY') => withHandling('cancelOpsFlight', async () => {
+    return request(`/ops/cancel-flight/${codigoVuelo}?aplicaDesde=${aplicaDesde}`, { method: 'POST' })
+  }),
+
+  clearOpsCancellations: async () => withHandling('clearOpsCancellations', async () => {
+    return request(`/ops/cancellations`, { method: 'DELETE' })
   }),
 
   cancelEnvio: async (idEnvio) => withHandling('cancelEnvio', async () => {

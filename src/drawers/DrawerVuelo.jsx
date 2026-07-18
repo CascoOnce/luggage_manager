@@ -219,14 +219,16 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvio
         <div style={s.header}>
           <span style={s.code}>{code}</span>
           <div style={{ flex: 1 }} />
-          <span style={s.pill(isProgramada ? 'var(--amber)' : eColor)}>
-            {isProgramada ? 'CANCELACIÓN PROGRAMADA'
+          <div style={{ ...s.pill(isProgramada ? 'var(--amber)' : eColor), textAlign: 'center', lineHeight: 1.2 }}>
+            {isProgramada ? (
+              <>CANCELACIÓN<br />PROGRAMADA</>
+            )
               : estado === 'active' ? 'ACTIVO'
               : estado === 'planned' ? 'PLANIFICADO'
               : estado === 'cancelled' ? 'CANCELADO'
               : estado === 'completed' ? 'COMPLETADO'
               : estado.toUpperCase()}
-          </span>
+          </div>
           <button style={s.closeBtn} onClick={onClose} aria-label="Cerrar">✕</button>
         </div>
 

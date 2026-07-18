@@ -229,6 +229,23 @@ function EnvioRow({ e, singleLine, onClick }) {
   )
 }
 
+// Extract HH:MM from a time string (LocalTime "HH:MM[:SS]" or ISO "…THH:MM…").
+function hhmm(t) {
+  if (!t) return ''
+  const s = String(t)
+  const part = s.includes('T') ? (s.split('T')[1] || '') : s
+  return part.slice(0, 5)
+}
+
+// UTC HH:MM + huso → local HH:MM. Flight times in the DTO are UTC (see backend
+// DataLoaderService: horaSalida = stored local − huso). LCL = UTC + huso.
+function addHuso(hhmmStr, huso) {
+  if (!hhmmStr || huso == null) return ''
+  const [hh, mm] = hhmmStr.split(':').map(Number)
+  const localH = (((hh + huso) % 24) + 24) % 24
+  return `${String(localH).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+}
+
 // Sim clock runs in UTC; each airport displays its own local wall time (UTC + huso).
 function localTimeLabel(huso, nowMinuteUtc) {
   if (huso == null || nowMinuteUtc == null) return null
@@ -295,8 +312,16 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
   const color = semaforoColor(pct, umbralVerde, umbralRojo)
 
   const iata = airport.id
-  const salidas = (vuelos || []).filter((v) => (v.origin || v.origen) === iata).slice(0, 6)
-  const llegadas = (vuelos || []).filter((v) => (v.destination || v.destino) === iata).slice(0, 6)
+  // Tablero: próximos 6 a SALIR/LLEGAR desde "ahora" (UTC), ordenados por proximidad.
+  // nowMinuteUtc = reloj de sim (UTC) o hora real UTC en ops. Comparar en UTC da el mismo
+  // resultado que comparar en local del aeropuerto (mismo instante).
+  const nowMin = nowMinuteUtc != null ? (((Math.floor(nowMinuteUtc) % 1440) + 1440) % 1440) : 0
+  const toMin = (t) => { const s = hhmm(t); if (!s) return null; const [h, m] = s.split(':').map(Number); return h * 60 + m }
+  const waitFrom = (t) => { const mm = toMin(t); return mm == null ? Infinity : (mm - nowMin + 1440) % 1440 }
+  const salidas = (vuelos || []).filter((v) => (v.origin || v.origen) === iata)
+    .sort((a, b) => waitFrom(a.horaSalida) - waitFrom(b.horaSalida)).slice(0, 6)
+  const llegadas = (vuelos || []).filter((v) => (v.destination || v.destino) === iata)
+    .sort((a, b) => waitFrom(a.horaLlegada) - waitFrom(b.horaLlegada)).slice(0, 6)
 
   return (
     <div style={s.overlay}>
@@ -588,17 +613,10 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
               const c = flightColor(load, vcap)
               
               let displayCode = code.replace(`${iata}-`, '')
-              let flightTime = ''
-              let localTimeStr = ''
-              if (/\d{2}:\d{2}$/.test(displayCode)) {
-                flightTime = displayCode.slice(-5)
-                displayCode = displayCode.slice(0, -6)
-                if (airport.huso != null) {
-                  const [hh, mm] = flightTime.split(':').map(Number)
-                  const localH = (((hh + airport.huso) % 24) + 24) % 24
-                  localTimeStr = `${String(localH).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
-                }
-              }
+              if (/\d{2}:\d{2}$/.test(displayCode)) displayCode = displayCode.slice(0, -6)
+              // Hora de SALIDA (UTC) desde el campo, no del sufijo del código (que es local).
+              const flightTime   = hhmm(v.horaSalida)
+              const localTimeStr = addHuso(flightTime, airport.huso)
 
               return (
                 <div key={`s-${code}`} style={{ ...s.flightItem, justifyContent: 'space-between' }}>
@@ -638,17 +656,11 @@ export default function DrawerAeropuerto({ airport, vuelos, onClose, hideInvento
               const c = flightColor(load, vcap)
               
               let displayCode = code.replace(`-${iata}`, '')
-              let flightTime = ''
-              let localTimeStr = ''
-              if (/\d{2}:\d{2}$/.test(displayCode)) {
-                flightTime = displayCode.slice(-5)
-                displayCode = displayCode.slice(0, -6)
-                if (airport.huso != null) {
-                  const [hh, mm] = flightTime.split(':').map(Number)
-                  const localH = (((hh + airport.huso) % 24) + 24) % 24
-                  localTimeStr = `${String(localH).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
-                }
-              }
+              if (/\d{2}:\d{2}$/.test(displayCode)) displayCode = displayCode.slice(0, -6)
+              // Hora de LLEGADA (UTC) desde el campo. El sufijo del código es la hora de
+              // salida, no de llegada — usarlo aquí mostraba la hora equivocada.
+              const flightTime   = hhmm(v.horaLlegada)
+              const localTimeStr = addHuso(flightTime, airport.huso)
 
               return (
                 <div key={`l-${code}`} style={{ ...s.flightItem, justifyContent: 'space-between' }}>

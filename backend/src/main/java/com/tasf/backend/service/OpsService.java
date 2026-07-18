@@ -20,8 +20,8 @@ import com.tasf.backend.entity.EnvioEntity;
 import com.tasf.backend.entity.EscalaEntity;
 import com.tasf.backend.entity.ItinerarioEntity;
 import com.tasf.backend.ops.repository.OpsEnvioRepository;
-import com.tasf.backend.repository.EscalaRepository;
-import com.tasf.backend.repository.ItinerarioRepository;
+import com.tasf.backend.ops.repository.OpsEscalaRepository;
+import com.tasf.backend.ops.repository.OpsItinerarioRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -55,8 +55,8 @@ public class OpsService {
     private final OpsReferenceData opsReferenceData;
     private final PlanningService planningService;
     private final OpsEnvioRepository opsEnvioRepository;
-    private final ItinerarioRepository itinerarioRepository;
-    private final EscalaRepository escalaRepository;
+    private final OpsItinerarioRepository itinerarioRepository;
+    private final OpsEscalaRepository escalaRepository;
 
     private final ConcurrentHashMap<String, List<PlanDeViaje>> planesPorEnvio = new ConcurrentHashMap<>();
     // idEnvio -> bag count, captured at planning time (plans don't carry bag counts).
@@ -75,8 +75,8 @@ public class OpsService {
             OpsReferenceData opsReferenceData,
             PlanningService planningService,
             OpsEnvioRepository opsEnvioRepository,
-            ItinerarioRepository itinerarioRepository,
-            EscalaRepository escalaRepository) {
+            OpsItinerarioRepository itinerarioRepository,
+            OpsEscalaRepository escalaRepository) {
         this.dataLoaderService = dataLoaderService;
         this.opsReferenceData = opsReferenceData;
         this.planningService = planningService;
@@ -226,10 +226,56 @@ public class OpsService {
                     .build());
         }
 
+        // 4. Build cancelaciones list from session-level cancellations
+        Map<String, Vuelo> vueloByCode = new HashMap<>();
+        for (Vuelo v : opsReferenceData.getVuelos()) {
+            vueloByCode.put(v.getCodigoVuelo(), v);
+        }
+        List<LiveStateDTO.LiveCancelacionDTO> cancelacionDTOs = new ArrayList<>();
+        LocalDate today = LocalDate.now();
+        LocalDate cutoff = today.minusDays(7);
+        for (Map.Entry<String, LocalDate> entry : dataLoaderService.getSessionCancelledFlightDates().entrySet()) {
+            String code = entry.getKey();
+            LocalDate cancelDate = entry.getValue();
+            // Include cancellations from the last 7 days + tomorrow (programmed)
+            if (cancelDate.isBefore(cutoff) || cancelDate.isAfter(today.plusDays(1))) continue;
+            Vuelo v = vueloByCode.get(code);
+            String motivo;
+            if (cancelDate.equals(today)) {
+                motivo = "Cancelación manual (hoy)";
+            } else if (cancelDate.equals(today.plusDays(1))) {
+                motivo = "Cancelación programada (mañana)";
+            } else {
+                motivo = "Cancelado el " + cancelDate;
+            }
+            cancelacionDTOs.add(LiveStateDTO.LiveCancelacionDTO.builder()
+                    .id(code + "-" + cancelDate)
+                    .codigoVuelo(code)
+                    .origen(v != null ? v.getOrigen() : "?")
+                    .destino(v != null ? v.getDestino() : "?")
+                    .horaSalida(v != null ? v.getHoraSalida().format(TIME_FMT) : null)
+                    .horaLlegada(v != null ? v.getHoraLlegada().format(TIME_FMT) : null)
+                    .tipo(v != null ? v.getTipo() : null)
+                    .capacidadTotal(v != null ? v.getCapacidadTotal() : 0)
+                    .fecha(cancelDate.toString())
+                    .motivo(motivo)
+                    .maletasAfectadas(0)
+                    .build());
+        }
+
         return LiveStateDTO.builder()
                 .aeropuertos(aeropuertoDTOs)
                 .vuelos(vueloDTOs)
+                .cancelaciones(cancelacionDTOs)
                 .build();
+    }
+
+    public void cancelFlight(String codigoVuelo, String aplicaDesde) {
+        dataLoaderService.cancelFlightForSession(codigoVuelo, aplicaDesde);
+    }
+
+    public void clearCancellations() {
+        dataLoaderService.clearSessionCancellations();
     }
 
     // -------------------------------------------------------------------------
@@ -241,10 +287,9 @@ public class OpsService {
     public List<LiveAeropuertoDTO> computeOccupation(LocalDateTime from) {
         opsReferenceData.reload();
 
-        // In ops mode, bags stay PENDIENTE until the simulation runs. Draining by
-        // planned departure would remove bags from the count the moment the flight
-        // time passes, even though the bag never actually boarded. Count all
-        // PENDIENTE bags regardless of ingress time or planned departures.
+        // A bag is physically in the warehouse in both PENDIENTE (no route yet) and
+        // PLANIFICADO (has a route, awaiting its scheduled departure) — it only leaves
+        // the count once procesarSalidas() flips it to EN_TRANSITO. Count both.
         Map<String, Long> pendingByIata = new HashMap<>();
         for (Object[] row : opsEnvioRepository.sumAllMaletasPendientesByAeropuerto()) {
             pendingByIata.put((String) row[0], ((Number) row[1]).longValue());
@@ -278,6 +323,7 @@ public class OpsService {
                     .continente(a.getContinente())
                     .lat(a.getLat())
                     .lng(a.getLng())
+                    .huso(a.getHuso())
                     .capacidadAlmacen(capacidad)
                     .maletasPendientes(maletasPendientes)
                     .ocupacionPct(ocupacionPct)
@@ -311,7 +357,7 @@ public class OpsService {
 
         EnvioEntity entity = EnvioEntity.builder()
                 .idPedido(idPedido)
-                .idCliente(dto.getIdCliente())
+                .codigoAerolinea(validateCodigoAerolinea(dto.getCodigoAerolinea()))
                 .iataOrigen(dto.getIataOrigen())
                 .iataDestino(dto.getIataDestino())
                 .cantidadMaletas(dto.getCantidadMaletas())
@@ -321,6 +367,15 @@ public class OpsService {
                 .build();
 
         return opsEnvioRepository.save(entity);
+    }
+
+    // codigo_aerolinea is varchar(10); reject rather than let it truncate silently.
+    private String validateCodigoAerolinea(String codigoAerolinea) {
+        if (codigoAerolinea != null && codigoAerolinea.length() > 10) {
+            throw new IllegalArgumentException(
+                    "codigoAerolinea excede 10 caracteres: " + codigoAerolinea);
+        }
+        return codigoAerolinea;
     }
 
     // -------------------------------------------------------------------------
@@ -386,6 +441,18 @@ public class OpsService {
             planesPorEnvio.computeIfAbsent(plan.getIdEnvio(), id -> new ArrayList<>()).add(plan);
         }
         persistOpsPlans(result.getPlanes());
+
+        // Mark envíos that got a route as PLANIFICADO (in warehouse, awaiting departure).
+        // Ones left out of result.getPlanes() (enviosSinRuta) stay PENDIENTE — no plan yet.
+        Set<String> plannedIds = result.getPlanes().stream()
+                .map(PlanDeViaje::getIdEnvio)
+                .collect(Collectors.toSet());
+        for (EnvioEntity e : pendientes) {
+            if (plannedIds.contains(e.getIdPedido())) {
+                e.setEstado("PLANIFICADO");
+            }
+        }
+        opsEnvioRepository.saveAll(pendientes);
 
         log.info("Planned {} envios; {} without route", result.getPlanes().size(),
                 result.getEnviosSinRuta().size());
@@ -574,7 +641,7 @@ public class OpsService {
             .build();
     }
 
-    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.transaction.annotation.Transactional("opsTransactionManager")
     public void persistOpsPlans(List<PlanDeViaje> planes) {
         List<ItinerarioEntity> itinerarios = new ArrayList<>();
         List<EscalaEntity> escalas = new ArrayList<>();
@@ -621,7 +688,7 @@ public class OpsService {
         for (EnvioEntity e : all) {
             totalMaletas += e.getCantidadMaletas();
             switch (e.getEstado()) {
-                case "PENDIENTE" -> pendientes++;
+                case "PENDIENTE", "PLANIFICADO" -> pendientes++;
                 case "ENTREGADO" -> entregados++;
                 case "VIOLADO" -> violados++;
                 default -> { /* other states not counted separately */ }
@@ -684,7 +751,7 @@ public class OpsService {
 
             EnvioEntity entity = EnvioEntity.builder()
                     .idPedido(idPedido)
-                    .idCliente(dto.getIdCliente())
+                    .codigoAerolinea(validateCodigoAerolinea(dto.getCodigoAerolinea()))
                     .iataOrigen(dto.getIataOrigen())
                     .iataDestino(dto.getIataDestino())
                     .cantidadMaletas(dto.getCantidadMaletas())
@@ -706,10 +773,10 @@ public class OpsService {
     public AirportInventoryDTO getAirportInventory(String iata) {
         String upper = iata.toUpperCase();
 
-        // En almacén: PENDIENTE envíos whose origin is this airport.
-        // Mark each with whether it has a route plan (planificado).
+        // En almacén: PENDIENTE (sin ruta) o PLANIFICADO (con ruta, esperando salida) envíos
+        // whose origin is this airport. Mark each with whether it has a route plan.
         List<EnvioSummaryDTO> enAlmacen = opsEnvioRepository
-                .findAllByEstadoAndIataOrigen("PENDIENTE", upper)
+                .findAllByEstadoInAndIataOrigen(List.of("PENDIENTE", "PLANIFICADO"), upper)
                 .stream()
                 .map(e -> {
                     List<PlanDeViaje> planList = planesPorEnvio.get(e.getIdPedido());
@@ -816,7 +883,7 @@ public class OpsService {
 
     // -------------------------------------------------------------------------
     // 9. procesarSalidas — called by OpsScheduler every ~30s.
-    //    Transitions PENDIENTE envíos to EN_TRANSITO when horaSalidaEst <= now.
+    //    Transitions PLANIFICADO envíos to EN_TRANSITO when horaSalidaEst <= now.
     // -------------------------------------------------------------------------
 
     @Transactional("opsTransactionManager")
@@ -824,7 +891,7 @@ public class OpsService {
         if (planesPorEnvio.isEmpty()) return;
         LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
 
-        for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("PENDIENTE")) {
+        for (EnvioEntity envio : opsEnvioRepository.findAllByEstado("PLANIFICADO")) {
             List<PlanDeViaje> plans = planesPorEnvio.get(envio.getIdPedido());
             if (plans == null || plans.isEmpty()) continue;
             PlanDeViaje plan = plans.get(0);
@@ -852,7 +919,7 @@ public class OpsService {
 
     // -------------------------------------------------------------------------
     // 10. procesarLlegadas — called by OpsScheduler every ~30s (after salidas).
-    //     Transitions EN_TRANSITO envíos: intermediate stop → PENDIENTE at new iataOrigen,
+    //     Transitions EN_TRANSITO envíos: intermediate stop → PLANIFICADO at new iataOrigen,
     //     or final destination → ENTREGADO.
     // -------------------------------------------------------------------------
 
@@ -881,8 +948,8 @@ public class OpsService {
                             boolean hayMasEscalas = escalas.stream()
                                     .anyMatch(e -> e.getOrden() == orden + 1);
                             if (hayMasEscalas) {
-                                // Intermediate stop: bag waits at this airport for next leg
-                                envio.setEstado("PENDIENTE");
+                                // Intermediate stop: bag still has a plan, waits at this airport for next leg
+                                envio.setEstado("PLANIFICADO");
                                 envio.setIataOrigen(escala.getCodigoAeropuerto());
                                 ordenActualByEnvio.put(envio.getIdPedido(), orden + 1);
                                 log.info("Llegada intermedia: {} en {} (próxima escala {})",

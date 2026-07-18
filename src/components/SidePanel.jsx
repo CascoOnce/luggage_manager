@@ -106,7 +106,7 @@ function vuSemaforo(f) {
   return 'verde'
 }
 
-function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlight, setSelectedFlight, setMapSelectedVuelo, theme, onVueloFilterChange, nowMin }) {
+function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlight, setSelectedFlight, setMapSelectedVuelo, theme, onVueloFilterChange, nowMin, onClearCancellations }) {
   const [tab,          setTab]          = useState('activos')
   const [query,        setQuery]        = useState('')
   const [sortField,    setSortField]    = useState('occupancy')
@@ -1184,17 +1184,33 @@ function ConfigSection({ onSimulationStarted, onClose, theme }) {
 }
 
 // ── SECTION: FILTROS ─────────────────────────────────────────────────────────
-function FiltrosSection({ airports, originIds, setOriginIds, destIds, setDestIds, threshold, setThreshold }) {
+function FiltrosSection({ airports, originIds, setOriginIds, destIds, setDestIds, threshold, setThreshold, mode, onClearCancellations }) {
   return (
-    <AirportFilterPanel
-      airports={airports}
-      originIds={originIds}
-      setOriginIds={setOriginIds}
-      destIds={destIds}
-      setDestIds={setDestIds}
-      threshold={threshold}
-      setThreshold={setThreshold}
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        <AirportFilterPanel
+          airports={airports}
+          originIds={originIds}
+          setOriginIds={setOriginIds}
+          destIds={destIds}
+          setDestIds={setDestIds}
+          threshold={threshold}
+          setThreshold={setThreshold}
+        />
+      </div>
+      {onClearCancellations && (
+        <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', flexShrink: 0, textAlign: 'center' }}>
+          <button onClick={() => {
+            onClearCancellations()
+          }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontFamily: 'var(--sans)', fontSize: 11, textDecoration: 'underline', textUnderlineOffset: 2, cursor: 'pointer', padding: 0, transition: 'color 0.15s' }}
+             onMouseEnter={e => e.target.style.color = 'var(--red)'}
+             onMouseLeave={e => e.target.style.color = 'var(--muted)'}
+          >
+            Limpiar registro de cancelaciones
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1219,6 +1235,7 @@ export default function SidePanel({
   setSelectedFlight,
   setMapSelectedVuelo,
   setMapSelectedAirport,
+  onClearCancellations,
   // Envíos
   simState,
   onShowEnvioRoute,
@@ -1250,6 +1267,14 @@ export default function SidePanel({
   const sections = mode === 'ops' ? OPS_SECTIONS : SIM_SECTIONS
   const [selectedEnvio, setSelectedEnvio] = useState(null)
   const fetchEnvioFn = mode === 'ops' ? api.getOpsEnvioById : api.getEnvioById
+
+  // Cambiar de sección debe cerrar cualquier drawer de detalle abierto (envío,
+  // vuelo, almacén) — si no, persiste visible aunque ya no corresponda a la sección activa.
+  useEffect(() => {
+    setSelectedEnvio(null)
+    setSelectedFlight?.(null)
+    setMapSelectedAirport?.(null)
+  }, [activeSection]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{ display: 'flex', height: '100%', background: 'var(--panel)', borderRight: '1px solid var(--border)', position: 'relative' }}>
@@ -1316,7 +1341,7 @@ export default function SidePanel({
             {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} onShowMaletaRoute={onShowMaletaRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} onSelectFlight={setSelectedFlight} onEnvioSelect={setSelectedEnvio} mode={mode} nowMin={nowMin} />}
             {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} onAirportFilterChange={onAirportFilterChange} onFocusMapLocation={onFocusMapLocation} />}
             {activeSection === 'config'  && <ConfigSection  onSimulationStarted={onSimulationStarted} onClose={() => onSectionChange(null)} theme={theme} />}
-            {activeSection === 'filtros' && <FiltrosSection airports={airports} originIds={originIds} setOriginIds={setOriginIds} destIds={destIds} setDestIds={setDestIds} threshold={threshold} setThreshold={setThreshold} />}
+            {activeSection === 'filtros' && <FiltrosSection airports={airports} originIds={originIds} setOriginIds={setOriginIds} destIds={destIds} setDestIds={setDestIds} threshold={threshold} setThreshold={setThreshold} mode={mode} onClearCancellations={onClearCancellations} />}
             {activeSection === 'ops-ingress' && <OpsIngressSection airports={opsIngressAirports} onEnviosChanged={onOpsEnviosChanged} opsBase={opsBase} />}
           </div>
         </div>
