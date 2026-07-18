@@ -52,6 +52,7 @@ public class OpsService {
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
 
     private final DataLoaderService dataLoaderService;
+    private final OpsReferenceData opsReferenceData;
     private final PlanningService planningService;
     private final OpsEnvioRepository opsEnvioRepository;
     private final ItinerarioRepository itinerarioRepository;
@@ -71,11 +72,13 @@ public class OpsService {
 
     public OpsService(
             DataLoaderService dataLoaderService,
+            OpsReferenceData opsReferenceData,
             PlanningService planningService,
             OpsEnvioRepository opsEnvioRepository,
             ItinerarioRepository itinerarioRepository,
             EscalaRepository escalaRepository) {
         this.dataLoaderService = dataLoaderService;
+        this.opsReferenceData = opsReferenceData;
         this.planningService = planningService;
         this.opsEnvioRepository = opsEnvioRepository;
         this.itinerarioRepository = itinerarioRepository;
@@ -93,7 +96,7 @@ public class OpsService {
 
         // Maps and now-of-day needed for the flights section below.
         Map<String, Integer> husoByIata = new HashMap<>();
-        for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
+        for (Aeropuerto a : opsReferenceData.getAeropuertos()) {
             husoByIata.put(a.getCodigoIATA(), a.getHuso());
         }
         int nowMin = from.toLocalTime().getHour() * 60 + from.toLocalTime().getMinute();
@@ -113,7 +116,7 @@ public class OpsService {
         }
 
         Map<String, LocalDate> expectedDateByFlight = new HashMap<>();
-        for (Vuelo v : dataLoaderService.getVuelos()) {
+        for (Vuelo v : opsReferenceData.getVuelos()) {
             if (dataLoaderService.isFlightCancelledForSession(v.getCodigoVuelo())) continue;
             
             int husoOrigenVuelo = husoByIata.getOrDefault(v.getOrigen(), 0);
@@ -169,7 +172,7 @@ public class OpsService {
         //    schedule (time-of-day, no date), so an overnight flight (dep > arr) is
         //    airborne when now is past departure OR before arrival.
         List<LiveVueloDTO> vueloDTOs = new ArrayList<>();
-        for (Vuelo v : dataLoaderService.getVuelos()) {
+        for (Vuelo v : opsReferenceData.getVuelos()) {
             if (dataLoaderService.isFlightCancelledForSession(v.getCodigoVuelo())) {
                 continue;
             }
@@ -236,6 +239,8 @@ public class OpsService {
 
     @Transactional(value = "opsTransactionManager", readOnly = true)
     public List<LiveAeropuertoDTO> computeOccupation(LocalDateTime from) {
+        opsReferenceData.reload();
+
         // In ops mode, bags stay PENDIENTE until the simulation runs. Draining by
         // planned departure would remove bags from the count the moment the flight
         // time passes, even though the bag never actually boarded. Count all
@@ -246,13 +251,14 @@ public class OpsService {
         }
 
         List<LiveAeropuertoDTO> aeropuertoDTOs = new ArrayList<>();
-        for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
+        for (Aeropuerto a : opsReferenceData.getAeropuertos()) {
             long pending = pendingByIata.getOrDefault(a.getCodigoIATA(), 0L);
             int maletasPendientes = (int) Math.min(pending, Integer.MAX_VALUE);
+            int capacidad = a.getCapacidadAlmacen();
 
             double ocupacionPct = 0.0;
-            if (a.getCapacidadAlmacen() > 0) {
-                ocupacionPct = (double) maletasPendientes / a.getCapacidadAlmacen() * 100.0;
+            if (capacidad > 0) {
+                ocupacionPct = (double) maletasPendientes / capacidad * 100.0;
             }
             ocupacionPct = Math.max(0.0, Math.min(100.0, ocupacionPct));
 
@@ -272,7 +278,7 @@ public class OpsService {
                     .continente(a.getContinente())
                     .lat(a.getLat())
                     .lng(a.getLng())
-                    .capacidadAlmacen(a.getCapacidadAlmacen())
+                    .capacidadAlmacen(capacidad)
                     .maletasPendientes(maletasPendientes)
                     .ocupacionPct(ocupacionPct)
                     .semaforo(semaforo)
@@ -293,7 +299,7 @@ public class OpsService {
 
         // Calculate SLA: 1 if same continent, 2 if different
         Map<String, String> continentByIata = new HashMap<>();
-        for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
+        for (Aeropuerto a : opsReferenceData.getAeropuertos()) {
             continentByIata.put(a.getCodigoIATA(), a.getContinente());
         }
         String continenteOrigen = continentByIata.get(dto.getIataOrigen());
@@ -332,7 +338,7 @@ public class OpsService {
         }
 
         Map<String, Integer> husoByIata = new HashMap<>();
-        for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
+        for (Aeropuerto a : opsReferenceData.getAeropuertos()) {
             husoByIata.put(a.getCodigoIATA(), a.getHuso());
         }
         List<Envio> domainEnvios = pendientes.stream()
@@ -362,8 +368,8 @@ public class OpsService {
 
         PlanningResult result = planningService.planificar(
                 domainEnvios,
-                dataLoaderService.getVuelos(),
-                dataLoaderService.getAeropuertos(),
+                opsReferenceData.getVuelos(),
+                opsReferenceData.getAeropuertos(),
                 params);
 
         // Store each plan in the in-memory map, plus its bag count and entry time for the drain.
@@ -429,14 +435,14 @@ public class OpsService {
         LocalDate expectedDate = null;
         int flightOriginHuso = 0;
 
-        Optional<Vuelo> optVuelo = dataLoaderService.getVuelos().stream()
+        Optional<Vuelo> optVuelo = opsReferenceData.getVuelos().stream()
             .filter(v -> v.getCodigoVuelo().equals(codigoVuelo))
             .findFirst();
             
         if (optVuelo.isPresent()) {
             Vuelo v = optVuelo.get();
             Map<String, Integer> husoByIata = new HashMap<>();
-            for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
+            for (Aeropuerto a : opsReferenceData.getAeropuertos()) {
                 husoByIata.put(a.getCodigoIATA(), a.getHuso());
             }
             int husoOrigenVuelo = husoByIata.getOrDefault(v.getOrigen(), 0);
@@ -645,7 +651,7 @@ public class OpsService {
     @Transactional("opsTransactionManager")
     public List<EnvioEntity> batchSave(List<OpsEnvioRequestDTO> dtos) {
         Map<String, String> continentByIata = new HashMap<>();
-        for (Aeropuerto a : dataLoaderService.getAeropuertos()) {
+        for (Aeropuerto a : opsReferenceData.getAeropuertos()) {
             continentByIata.put(a.getCodigoIATA(), a.getContinente());
         }
 

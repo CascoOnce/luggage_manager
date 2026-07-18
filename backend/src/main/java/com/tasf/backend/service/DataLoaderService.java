@@ -165,20 +165,8 @@ public class DataLoaderService {
 
     private void loadStaticDataFromDb() {
         log.info("Loading static data from database...");
-        
-        this.aeropuertos = aeropuertoRepository.findAll().stream()
-            .map(e -> Aeropuerto.builder()
-                .codigoIATA(e.getCodigoIata())
-                .nombre(e.getCiudad() + " Airport") // Mantenemos la lógica del parser original
-                .ciudad(e.getCiudad())
-                .pais(e.getPais())
-                .continente(e.getContinente())
-                .huso(e.getHuso())
-                .capacidadAlmacen(e.getCapacidadAlmacen())
-                .lat(e.getLat())
-                .lng(e.getLng())
-                .build())
-            .toList();
+
+        reloadAeropuertos();
 
         Map<String, Integer> husoByAirport = this.aeropuertos.stream()
             .collect(Collectors.toMap(Aeropuerto::getCodigoIATA, Aeropuerto::getHuso));
@@ -211,6 +199,24 @@ public class DataLoaderService {
 
     public List<Aeropuerto> getAeropuertos() {
         return aeropuertos;
+    }
+
+    /** Re-fetches airports from the DB (small table, ~30 rows) so callers see live
+     *  changes to fields like capacidadAlmacen instead of the @PostConstruct snapshot. */
+    public void reloadAeropuertos() {
+        this.aeropuertos = aeropuertoRepository.findAll().stream()
+            .map(e -> Aeropuerto.builder()
+                .codigoIATA(e.getCodigoIata())
+                .nombre(e.getCiudad() + " Airport") // Mantenemos la lógica del parser original
+                .ciudad(e.getCiudad())
+                .pais(e.getPais())
+                .continente(e.getContinente())
+                .huso(e.getHuso())
+                .capacidadAlmacen(e.getCapacidadAlmacen())
+                .lat(e.getLat())
+                .lng(e.getLng())
+                .build())
+            .toList();
     }
 
     public List<Vuelo> getVuelos() {

@@ -134,6 +134,7 @@ public class SimulationEngine {
         reset();
         this.params = params;
         this.initialized = true;
+        dataLoaderService.reloadAeropuertos();
         this.aeropuertos = deepCopyAeropuertos(dataLoaderService.getAeropuertos());
         this.vuelos = deepCopyVuelos(dataLoaderService.getVuelos());
         buildScheduleIndex();
@@ -436,6 +437,7 @@ public class SimulationEngine {
             return getEstado();
         }
         // Reset aeropuertos and vuelos to clean state (clears accumulated stats/loads)
+        dataLoaderService.reloadAeropuertos();
         this.aeropuertos = deepCopyAeropuertos(dataLoaderService.getAeropuertos());
         this.vuelos = deepCopyVuelos(dataLoaderService.getVuelos());
         buildScheduleIndex();

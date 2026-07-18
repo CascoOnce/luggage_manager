@@ -29,6 +29,8 @@ public class LiveService {
     }
 
     public LiveStateDTO getLiveState(LocalDateTime from) {
+        dataLoaderService.reloadAeropuertos();
+
         // 1. Build airport occupation map: iata -> pending bags
         List<Object[]> rows = envioRepository.sumMaletasPendientesByAeropuerto(from);
         Map<String, Long> pendingByIata = new HashMap<>();
