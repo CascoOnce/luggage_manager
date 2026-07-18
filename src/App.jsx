@@ -17,6 +17,24 @@ import DrawerAeropuerto from './drawers/DrawerAeropuerto.jsx'
 import DrawerVuelo from './drawers/DrawerVuelo.jsx'
 import { getLiveState, getOpsState, getOpsOccupancy, planificarOps, getOpsEnvios, getOpsReporte } from './services/api.js'
 
+// The backend's tiempoRestante is computed against its own fechaSimulada, which is pinned to
+// 00:00 of the current día for the whole day's processing (the engine resolves an entire day
+// in one /step call, so it has no "instant within the day" of its own) — an envío ingresado late
+// in the day would show up to ~24h more remaining than its real SLA. The frontend already has an
+// accurate per-minute animated clock (currentSimTime) for estado, so recompute UT from it too.
+function computeTiempoRestante(envio, currentSimTime) {
+  if (!currentSimTime || !envio.fechaHoraIngreso || envio.sla == null) return envio.tiempoRestante ?? null
+  const ingreso = new Date(envio.fechaHoraIngreso)
+  const deadline = new Date(ingreso.getTime() + envio.sla * 86400000)
+  const diffMs = deadline.getTime() - currentSimTime.getTime()
+  if (diffMs < 0) {
+    return `vencido ${Math.floor(-diffMs / 3600000)}h`
+  }
+  const days = Math.floor(diffMs / 86400000)
+  const hours = Math.floor((diffMs - days * 86400000) / 3600000)
+  return `${days}d ${hours}h`
+}
+
 export default function App() {
   const ALGORITHM = 'SIMULATED_ANNEALING'
   const SIM_MINUTES_PER_REAL_SECOND = 1  // 1 min/tick @ 250ms = ~6min per simulated day → 30min for 5 days
@@ -534,16 +552,19 @@ export default function App() {
       return currentSimTime.getTime() < windowEndMs
     }
 
-    if (!displayState?.vuelos) return rawEnvios.filter(yaIngreso)
+    const withUt = (envio, overrides) =>
+      ({ ...envio, ...overrides, tiempoRestante: computeTiempoRestante(envio, currentSimTime) })
+
+    if (!displayState?.vuelos) return rawEnvios.filter(yaIngreso).map((envio) => withUt(envio))
 
     return rawEnvios.filter(yaIngreso).map((envio, index) => {
       const bEstado = envio.estado?.toUpperCase()
-      if (['RETRASADO', 'CANCELADO'].includes(bEstado)) return envio
+      if (['RETRASADO', 'CANCELADO'].includes(bEstado)) return withUt(envio)
 
       const vAsig = (envio.vuelosAsignados || []).filter(v => v != null)
-      if (vAsig.length === 0) return envio
+      if (vAsig.length === 0) return withUt(envio)
 
-      if (scWindowStillOpen(envio)) return { ...envio, estado: 'PENDIENTE' }
+      if (scWindowStillOpen(envio)) return withUt(envio, { estado: 'PENDIENTE' })
 
       if (envio.fechaSalidaPrimerVuelo && envio.fechaLlegadaUltimoVuelo && currentSimTime) {
         const firstDepartureTime = new Date(envio.fechaSalidaPrimerVuelo)
@@ -558,16 +579,16 @@ export default function App() {
         const hasArrived = currentSimTime >= lastArrivalTime
 
         if (hasArrived) {
-            return { ...envio, estado: 'ENTREGADO' }
+            return withUt(envio, { estado: 'ENTREGADO' })
         }
 
         if (hasDeparted) {
-            return { ...envio, estado: 'EN_TRANSITO' }
+            return withUt(envio, { estado: 'EN_TRANSITO' })
         }
 
-        return { ...envio, estado: 'PLANIFICADO' }
+        return withUt(envio, { estado: 'PLANIFICADO' })
       }
-      return envio
+      return withUt(envio)
     })
   }, [displayState?.envios, displayState?.vuelos, displayState?.fechaSimulada, displayState?.origenSimulacionUtc, displayState?.scMinutos, simClockForEnvios])
 
@@ -1477,6 +1498,7 @@ export default function App() {
                 simState={simState}
                 onShowEnvioRoute={handleShowEnvioRoute}
                 onShowMaletaRoute={handleShowMaletaRoute}
+                onClearRoute={() => setHighlightedRoute(null)}
                 airports={clockedAirports}
                 onVueloFilterChange={setVueloMapFilter}
                 onAirportFilterChange={setAirportMapFilter}

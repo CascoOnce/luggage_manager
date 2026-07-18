@@ -25,11 +25,11 @@ const s = {
     flexShrink: 0,
   },
   envioId: {
-    fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 700,
+    fontFamily: 'var(--mono)', fontSize: 14, fontWeight: 700,
     color: 'var(--text-bright)', letterSpacing: 0.5, flex: 1,
   },
   pill: (color) => ({
-    fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 700,
+    fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700,
     textTransform: 'uppercase', letterSpacing: 0.8,
     padding: '3px 8px', borderRadius: 4,
     background: `${color}1f`, color, border: `1px solid ${color}66`,
@@ -43,7 +43,7 @@ const s = {
   },
   section: { padding: '14px 16px', borderBottom: '1px solid var(--border)' },
   sectionTitle: {
-    fontFamily: 'var(--sans)', fontSize: 8, textTransform: 'uppercase',
+    fontFamily: 'var(--sans)', fontSize: 9, textTransform: 'uppercase',
     letterSpacing: 2, color: 'var(--muted)', fontWeight: 700,
     marginBottom: 10, display: 'block',
   },
@@ -51,8 +51,8 @@ const s = {
     display: 'flex', justifyContent: 'space-between',
     alignItems: 'baseline', marginBottom: 7, gap: 8,
   },
-  rowLabel: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', flexShrink: 0 },
-  rowVal: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', textAlign: 'right' },
+  rowLabel: { fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--muted)', flexShrink: 0 },
+  rowVal: { fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--text-bright)', textAlign: 'right' },
   // Timeline
   tlRow: { display: 'flex', alignItems: 'stretch', gap: 12, position: 'relative' },
   tlDotCol: { display: 'flex', flexDirection: 'column', alignItems: 'center', width: 14, flexShrink: 0 },
@@ -62,10 +62,11 @@ const s = {
   }),
   tlLine: { flex: 1, width: 1, background: 'var(--border)', margin: '2px 0' },
   tlContent: { paddingBottom: 14, flex: 1, minWidth: 0 },
-  tlCode: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', fontWeight: 600 },
-  tlMeta: { fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 },
+  tlCode: { fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--text-bright)', fontWeight: 600 },
+  tlVuelo: { fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginTop: 1, letterSpacing: 0.5 },
+  tlMeta: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', marginTop: 2 },
   // Status
-  statusMsg: { fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', padding: '20px 16px' },
+  statusMsg: { fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)', padding: '20px 16px' },
   // Tiempo restante big number
   tiempoBlock: {
     padding: '16px 16px', borderBottom: 'none', textAlign: 'center',
@@ -112,6 +113,32 @@ function fmtIngreso(str) {
   return `${dd}/${mm} ${hh}:${mi} UTC`
 }
 
+// Escala times are stored/served in UTC. `huso` (hours offset from UTC) belongs to whichever
+// airport the timestamp is anchored to — origin airport for a departure, arrival airport for
+// an arrival — so each side of a leg can land on a different local day/hour than the other.
+function fmtUtc(str) {
+  if (!str) return null
+  const d = new Date(str.endsWith('Z') || str.includes('+') ? str : `${str}Z`)
+  if (Number.isNaN(d.getTime())) return null
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const hh = String(d.getUTCHours()).padStart(2, '0')
+  const mi = String(d.getUTCMinutes()).padStart(2, '0')
+  return `${dd}/${mm} ${hh}:${mi}`
+}
+
+function fmtLocal(str, huso) {
+  if (!str || huso == null) return null
+  const d = new Date(str.endsWith('Z') || str.includes('+') ? str : `${str}Z`)
+  if (Number.isNaN(d.getTime())) return null
+  d.setUTCHours(d.getUTCHours() + huso)
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const hh = String(d.getUTCHours()).padStart(2, '0')
+  const mi = String(d.getUTCMinutes()).padStart(2, '0')
+  return `${dd}/${mm} ${hh}:${mi}`
+}
+
 function dwellMinutes(llegada, salida) {
   const l = toMinutes(llegada)
   const s = toMinutes(salida)
@@ -131,11 +158,16 @@ function fmtDwell(min) {
 }
 
 
-export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio = api.getEnvioById, currentEstado }) {
+export default function DrawerEnvio({ envioId, onClose, fetchEnvio = api.getEnvioById, currentEstado, airports = [] }) {
   const [envio, setEnvio]   = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]   = useState(null)
-  const [maletasOpen, setMaletasOpen] = useState(false)
+  const [maletasOpen, setMaletasOpen] = useState(true)
+
+  const apMap = React.useMemo(
+    () => Object.fromEntries((airports || []).map((a) => [a.id || a.codigoIATA, a])),
+    [airports]
+  )
 
   useEffect(() => {
     if (!envioId) {
@@ -177,20 +209,11 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
         <div style={s.header}>
           <span style={s.envioId}>{envio?.idEnvio || envioId}</span>
           {envio?.codigoAerolinea && (
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)' }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
               {envio.codigoAerolinea}
             </span>
           )}
           {displayEstado && <span style={s.pill(eColor)}>{displayEstado.replace('_', ' ')}</span>}
-          {onShowInMap && escalas.length >= 2 && (
-            <button
-              style={{ ...s.closeBtn, color: 'var(--blue-bright)', fontSize: 11, padding: '3px 8px', border: '1px solid rgba(61,139,255,0.3)', borderRadius: 4 }}
-              onClick={() => { onShowInMap(envioId); onClose() }}
-              title="Ver ruta en mapa"
-            >
-              ↗ mapa
-            </button>
-          )}
           <button style={s.closeBtn} onClick={onClose} aria-label="Cerrar">✕</button>
         </div>
 
@@ -229,7 +252,7 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
               </div>
               <div style={s.row}>
                 <span style={s.rowLabel}>Plan resumen</span>
-                <span style={{ ...s.rowVal, fontSize: 9, wordBreak: 'break-all' }}>{envio.planResumen || '—'}</span>
+                <span style={{ ...s.rowVal, fontSize: 10, wordBreak: 'break-all' }}>{envio.planResumen || '—'}</span>
               </div>
               <div style={s.row}>
                 <span style={s.rowLabel}>Ubicación actual</span>
@@ -260,7 +283,7 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
                     {Array.from({ length: envio.cantidadMaletas }, (_, i) => (
                       <div
                         key={i}
-                        style={{ padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--blue)' }}
+                        style={{ padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--blue)' }}
                       >
                         {envio.idEnvio || envioId}-{i + 1}
                       </div>
@@ -273,14 +296,22 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
             {/* Ruta Asignada — timeline */}
             {escalas.length > 0 && (
               <div style={{ ...s.section, flex: 1 }}>
-                <span style={s.sectionTitle}>Ruta asignada (UTC)</span>
+                <span style={s.sectionTitle}>Ruta asignada</span>
                 <div>
                   {escalas.map((escala, idx) => {
+                    const origenCod = idx === 0 ? envio.aeropuertoOrigen : escalas[idx - 1].codigoAeropuerto
+                    const destCod = escala.codigoAeropuerto
+                    const origenHuso = apMap[origenCod]?.huso
+                    const destHuso = apMap[destCod]?.huso
                     const dotColor = escalaDotColor(escala)
                     const isLast = idx === escalas.length - 1
                     const dwell = !isLast
                       ? dwellMinutes(escala.horaLlegadaEst, escalas[idx + 1].horaSalidaEst)
                       : 0
+                    const salidaUtc = fmtUtc(escala.horaSalidaEst)
+                    const salidaLcl = fmtLocal(escala.horaSalidaEst, origenHuso)
+                    const llegadaUtc = fmtUtc(escala.horaLlegadaEst)
+                    const llegadaLcl = fmtLocal(escala.horaLlegadaEst, destHuso)
                     return (
                       <React.Fragment key={`${escala.codigoVuelo}-${idx}`}>
                         <div style={s.tlRow}>
@@ -290,15 +321,19 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
                           </div>
                           <div style={s.tlContent}>
                             <div style={s.tlCode}>
-                              {escala.codigoVuelo || '—'} — {escala.codigoAeropuerto || '?'}
+                              {origenCod || '?'} → {destCod || '?'}
+                            </div>
+                            {escala.codigoVuelo && <div style={s.tlVuelo}>{escala.codigoVuelo}</div>}
+                            <div style={s.tlMeta}>
+                              Sale {salidaUtc || '—'} UTC{salidaLcl ? ` · ${salidaLcl} LCL` : ''}
                             </div>
                             <div style={s.tlMeta}>
-                              Salida UTC {escala.horaSalidaEst || '—'} · Llegada UTC {escala.horaLlegadaEst || '—'}
+                              Llega {llegadaUtc || '—'} UTC{llegadaLcl ? ` · ${llegadaLcl} LCL` : ''}
                             </div>
                           </div>
                         </div>
                         {!isLast && dwell > 0 && (
-                          <div style={{ padding: '2px 0 4px 26px', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
+                          <div style={{ padding: '2px 0 4px 26px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
                             ⏱ {fmtDwell(dwell)} en {escala.codigoAeropuerto}
                           </div>
                         )}
@@ -312,12 +347,12 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
             {/* Tiempo Restante */}
             <div style={s.tiempoBlock}>
               <div style={{
-                fontFamily: 'var(--mono)', fontSize: 28, fontWeight: 700,
+                fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 700,
                 color: eColor, letterSpacing: -0.5,
               }}>
-                {envio.tiempoRestante != null ? `${envio.tiempoRestante}h` : '—'}
+                {envio.tiempoRestante || '—'}
               </div>
-              <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1.5, marginTop: 4 }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1.5, marginTop: 4 }}>
                 Tiempo restante
               </div>
             </div>
