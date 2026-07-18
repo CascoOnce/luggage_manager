@@ -862,9 +862,9 @@ export default function App() {
   }, [activeVuelosWithTimes, simClockMinutes, originSet, destSet, displayState?.diaActual])
 
   const backendCancelledFlights = useMemo(() => {
-    if (!displayState?.cancelaciones) return []
     const vuelosMap = new Map((displayState?.vuelos || []).map(v => [v.codigoVuelo, v]))
-    return displayState.cancelaciones
+    
+    const cancelled = (displayState?.cancelaciones || [])
       .filter((c) => {
         const v = vuelosMap.get(c.codigoVuelo)
         return (!originSet || originSet.has(v?.origen)) && (!destSet || destSet.has(v?.destino))
@@ -888,6 +888,29 @@ export default function App() {
           isCancelled: true
         }
       }).reverse()
+
+    const scheduled = (displayState?.vuelos || [])
+      .filter(v => v.cancelacionProgramada)
+      .filter(v => (!originSet || originSet.has(v.origen)) && (!destSet || destSet.has(v.destino)))
+      .map(v => ({
+        id: v.codigoVuelo,
+        uid: `sched-${v.codigoVuelo}`,
+        origin: v.origen || '?',
+        destination: v.destino || '?',
+        type: v.tipo,
+        status: 'cancelled',
+        capacity: v.capacidadTotal ?? 0,
+        currentLoad: 0,
+        fecha: 'MAÑANA',
+        hora: v.horaSalida,
+        horaSalida: v.horaSalida,
+        horaLlegada: v.horaLlegada,
+        motivo: 'Cancelación Programada',
+        isCancelled: true,
+        isProgramada: true
+      }))
+
+    return [...scheduled, ...cancelled]
   }, [displayState?.cancelaciones, displayState?.vuelos, originSet, destSet])
 
   const fechaSimuladaDisplay = useMemo(() => {
@@ -942,15 +965,29 @@ export default function App() {
           slaCompliance: 0, activeFlights: 0,
           slaViolated: 0,
         }
-    const globalFleetOccupancy = displayState?.kpis?.ocupacionFlota ?? 0
+    // ponytail: derive both global occupancy KPIs from the SAME instantaneous per-airport /
+    // per-flight data the map animates, not the backend's kpis.ocupacion* — those are a
+    // day-aggregate (fixed per day, exceeds 100%) that contradicts the green warehouses.
     const withCap = clockedAirports.filter((a) => (a.warehouseCapacity ?? 0) > 0)
-    const globalWarehouseOccupancy = displayState?.kpis?.ocupacionAlmacenes ?? 0
-      
-    const freeFleetSpace = backendFlights.reduce((acc, f) => acc + Math.max(0, (f.capacity || 0) - (f.currentLoad || 0)), 0)
+    const whOcc = withCap.reduce((acc, a) => acc + (a.currentOccupation || 0), 0)
+    const whCap = withCap.reduce((acc, a) => acc + (a.warehouseCapacity || 0), 0)
+    const globalWarehouseOccupancy = whCap > 0 ? (whOcc / whCap) * 100 : 0
+
+    // Airborne flights only (unfiltered by panel origin/dest) → fleet occupancy is 0 until the
+    // first flights are in the air (~first 2h), then rises live, matching the map.
+    const day = displayState?.diaActual || displayState?.currentDay || 1
+    const startMin = day <= 1 ? simStartMinuteRef.current : 0
+    const airborne = activeVuelosWithTimes.filter((v) =>
+      v.depMin >= startMin && isActiveAtMinute(simClockMinutes, v.depMin, v.arrMin, day))
+    const fleetLoad = airborne.reduce((acc, f) => acc + (f.currentLoad || 0), 0)
+    const fleetCap = airborne.reduce((acc, f) => acc + (f.capacity || 0), 0)
+    const globalFleetOccupancy = fleetCap > 0 ? (fleetLoad / fleetCap) * 100 : 0
+
+    const freeFleetSpace = airborne.reduce((acc, f) => acc + Math.max(0, (f.capacity || 0) - (f.currentLoad || 0)), 0)
     const freeWarehouseSpace = withCap.reduce((acc, a) => acc + Math.max(0, (a.warehouseCapacity || 0) - (a.currentOccupation || 0)), 0)
 
     return { ...base, globalFleetOccupancy, globalWarehouseOccupancy, freeFleetSpace, freeWarehouseSpace }
-  }, [displayState?.kpis, simState?.kpis, backendFlights, clockedAirports])
+  }, [displayState?.kpis, simState?.kpis, displayState?.diaActual, activeVuelosWithTimes, simClockMinutes, clockedAirports])
 
   const isOpsActive = Boolean(opsState)
 
@@ -1589,6 +1626,7 @@ export default function App() {
                 onClose={handleCloseVuelo}
                 onCancelFlight={isOwner ? handleCancelFlight : null}
                 fetchEnvios={isOpsActive ? api.getOpsEnviosByFlight : api.getEnviosByFlight}
+                simClockMinutes={simClockMinutes}
               />
             )}
           </div>

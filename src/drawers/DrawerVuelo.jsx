@@ -285,7 +285,13 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvio
         <div style={{ ...s.section, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
           <span style={s.sectionTitle}>Envíos asignados ({enviosAsignados.length})</span>
           {enviosAsignados.length === 0 ? (
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>Sin envíos asignados</div>
+            isCancelado && load > 0 ? (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>
+                Este vuelo fue cancelado con <span style={{ color: 'var(--red)', fontWeight: 700 }}>{load}</span> maletas asignadas 🧳 (reubicadas a otras rutas).
+              </div>
+            ) : (
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>Sin envíos asignados</div>
+            )
           ) : (
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {enviosAsignados.map((e) => (

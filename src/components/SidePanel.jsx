@@ -235,6 +235,7 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
         </button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', margin: '0 -12px' }}>
+
         {shown.slice(0, MAX_LIST_ROWS).map(f => {
           const pct   = f.capacity > 0 ? (f.currentLoad / f.capacity) * 100 : 0
           const color = pct === 0 ? '#4d9fff' : pct >= 85 ? '#f04b4b' : pct >= 60 ? '#f5a623' : '#22d07a'

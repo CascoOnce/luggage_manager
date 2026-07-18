@@ -246,15 +246,15 @@ export const api = {
   }),
 
   cancelFlight: async (codigoVuelo, aplicaDesde = 'HOY') => withHandling('cancelFlight', async () => {
-    return request(`/simulation/cancel-flight/${codigoVuelo}?aplicaDesde=${aplicaDesde}`, { method: 'POST' })
+    return request(`/simulation/cancel-flight/${codigoVuelo}?aplicaDesde=${aplicaDesde}`, { method: 'POST' }, 180000)
   }),
 
   cancelLiveFlight: async (codigoVuelo, aplicaDesde = 'HOY') => withHandling('cancelLiveFlight', async () => {
-    return request(`/live/cancel-flight/${codigoVuelo}?aplicaDesde=${aplicaDesde}`, { method: 'POST' })
+    return request(`/live/cancel-flight/${codigoVuelo}?aplicaDesde=${aplicaDesde}`, { method: 'POST' }, 180000)
   }),
 
   cancelOpsFlight: async (codigoVuelo, aplicaDesde = 'HOY') => withHandling('cancelOpsFlight', async () => {
-    return request(`/ops/cancel-flight/${codigoVuelo}?aplicaDesde=${aplicaDesde}`, { method: 'POST' })
+    return request(`/ops/cancel-flight/${codigoVuelo}?aplicaDesde=${aplicaDesde}`, { method: 'POST' }, 180000)
   }),
 
   clearOpsCancellations: async () => withHandling('clearOpsCancellations', async () => {
