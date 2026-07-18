@@ -84,6 +84,12 @@ public class SimulationEngine {
 
     private ColapsoPunto colapsoPunto = null;
 
+    // Colapso rolling horizon: run in COLAPSO_CHUNK_DIAS windows, extending until the
+    // network collapses or the dataset is exhausted (colapsoHardCap = last envio's day).
+    // Point of colapso is to find WHICH day it fails, so we never commit to the full span up front.
+    private static final int COLAPSO_CHUNK_DIAS = 10;
+    private int colapsoHardCap = 0;
+
     // Rolling planning state — persist across planning cycles
     private AirportTimeline sharedTimeline;
     private Map<String, Integer> sharedFlightLoads;
@@ -174,7 +180,9 @@ public class SimulationEngine {
         if (params.getDiasSimulacion() > 0) {
             diasSimulacion = params.getDiasSimulacion();
         } else if (esColapso) {
-            diasSimulacion = computeDiasColapso(fechaInicio, filteredEnvios);
+            // Ceiling = last envio's day; start with the first rolling window only.
+            this.colapsoHardCap = computeDiasColapso(fechaInicio, filteredEnvios);
+            diasSimulacion = Math.min(COLAPSO_CHUNK_DIAS, colapsoHardCap);
         } else {
             diasSimulacion = filterDias;
         }
@@ -339,6 +347,16 @@ public class SimulationEngine {
         // Envio estados settled for this day (processing + any random-cancel replanning) →
         // publish a new version so pollers refetch the envios table.
         bumpEnviosVersion();
+
+        // Colapso rolling horizon: reached the end of the current window without collapsing and
+        // the dataset still has days ahead → extend by one more window and keep going.
+        if (colapsoPunto == null && Boolean.TRUE.equals(params.getEsColapso())
+                && diaActual >= params.getDiasSimulacion()
+                && params.getDiasSimulacion() < colapsoHardCap) {
+            params.setDiasSimulacion(Math.min(params.getDiasSimulacion() + COLAPSO_CHUNK_DIAS, colapsoHardCap));
+            addOperationLog("Colapso: sin colapso al Día " + diaActual
+                + " — horizonte extendido a Día " + params.getDiasSimulacion());
+        }
 
         if (colapsoPunto == null && diaActual >= params.getDiasSimulacion()) {
             // Two distinct end instants, on purpose:
@@ -930,6 +948,7 @@ public class SimulationEngine {
                 ? params.getFechaInicio().atTime(parseHoraInicio(params.getHoraInicio())).format(TS_FORMAT)
                 : null)
             .scMinutos(params.getScMinutos())
+            .minutosRecogidaDestino(params.getMinutosRecogidaDestino())
             .algoritmo(params.getAlgoritmo())
             .metrica(metricas.isEmpty() ? null : metricas.get(metricas.size() - 1))
             .enEjecucion(enEjecucion)
@@ -975,6 +994,7 @@ public class SimulationEngine {
         this.fechaSimulada = null;
         this.enEjecucion = false;
         this.finalizada = false;
+        this.colapsoHardCap = 0;
         this.logOperaciones = new ArrayList<>();
         this.logBuffer.clear();
         this.maletaVueloActual.clear();

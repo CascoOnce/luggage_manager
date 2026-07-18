@@ -23,6 +23,10 @@ public class SimulationStateDTO {
     // ocultar "Planificado" hasta que la ventana Sc del envío haya cerrado.
     private String origenSimulacionUtc;
     private int scMinutos;
+    // Minutos que una maleta permanece en almacén tras llegar a destino antes de "recogerla"
+    // (WarehouseOccupationCalculator). El frontend replica el mismo retraso antes de mostrar
+    // un envío como ENTREGADO en la lista.
+    private int minutosRecogidaDestino;
     private String algoritmo;
     private MetricaAlgoritmo metrica;
     private boolean enEjecucion;

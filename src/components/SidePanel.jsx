@@ -464,10 +464,12 @@ function BuscarRutaPanel({ simState, onShowEnvioRoute, onShowMaletaRoute, onClea
   )
 }
 
-function EntregadosPanel({ mode, simState, nowMin, airports }) {
+function EntregadosPanel({ mode, simState, nowMin, airports, onEnvioSelect, onShowEnvioRoute }) {
   const [horas,      setHoras]      = useState(4)
+  const [horasInput, setHorasInput] = useState('4')
   const [filterOrig, setFilterOrig] = useState('')
   const [filterDest, setFilterDest] = useState('')
+  const [searchId,   setSearchId]   = useState('')
   const [opsData,    setOpsData]    = useState(null)
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState(null)
@@ -498,6 +500,11 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
     if (!fechaSimulada) return []
     const base = new Date(fechaSimulada)
     if (Number.isNaN(base.getTime())) return []
+    // fechaSimulada en día 1 (antes del primer /step) trae horaInicio incluido (p.ej. 08:00),
+    // no medianoche — igual que en clockedEnviosForState. nowMin ya es minutos-desde-medianoche,
+    // así que sumarlo sin resetear duplica horaInicio y adelanta effectiveNow varias horas,
+    // dejando el cutoff por delante de entregas reales (se filtran todas).
+    base.setHours(0, 0, 0, 0)
     const effectiveNow = new Date(base.getTime() + (nowMin || 0) * 60000)
     const cutoff = new Date(effectiveNow.getTime() - horas * 3600000)
     return (simState?.envios || [])
@@ -523,13 +530,15 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
     [...new Set(baseList.map(e => e.aeropuertoDestino).filter(Boolean))].sort()
   , [baseList])
 
-  const list = useMemo(() =>
-    baseList.filter(e => {
+  const list = useMemo(() => {
+    const q = searchId.trim().toLowerCase()
+    return baseList.filter(e => {
       if (filterOrig && e.aeropuertoOrigen !== filterOrig) return false
       if (filterDest && e.aeropuertoDestino !== filterDest) return false
+      if (q && !e.idEnvio?.toLowerCase().includes(q)) return false
       return true
     })
-  , [baseList, filterOrig, filterDest])
+  }, [baseList, filterOrig, filterDest, searchId])
 
   const fmtUT = (ingreso, entrega) => {
     if (!ingreso || !entrega) return '—'
@@ -548,8 +557,15 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>Últimas</span>
         <input
-          type="number" min={1} max={24} value={horas}
-          onChange={e => setHoras(Math.min(24, Math.max(1, Number(e.target.value) || 4)))}
+          type="number" min={1} max={24} value={horasInput}
+          onChange={e => {
+            const v = e.target.value.replace(/\D/g, '').slice(0, 2)
+            if (v === '') { setHorasInput(''); return }
+            const clamped = Math.min(24, Math.max(1, Number(v)))
+            setHoras(clamped)
+            setHorasInput(String(clamped))
+          }}
+          onBlur={() => setHorasInput(String(horas))}
           style={{ width: 44, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '3px 5px', borderRadius: 2, outline: 'none', textAlign: 'center' }}
         />
         <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', flex: 1 }}>h (máx. 24)</span>
@@ -558,6 +574,15 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px', lineHeight: 1 }}
             title="Actualizar">↻</button>
         )}
+      </div>
+
+      {/* Search by envío ID */}
+      <div style={{ marginBottom: 6 }}>
+        <input
+          type="text" placeholder="Buscar ID de envío…" value={searchId}
+          onChange={e => setSearchId(e.target.value)}
+          style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 11, padding: '4px 6px', borderRadius: 2, outline: 'none' }}
+        />
       </div>
 
       {/* Airport filters */}
@@ -606,7 +631,9 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
               {list.slice(0, MAX_LIST_ROWS).map((e, i) => {
                 const delivery = e.fechaEntrega || e.fechaLlegadaUltimoVuelo
                 return (
-                  <tr key={e.idEnvio || i} style={{ borderBottom: '1px solid rgba(99,152,255,0.06)' }}>
+                  <tr key={e.idEnvio || i}
+                    onClick={() => { onEnvioSelect?.({ id: e.idEnvio, estado: e.estado || 'ENTREGADO' }); onShowEnvioRoute?.(e.idEnvio) }}
+                    style={{ borderBottom: '1px solid rgba(99,152,255,0.06)', cursor: 'pointer' }}>
                     <td style={{ padding: '5px 4px 5px 12px', color: '#22d07a', whiteSpace: 'nowrap' }}>{e.idEnvio}</td>
                     <td style={{ padding: '5px 4px', color: 'var(--text-bright)' }}>{e.aeropuertoOrigen || '—'}</td>
                     <td style={{ padding: '5px 4px', color: 'var(--text-bright)' }}>{e.aeropuertoDestino || '—'}</td>
@@ -707,7 +734,7 @@ function EnviosSection({ simState, onShowEnvioRoute, onShowMaletaRoute, onClearR
       </div>
 
       {view === 'entregados' ? (
-        <EntregadosPanel mode={mode} simState={simState} nowMin={nowMin} airports={airports} />
+        <EntregadosPanel mode={mode} simState={simState} nowMin={nowMin} airports={airports} onEnvioSelect={onEnvioSelect} onShowEnvioRoute={onShowEnvioRoute} />
       ) : (
         <>
           <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} onShowMaletaRoute={onShowMaletaRoute} onClearRoute={onClearRoute} onFocusMapLocation={onFocusMapLocation} apMap={apMap} appMode={mode} />

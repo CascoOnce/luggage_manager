@@ -576,7 +576,11 @@ export default function App() {
         // envío that had departed on an earlier day back to PLANIFICADO — so multi-day
         // in-flight envíos never showed as EN_TRANSITO.
         const hasDeparted = currentSimTime >= firstDepartureTime
-        const hasArrived = currentSimTime >= lastArrivalTime
+        // Mirror WarehouseOccupationCalculator: a bag keeps occupying the destination
+        // warehouse for minutosRecogidaDestino after landing, until it's "picked up" —
+        // so the shipment shouldn't flip to ENTREGADO in the list before that either.
+        const recogidaMs = (displayState?.minutosRecogidaDestino || 0) * 60000
+        const hasArrived = currentSimTime >= new Date(lastArrivalTime.getTime() + recogidaMs)
 
         if (hasArrived) {
             return withUt(envio, { estado: 'ENTREGADO' })
@@ -590,7 +594,7 @@ export default function App() {
       }
       return withUt(envio)
     })
-  }, [displayState?.envios, displayState?.vuelos, displayState?.fechaSimulada, displayState?.origenSimulacionUtc, displayState?.scMinutos, simClockForEnvios])
+  }, [displayState?.envios, displayState?.vuelos, displayState?.fechaSimulada, displayState?.origenSimulacionUtc, displayState?.scMinutos, displayState?.minutosRecogidaDestino, simClockForEnvios])
 
   const simState = useMemo(() => {
     if (!displayState) return {
@@ -1562,6 +1566,7 @@ export default function App() {
                 hasSimulation={Boolean(backendState)}
                 onClearCancellations={isOpsActive ? handleClearOpsCancellations : undefined}
                 mode={isOpsActive ? 'ops' : 'simulacion'}
+                nowMin={simClockMinutes}
               />
             </div>
 
