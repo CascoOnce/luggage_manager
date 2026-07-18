@@ -75,10 +75,12 @@ const s = {
 function estadoColor(estado) {
   if (!estado) return 'var(--muted)'
   const e = estado.toUpperCase()
-  if (e === 'ENTREGADO') return 'var(--green)'
-  if (e === 'RETRASADO') return 'var(--red)'
-  if (e === 'PENDIENTE') return 'var(--blue)'
-  return 'var(--amber)'
+  if (e === 'ENTREGADO') return '#22d07a'
+  if (e === 'RETRASADO') return '#f04b4b'
+  if (e === 'PENDIENTE') return '#4d9fff'
+  if (e === 'EN_TRANSITO') return '#f5a623'
+  if (e === 'PLANIFICADO') return '#a78bfa'
+  return 'var(--muted)'
 }
 
 function escalaDotColor(escala) {
@@ -179,7 +181,7 @@ export default function DrawerEnvio({ envioId, onClose, onShowInMap, fetchEnvio 
               {envio.codigoAerolinea}
             </span>
           )}
-          {envio?.estado && <span style={s.pill(eColor)}>{envio.estado}</span>}
+          {displayEstado && <span style={s.pill(eColor)}>{displayEstado.replace('_', ' ')}</span>}
           {onShowInMap && escalas.length >= 2 && (
             <button
               style={{ ...s.closeBtn, color: 'var(--blue-bright)', fontSize: 11, padding: '3px 8px', border: '1px solid rgba(61,139,255,0.3)', borderRadius: 4 }}

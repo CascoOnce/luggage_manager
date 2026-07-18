@@ -926,6 +926,10 @@ public class SimulationEngine {
             .fechaSimulada(fechaSimulada.format(TS_FORMAT))
             .diaInicioTimestampUtc(diaInicioTimestampUtc)
             .horaInicioMin((int) parseHoraInicio(params.getHoraInicio()).toSecondOfDay() / 60)
+            .origenSimulacionUtc(params.getFechaInicio() != null
+                ? params.getFechaInicio().atTime(parseHoraInicio(params.getHoraInicio())).format(TS_FORMAT)
+                : null)
+            .scMinutos(params.getScMinutos())
             .algoritmo(params.getAlgoritmo())
             .metrica(metricas.isEmpty() ? null : metricas.get(metricas.size() - 1))
             .enEjecucion(enEjecucion)

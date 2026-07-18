@@ -725,10 +725,10 @@ function EnviosSection({ simState, onShowEnvioRoute, onShowMaletaRoute, airports
                   <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: color }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {e.aeropuertoOrigen} → {e.aeropuertoDestino}
+                      {e.idEnvio}
                     </div>
                     <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                      {e.idEnvio} · {e.cantidadMaletas} 🧳{e.tiempoRestante ? <> · <span style={{ color: '#f5a623' }} title="UT (tiempo restante para el SLA)">⏱ {e.tiempoRestante}</span></> : ''}
+                      {e.aeropuertoOrigen} → {e.aeropuertoDestino} · {e.cantidadMaletas} 🧳{e.tiempoRestante ? <> · <span style={{ color: '#f5a623' }} title="UT (tiempo restante para el SLA)">⏱ {e.tiempoRestante}</span></> : ''}
                     </div>
                   </div>
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '2px 6px', borderRadius: 3, background: `${color}18`, color, border: `1px solid ${color}40`, flexShrink: 0 }}>

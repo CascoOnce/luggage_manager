@@ -502,35 +502,50 @@ export default function App() {
 
   const clockedEnviosForState = useMemo(() => {
     const rawEnvios = displayState?.envios || []
-    if (!displayState?.vuelos) return rawEnvios
 
-    const flightTimes = {}
-    for (const v of displayState.vuelos) {
-       flightTimes[v.codigoVuelo] = {
-          depMin: parseTimeToMinutes(v.horaSalida),
-          arrMin: parseTimeToMinutes(v.horaLlegada),
-          destino: v.destino,
-          husOrigen: v.husOrigen,
-          husDestino: v.husDestino
-       }
+    // currentSimTime represents the exact UTC-equivalent instant in the simulation, shared by
+    // every envío below — hoisted out of the old per-envío recompute.
+    // simClockForEnvios is minutes-since-MIDNIGHT (día 1 starts at 480 = 08:00), but
+    // fechaSimulada already carries horaInicio on día 1 (08:00). Adding them double-counts
+    // horaInicio → currentSimTime landed ~8h ahead → false ENTREGADO. Mirror the visible
+    // clock (fechaSimuladaDisplay): reset base to midnight so + simClockForEnvios is exact.
+    const baseDate = displayState?.fechaSimulada ? new Date(displayState.fechaSimulada) : null
+    if (baseDate) baseDate.setHours(0, 0, 0, 0)
+    const currentSimTime = baseDate ? new Date(baseDate.getTime() + simClockForEnvios * 60000) : null
+
+    // An envío shouldn't appear in any state (not even PENDIENTE) before the simulation clock
+    // reaches its fechaHoraIngreso — otherwise shipments that "arrive" later today are visible
+    // hours ahead of time, across every estado.
+    const yaIngreso = (envio) => !currentSimTime || !envio.fechaHoraIngreso || new Date(envio.fechaHoraIngreso) <= currentSimTime
+
+    // Backend plans every Sc block upfront on día 1 (see SimulationEngine.planificarSiguienteBloque),
+    // so a shipment's route can exist in memory long before its own Sc window would have closed in
+    // real time. Mirrors SimulationEngine.scWindowEnd(): a shipment only "reveals" as Planificado once
+    // the Sc window it was ingested in has closed — before that it must still read as Pendiente,
+    // exactly like the already-shipped Sc-gated reveal used for the almacén detail endpoint.
+    const origenMs = displayState?.origenSimulacionUtc ? new Date(displayState.origenSimulacionUtc).getTime() : null
+    const scMs = (displayState?.scMinutos || 0) * 60000
+    const scWindowStillOpen = (envio) => {
+      if (!origenMs || !scMs || !currentSimTime || !envio.fechaHoraIngreso) return false
+      const ingresoMs = new Date(envio.fechaHoraIngreso).getTime()
+      const minutosDesdeOrigen = Math.max(0, ingresoMs - origenMs)
+      const ventana = Math.floor(minutosDesdeOrigen / scMs)
+      const windowEndMs = origenMs + (ventana + 1) * scMs
+      return currentSimTime.getTime() < windowEndMs
     }
 
-    return rawEnvios.map((envio, index) => {
+    if (!displayState?.vuelos) return rawEnvios.filter(yaIngreso)
+
+    return rawEnvios.filter(yaIngreso).map((envio, index) => {
       const bEstado = envio.estado?.toUpperCase()
       if (['RETRASADO', 'CANCELADO'].includes(bEstado)) return envio
-      
+
       const vAsig = (envio.vuelosAsignados || []).filter(v => v != null)
       if (vAsig.length === 0) return envio
-      
-      const firstFlight = flightTimes[vAsig[0]]
-      const lastFlight = flightTimes[vAsig[vAsig.length - 1]]
-      
-      if (envio.fechaSalidaPrimerVuelo && envio.fechaLlegadaUltimoVuelo) {
-        const baseDate = displayState?.fechaSimulada ? new Date(displayState.fechaSimulada) : new Date()
-        
-        // currentSimTime represents the exact UTC equivalent time in the simulation.
-        const currentSimTime = new Date(baseDate.getTime() + simClockForEnvios * 60000)
 
+      if (scWindowStillOpen(envio)) return { ...envio, estado: 'PENDIENTE' }
+
+      if (envio.fechaSalidaPrimerVuelo && envio.fechaLlegadaUltimoVuelo && currentSimTime) {
         const firstDepartureTime = new Date(envio.fechaSalidaPrimerVuelo)
         const lastArrivalTime = new Date(envio.fechaLlegadaUltimoVuelo)
 
@@ -541,20 +556,20 @@ export default function App() {
         // in-flight envíos never showed as EN_TRANSITO.
         const hasDeparted = currentSimTime >= firstDepartureTime
         const hasArrived = currentSimTime >= lastArrivalTime
-        
+
         if (hasArrived) {
             return { ...envio, estado: 'ENTREGADO' }
         }
-        
+
         if (hasDeparted) {
             return { ...envio, estado: 'EN_TRANSITO' }
         }
-        
+
         return { ...envio, estado: 'PLANIFICADO' }
       }
       return envio
     })
-  }, [displayState?.envios, displayState?.vuelos, simClockForEnvios])
+  }, [displayState?.envios, displayState?.vuelos, displayState?.fechaSimulada, displayState?.origenSimulacionUtc, displayState?.scMinutos, simClockForEnvios])
 
   const simState = useMemo(() => {
     if (!displayState) return {

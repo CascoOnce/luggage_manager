@@ -18,6 +18,11 @@ public class SimulationStateDTO {
     private String fechaSimulada;
     private long diaInicioTimestampUtc;
     private int horaInicioMin;
+    // Instant día 1 arranca (fechaInicio + horaInicio) y la duración de cada ventana Sc
+    // (rolling-planning), en minutos — el frontend los usa para replicar scWindowEnd() y
+    // ocultar "Planificado" hasta que la ventana Sc del envío haya cerrado.
+    private String origenSimulacionUtc;
+    private int scMinutos;
     private String algoritmo;
     private MetricaAlgoritmo metrica;
     private boolean enEjecucion;
