@@ -2275,11 +2275,41 @@ public class SimulationEngine {
             .fechaLlegadaUltimoVuelo(fechaLlegadaUltimoVuelo)
             .planResumen(buildPlanResumen(envio, plan))
             .tiempoRestante(formatRemainingTime(deadline))
+            .fechaLimiteSla(deadline.format(TS_FORMAT))
+            .ubicacionActual(resolveUbicacionActual(envio))
             .planDetalle(includePlanDetail ? plan : null)
             .escalasResumen(escalasResumen)
             .vuelosAsignados(vuelosAsignados)
             .aeropuertosRuta(aeropuertosRuta)
             .build();
+    }
+
+    /** Dónde está físicamente un envío ahora mismo, para el detalle "a demanda":
+     *  origen si aún no se planificó, destino si ya se entregó, o la ubicación/vuelo
+     *  de sus maletas en el resto de los casos (todas comparten almacén salvo que el
+     *  envío se haya dividido en rutas distintas, en cuyo caso se toma la primera). */
+    private String resolveUbicacionActual(Envio envio) {
+        if (envio.getEstado() == EstadoEnvio.PENDIENTE) {
+            return envio.getAeropuertoOrigen();
+        }
+        if (envio.getEstado() == EstadoEnvio.ENTREGADO) {
+            return envio.getAeropuertoDestino();
+        }
+        List<Maleta> maletasEnvio = maletas.stream()
+            .filter(m -> m.getIdEnvio().equals(envio.getIdEnvio()))
+            .toList();
+        Optional<Maleta> enVuelo = maletasEnvio.stream()
+            .filter(m -> m.getEstado() == EstadoMaleta.EN_VUELO)
+            .findFirst();
+        if (enVuelo.isPresent()) {
+            String vuelo = maletaVueloActual.get(enVuelo.get().getIdMaleta());
+            return vuelo != null ? "En vuelo " + vuelo : "En vuelo";
+        }
+        return maletasEnvio.stream()
+            .map(Maleta::getUbicacionActual)
+            .filter(java.util.Objects::nonNull)
+            .findFirst()
+            .orElse(envio.getAeropuertoOrigen());
     }
 
     private String buildPlanResumen(Envio envio, PlanDeViaje plan) {

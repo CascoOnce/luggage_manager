@@ -348,35 +348,50 @@ function EscalasDetalle({ escalas }) {
   )
 }
 
-function BuscarRutaPanel({ simState, onShowEnvioRoute, onShowMaletaRoute, appMode }) {
+function BuscarRutaPanel({ simState, onShowEnvioRoute, onShowMaletaRoute, onClearRoute, onFocusMapLocation, apMap, appMode }) {
   const [searchMode, setSearchMode] = useState('envio')   // 'maleta' | 'envio'
   const [inputId,  setInputId]  = useState('')
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState(null)
-  const [result,   setResult]   = useState(null)       // { envioId, escalas, origen, destino }
+  const [result,   setResult]   = useState(null)       // { envioId, escalas, origen, destino, estado }
+
+  function focusAirport(codigo) {
+    const ap = apMap?.[codigo]
+    if (ap?.lat != null && ap?.lng != null) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng, zoom: 7, duration: 1.0 })
+  }
 
   async function handleBuscar() {
     const id = inputId.trim()
     if (!id) return
     setLoading(true); setError(null); setResult(null)
     try {
-      // Por maleta: dibuja la ruta de ESA maleta (su planVersion). Por envío: todas sus rutas.
-      if (searchMode === 'maleta' && appMode !== 'ops' && onShowMaletaRoute) {
-        const ruta = await api.getMaletaRuta(id)
-        setResult({ envioId: parseEnvioIdFromMaletaId(id) || id, escalas: ruta?.escalas || [], origen: ruta?.aeropuertoOrigen, destino: ruta?.aeropuertoDestino })
-        onShowMaletaRoute(id)
-        return
-      }
-      let envioId = id
-      if (searchMode === 'maleta') {
-        const parsed = parseEnvioIdFromMaletaId(id)
-        if (parsed) envioId = parsed
-      }
+      // A maleta ID is just its envío id + "-n" — resolve the envío first so we can branch on
+      // estado: PENDIENTE has no route yet (maletas aren't even generated), ENTREGADO has a
+      // historical one, and both PLANIFICADO/EN_TRANSITO have their current one.
+      const envioId = searchMode === 'maleta' ? (parseEnvioIdFromMaletaId(id) || id) : id
       const envio = appMode === 'ops'
         ? await api.getOpsEnvioById(envioId)
         : await api.getEnvioById(envioId)
+      const estado = envio?.estado
+
+      if (estado === 'PENDIENTE') {
+        onClearRoute?.()
+        setResult({ envioId: envio.idEnvio, escalas: [], origen: envio.aeropuertoOrigen, destino: envio.aeropuertoDestino, estado })
+        focusAirport(envio.aeropuertoOrigen)
+        return
+      }
+
+      // Por maleta (solo simulación): dibuja la ruta de ESA maleta (su planVersion). Por
+      // envío: todas sus rutas (un envío dividido en varias tiene más de una).
+      if (searchMode === 'maleta' && appMode !== 'ops' && onShowMaletaRoute) {
+        const ruta = await api.getMaletaRuta(id)
+        setResult({ envioId: envio.idEnvio, escalas: ruta?.escalas || [], origen: ruta?.aeropuertoOrigen, destino: ruta?.aeropuertoDestino, estado })
+        onShowMaletaRoute(id)
+        return
+      }
+
       const escalas = envio?.planDetalle?.escalas || []
-      setResult({ envioId: envio.idEnvio, escalas, origen: envio.aeropuertoOrigen, destino: envio.aeropuertoDestino })
+      setResult({ envioId: envio.idEnvio, escalas, origen: envio.aeropuertoOrigen, destino: envio.aeropuertoDestino, estado })
       onShowEnvioRoute?.(envioId)
     } catch {
       setError('No se encontró ruta para ese ID')
@@ -405,6 +420,14 @@ function BuscarRutaPanel({ simState, onShowEnvioRoute, onShowMaletaRoute, appMod
           placeholder={searchMode === 'maleta' ? 'ID maleta (ej: ENV001-3)' : 'ID envío (ej: ENV001)'}
           style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12, padding: '5px 7px', borderRadius: 2, outline: 'none', minWidth: 0 }}
         />
+        {(inputId || result || error) && (
+          <button
+            onClick={() => { setInputId(''); setResult(null); setError(null); onClearRoute?.() }}
+            title="Limpiar búsqueda y ruta del mapa"
+            style={{ padding: '5px 9px', background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12, borderRadius: 2, cursor: 'pointer', flexShrink: 0 }}>
+            ✕
+          </button>
+        )}
         <button onClick={handleBuscar} disabled={loading || !inputId.trim()}
           style={{ padding: '5px 10px', background: loading ? 'transparent' : 'rgba(88,166,255,0.12)', border: '1px solid rgba(88,166,255,0.4)', color: 'var(--blue)', fontFamily: 'var(--mono)', fontSize: 11, borderRadius: 2, cursor: loading || !inputId.trim() ? 'not-allowed' : 'pointer', flexShrink: 0, opacity: !inputId.trim() ? 0.4 : 1 }}>
           {loading ? '...' : '▶ VER'}
@@ -417,7 +440,22 @@ function BuscarRutaPanel({ simState, onShowEnvioRoute, onShowMaletaRoute, appMod
             Envío: <span style={{ color: 'var(--blue)' }}>{result.envioId}</span>
             <span style={{ margin: '0 6px', opacity: 0.4 }}>·</span>
             {result.origen} → {result.destino}
+            {result.estado && (
+              <span style={{ marginLeft: 6, color: ESTADO_COLOR[result.estado] || 'var(--muted)' }}>
+                ({result.estado.replace('_', ' ')})
+              </span>
+            )}
           </div>
+          {result.estado === 'PENDIENTE' && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#f5a623' }}>
+              📍 Aún no planificado — se encuentra en <strong>{result.origen}</strong>
+            </div>
+          )}
+          {result.estado === 'ENTREGADO' && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#22d07a', marginBottom: 4 }}>
+              📍 Entregado en <strong>{result.destino}</strong>
+            </div>
+          )}
           <EscalasDetalle escalas={result.escalas} />
         </div>
       )}
@@ -589,7 +627,7 @@ function EntregadosPanel({ mode, simState, nowMin, airports }) {
   )
 }
 
-function EnviosSection({ simState, onShowEnvioRoute, onShowMaletaRoute, airports, onFocusMapLocation, onSelectFlight, onEnvioSelect, mode, nowMin }) {
+function EnviosSection({ simState, onShowEnvioRoute, onShowMaletaRoute, onClearRoute, airports, onFocusMapLocation, onSelectFlight, onEnvioSelect, mode, nowMin }) {
   const [view,       setView]       = useState('lista')
   const [estado,     setEstado]     = useState('')
   const [filterOrig, setFilterOrig] = useState('')
@@ -605,17 +643,14 @@ function EnviosSection({ simState, onShowEnvioRoute, onShowMaletaRoute, airports
 
   const handleEnvioClick = (e) => {
     onEnvioSelect?.({ id: e.idEnvio, estado: e.estado })
-    if (e.estado === 'ENTREGADO') {
-      const ap = apMap[e.aeropuertoDestino]
-      if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng, zoom: 7, duration: 1.2 })
-    } else if (e.estado === 'EN_TRANSITO') {
-      // Draw the full route AND fit the map to it (both handled in App.handleShowEnvioRoute).
-      // The previous per-leg focus read e.planDetalle, which the list payload omits, so it
-      // never actually ran — fitting the whole highlighted route is the correct behaviour.
-      onShowEnvioRoute?.(e.idEnvio)
-    } else {
+    if (e.estado === 'PENDIENTE') {
+      // No route exists yet — show where it's physically sitting (its origin).
       const ap = apMap[e.aeropuertoOrigen]
       if (ap?.lat && ap?.lng) onFocusMapLocation?.({ lat: ap.lat, lng: ap.lng, zoom: 7, duration: 1.2 })
+    } else {
+      // PLANIFICADO / EN_TRANSITO / ENTREGADO / RETRASADO all have an assigned route — draw
+      // it and fit the map to it (fitting already reveals the destination for ENTREGADO too).
+      onShowEnvioRoute?.(e.idEnvio)
     }
   }
 
@@ -674,7 +709,7 @@ function EnviosSection({ simState, onShowEnvioRoute, onShowMaletaRoute, airports
         <EntregadosPanel mode={mode} simState={simState} nowMin={nowMin} airports={airports} />
       ) : (
         <>
-          <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} onShowMaletaRoute={onShowMaletaRoute} appMode={mode} />
+          <BuscarRutaPanel simState={simState} onShowEnvioRoute={onShowEnvioRoute} onShowMaletaRoute={onShowMaletaRoute} onClearRoute={onClearRoute} onFocusMapLocation={onFocusMapLocation} apMap={apMap} appMode={mode} />
           {/* Filtro: en la RUTA (origen/destino final) o en el TRAMO (cualquier escala) */}
           <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
             <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: 1, alignSelf: 'center' }}>FILTRAR EN</span>
@@ -1240,6 +1275,7 @@ export default function SidePanel({
   simState,
   onShowEnvioRoute,
   onShowMaletaRoute,
+  onClearRoute,
   // Almacén
   airports,
   threshold,
@@ -1284,7 +1320,7 @@ export default function SidePanel({
           currentEstado={selectedEnvio.estado}
           fetchEnvio={fetchEnvioFn}
           onClose={() => setSelectedEnvio(null)}
-          onShowInMap={onShowEnvioRoute}
+          airports={airports}
         />
       )}
       {/* Icon strip */}
@@ -1338,7 +1374,7 @@ export default function SidePanel({
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {activeSection === 'vuelos'  && <VuelosSection  flights={flights} plannedFlights={plannedFlights} cancelledFlights={cancelledFlights} selectedFlight={selectedFlight} setSelectedFlight={setSelectedFlight} setMapSelectedVuelo={setMapSelectedVuelo} theme={theme} onVueloFilterChange={onVueloFilterChange} nowMin={nowMin} />}
-            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} onShowMaletaRoute={onShowMaletaRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} onSelectFlight={setSelectedFlight} onEnvioSelect={setSelectedEnvio} mode={mode} nowMin={nowMin} />}
+            {activeSection === 'envios'  && <EnviosSection  simState={simState} onShowEnvioRoute={onShowEnvioRoute} onShowMaletaRoute={onShowMaletaRoute} onClearRoute={onClearRoute} airports={airports} onFocusMapLocation={onFocusMapLocation} onSelectFlight={setSelectedFlight} onEnvioSelect={setSelectedEnvio} mode={mode} nowMin={nowMin} />}
             {activeSection === 'almacen' && <AlmacenSection airports={airports} threshold={threshold} theme={theme} setMapSelectedAirport={setMapSelectedAirport} onAirportFilterChange={onAirportFilterChange} onFocusMapLocation={onFocusMapLocation} />}
             {activeSection === 'config'  && <ConfigSection  onSimulationStarted={onSimulationStarted} onClose={() => onSectionChange(null)} theme={theme} />}
             {activeSection === 'filtros' && <FiltrosSection airports={airports} originIds={originIds} setOriginIds={setOriginIds} destIds={destIds} setDestIds={setDestIds} threshold={threshold} setThreshold={setThreshold} mode={mode} onClearCancellations={onClearCancellations} />}

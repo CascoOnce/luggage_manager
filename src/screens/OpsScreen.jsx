@@ -94,6 +94,10 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
   const [vueloMapFilter, setVueloMapFilter] = useState({ origin: '', dest: '', semaforo: [], query: '' })
   const [airportMapFilter, setAirportMapFilter] = useState({ continent: '', pattern: '', semaforo: [] })
   
+  // Ops envíos are never split across routes (no per-maleta plan versions like the
+  // simulation engine has), so a "por maleta" search resolves to the same single route
+  // as its parent envío — BuscarRutaPanel already parses the maleta id down to the envío
+  // id before calling this handler in ops mode.
   const handleShowEnvioRoute = async (envioId) => {
     try {
       const envio = await api.getOpsEnvioById(envioId)
@@ -104,18 +108,27 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
       const escalas = [...(envio?.planDetalle?.escalas || [])].sort((a, b) => a.orden - b.orden)
       if (escalas.length === 0) return
       const apMap = Object.fromEntries(airports.map((a) => [a.id, a]))
-      const legs = []
+      const legEscalas = []
       let originIata = envio.aeropuertoOrigen
       for (let i = 0; i < escalas.length; i++) {
         const destIata = escalas[i].codigoAeropuerto
         const o = apMap[originIata]
         const d = apMap[destIata]
-        if (o && d) legs.push({ originIata, destIata, originLat: o.lat, originLng: o.lng, destLat: d.lat, destLng: d.lng })
+        if (o && d) {
+          legEscalas.push({
+            vuelo: escalas[i].codigoVuelo,
+            origen: originIata, destino: destIata,
+            horaSalida: escalas[i].horaSalidaEst, horaLlegada: escalas[i].horaLlegadaEst,
+            originLat: o.lat, originLng: o.lng, destLat: d.lat, destLng: d.lng,
+          })
+        }
         originIata = destIata
       }
-      if (legs.length > 0) {
-        setHighlightedRoute({ envioId, legs })
-      }
+      if (legEscalas.length === 0) return
+      const lats = legEscalas.flatMap((e) => [e.originLat, e.destLat])
+      const lngs = legEscalas.flatMap((e) => [e.originLng, e.destLng])
+      setHighlightedRoute({ envioId, routes: [{ version: 1, escalas: legEscalas }] })
+      setMapFlyTo({ bounds: [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]], duration: 1.0 })
     } catch (e) {
       console.error('handleShowEnvioRoute', e)
     }
@@ -540,6 +553,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
               onOpsEnviosChanged={onRefreshOps || (() => {})}
               opsBase={opsBase}
               onShowEnvioRoute={handleShowEnvioRoute}
+              onClearRoute={() => setHighlightedRoute(null)}
               onFocusMapLocation={setMapFlyTo}
               onVueloFilterChange={setVueloMapFilter}
               onAirportFilterChange={setAirportMapFilter}

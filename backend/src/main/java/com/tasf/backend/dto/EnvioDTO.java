@@ -26,6 +26,11 @@ public class EnvioDTO {
     private String planResumen;
     private String tiempoRestante;
     private String fechaEntrega;
+    private String fechaLimiteSla;
+    /** Dónde está físicamente el envío ahora: aeropuerto de origen si PENDIENTE (aún no
+     *  planificado), aeropuerto de destino si ENTREGADO, o el aeropuerto/vuelo actual en el resto
+     *  de los casos — derivado de las maletas del envío. */
+    private String ubicacionActual;
     private PlanDeViaje planDetalle;
     private List<EscalaResumenDTO> escalasResumen;
     private List<String> vuelosAsignados;
