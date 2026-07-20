@@ -174,7 +174,7 @@ jobs:
           sshpass -p "$VM_PASS" ssh -o StrictHostKeyChecking=no \
             "$VM_USER@$VM_HOST" "
               cat > ${{ env.APP_DIR }}/.env << 'EOF'
-          SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3306/${{ env.DB_NAME }}?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+          SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3306/${{ env.DB_NAME }}?useSSL=false&serverTimezone=America/Lima&allowPublicKeyRetrieval=true
           SPRING_DATASOURCE_USERNAME=luggage
           SPRING_DATASOURCE_PASSWORD=$DB_PASS
           SPRING_PROFILES_ACTIVE=prod
