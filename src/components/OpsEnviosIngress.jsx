@@ -215,8 +215,10 @@ export default function OpsEnviosIngress({ airports = [], onEnviosChanged, opsBa
     setPlanError(null)
     try {
       if (pendingEnvios.length > 0) {
-        const dtos = pendingEnvios.map(({ idPedido, codigoAerolinea, iataOrigen, iataDestino, cantidadMaletas, fechaHoraIngreso }) => ({
-          idPedido: idPedido ?? null,
+        const dtos = pendingEnvios.map(({ codigoAerolinea, iataOrigen, iataDestino, cantidadMaletas, fechaHoraIngreso }) => ({
+          // ponytail: local idPedido (SKBO-01) is display-only; its counter resets each
+          // planificar so reusing it collides on the PK. Let backend generate the real one.
+          idPedido: null,
           codigoAerolinea: codigoAerolinea ?? null,
           iataOrigen,
           iataDestino,
