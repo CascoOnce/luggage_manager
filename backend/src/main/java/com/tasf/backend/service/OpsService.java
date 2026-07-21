@@ -116,31 +116,19 @@ public class OpsService {
             }
         }
 
-        // Which calendar occurrence of each flight is being shown right now (origin-local date).
-        // A daily-repeating flight has one occurrence per day; we attribute plan bags to a flight
-        // ONLY when the plan schedules them on the SAME occurrence being displayed — otherwise
-        // bags routed onto tomorrow's departure would pollute today's in-air/upcoming occurrence.
-        Map<String, LocalDate> expectedDateByFlight = new HashMap<>();
-        Map<String, Integer> husoOrigenByFlight = new HashMap<>();
-        for (Vuelo v : opsReferenceData.getVuelos()) {
-            if (dataLoaderService.isFlightCancelledForSession(v.getCodigoVuelo())) continue;
-            int husoOrigenVuelo = husoByIata.getOrDefault(v.getOrigen(), 0);
-            husoOrigenByFlight.put(v.getCodigoVuelo(), husoOrigenVuelo);
-            FlightOccurrence occ = occurrenceOf(from, v.getHoraSalida(), v.getHoraLlegada());
-            if (occ.inFlight() || occ.upcoming()) {
-                expectedDateByFlight.put(v.getCodigoVuelo(),
-                        occ.depUtc().plusHours(husoOrigenVuelo).toLocalDate());
-            }
-        }
-
-        // Flight loads: attribute each plan's maletas to every flight leg it uses (all legs, all
-        // split parts, per-plan quantity) — but only onto the occurrence currently shown, matching
-        // the leg's scheduled departure date (in the flight's own origin-local time) against the
-        // displayed occurrence. This keeps the Vuelos screen consistent with the envío detail while
-        // NOT loading bags onto a flight occurrence that already departed on a different day.
+        // Flight loads. Each pending leg belongs to one of two buckets, decided by whether its
+        // scheduled departure is in the future or already past relative to now (real UTC):
+        //   - planificada: dep > now → bag hasn't boarded → belongs to an UPCOMING departure.
+        //   - enTransito:  dep <= now → bag already left → belongs to the airborne occurrence.
+        // A daily flight can be airborne today (today's occurrence) AND loaded for tomorrow at the
+        // same time; the panel shows one row per flight code, so below we prefer the planificada
+        // (upcoming) view when a flight carries not-yet-departed bags — that's the actionable one,
+        // and it keeps a PLANIFICADO envío out of the "en vuelo" tab. Completed legs are skipped.
+        LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
         Map<String, EnvioEntity> envioById = opsEnvioRepository.findAll().stream()
                 .collect(Collectors.toMap(EnvioEntity::getIdPedido, e -> e, (a, b) -> a));
-        Map<String, Integer> cargaPorVuelo = new HashMap<>();
+        Map<String, Integer> cargaPlanificada = new HashMap<>();
+        Map<String, Integer> cargaEnTransito = new HashMap<>();
         for (List<PlanDeViaje> planList : planesPorEnvio.values()) {
             for (PlanDeViaje plan : planList) {
                 EnvioEntity envio = envioById.get(plan.getIdEnvio());
@@ -150,13 +138,11 @@ public class OpsService {
                 int qty = plan.getCantidadMaletas() > 0 ? plan.getCantidadMaletas() : envio.getCantidadMaletas();
                 for (Escala e : plan.getEscalas()) {
                     String code = e.getCodigoVuelo();
-                    if (code == null || e.getHoraSalidaEst() == null) continue;
-                    LocalDate expected = expectedDateByFlight.get(code);
-                    if (expected == null) continue; // flight not shown this cycle → don't attribute
-                    LocalDate salidaLocal = e.getHoraSalidaEst()
-                            .plusHours(husoOrigenByFlight.getOrDefault(code, 0)).toLocalDate();
-                    if (salidaLocal.equals(expected)) {
-                        cargaPorVuelo.merge(code, qty, Integer::sum);
+                    if (code == null || e.getHoraSalidaEst() == null || e.isCompletada()) continue;
+                    if (e.getHoraSalidaEst().isAfter(nowUtc)) {
+                        cargaPlanificada.merge(code, qty, Integer::sum);
+                    } else {
+                        cargaEnTransito.merge(code, qty, Integer::sum);
                     }
                 }
             }
@@ -170,13 +156,28 @@ public class OpsService {
             if (dataLoaderService.isFlightCancelledForSession(v.getCodigoVuelo())) {
                 continue;
             }
+            String code = v.getCodigoVuelo();
             FlightOccurrence occ = occurrenceOf(from, v.getHoraSalida(), v.getHoraLlegada());
-            boolean inFlight = occ.inFlight();
+            boolean enUso = flightsInUso.contains(code);
 
-            boolean enUso = flightsInUso.contains(v.getCodigoVuelo());
+            int planificada = cargaPlanificada.getOrDefault(code, 0);
+            int enTransito = cargaEnTransito.getOrDefault(code, 0);
+
+            // A flight carrying not-yet-departed bags is shown as an UPCOMING departure (out of the
+            // "en vuelo" tab) with that planned load, even if its today-occurrence is airborne now.
+            // Otherwise fall back to the natural live occurrence, carrying any in-transit bags.
+            boolean inFlight;
+            int cargaActual;
+            if (planificada > 0) {
+                inFlight = false;
+                cargaActual = planificada;
+            } else {
+                inFlight = occ.inFlight();
+                cargaActual = inFlight ? enTransito : 0;
+            }
 
             // Solo enviar vuelos que están volando AHORA (inFlight) o que van a salir después (upcoming)
-            if (!inFlight && !occ.upcoming()) {
+            if (!inFlight && !occ.upcoming() && planificada == 0) {
                 continue;
             }
 
@@ -187,14 +188,14 @@ public class OpsService {
             }
 
             vueloDTOs.add(LiveVueloDTO.builder()
-                    .codigoVuelo(v.getCodigoVuelo())
+                    .codigoVuelo(code)
                     .origen(v.getOrigen())
                     .destino(v.getDestino())
                     .horaSalida(v.getHoraSalida().format(TIME_FMT))
                     .horaLlegada(v.getHoraLlegada().format(TIME_FMT))
                     .tipo(v.getTipo())
                     .capacidadTotal(v.getCapacidadTotal())
-                    .cargaActual(cargaPorVuelo.getOrDefault(v.getCodigoVuelo(), 0))
+                    .cargaActual(cargaActual)
                     .fraction(fraction)
                     .husOrigen(husoByIata.get(v.getOrigen()))
                     .husDestino(husoByIata.get(v.getDestino()))
@@ -602,12 +603,11 @@ public class OpsService {
         // Find expected departure date for this flight (same logic as getLiveState)
         LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
         LocalDate expectedDate = null;
-        int flightOriginHuso = 0;
 
         Optional<Vuelo> optVuelo = opsReferenceData.getVuelos().stream()
             .filter(v -> v.getCodigoVuelo().equals(codigoVuelo))
             .findFirst();
-            
+
         if (optVuelo.isPresent()) {
             Vuelo v = optVuelo.get();
             Map<String, Integer> husoByIata = new HashMap<>();
@@ -616,25 +616,25 @@ public class OpsService {
             }
             int husoOrigenVuelo = husoByIata.getOrDefault(v.getOrigen(), 0);
             FlightOccurrence occ = occurrenceOf(nowUtc, v.getHoraSalida(), v.getHoraLlegada());
-            flightOriginHuso = husoOrigenVuelo;
             expectedDate = occ.depUtc().plusHours(husoOrigenVuelo).toLocalDate();
         }
 
         Set<String> envioIds = new java.util.HashSet<>();
+        // Iterate ALL plans (every split part), matching the occupancy calc in getLiveState.
+        // Only plan[0] would miss a split part routed on a different plan/version.
         for (List<PlanDeViaje> planes : planesPorEnvio.values()) {
-            if (planes.isEmpty()) continue;
-            PlanDeViaje p = planes.get(0);
-            if (p.getEscalas() == null) continue;
-            int husoEnvio = husoPorEnvio.getOrDefault(p.getIdEnvio(), flightOriginHuso);
-            for (Escala e : p.getEscalas()) {
-                if (codigoVuelo.equals(e.getCodigoVuelo())) {
-                    // expectedDate is in origin-local time; convert UTC horaSalidaEst likewise.
-                    LocalDate salidaLocal = e.getHoraSalidaEst() != null
-                            ? e.getHoraSalidaEst().plusHours(husoEnvio).toLocalDate() : null;
-                    if (expectedDate != null && salidaLocal != null && salidaLocal.equals(expectedDate)) {
-                        envioIds.add(p.getIdEnvio());
+            for (PlanDeViaje p : planes) {
+                if (p.getEscalas() == null) continue;
+                for (Escala e : p.getEscalas()) {
+                    if (codigoVuelo.equals(e.getCodigoVuelo())) {
+                        // Mirror getLiveState: any pending (non-completed) leg on this flight
+                        // counts, regardless of the leg's calendar date — the displayed occurrence
+                        // may differ from the leg's date for a still-airborne daily flight.
+                        if (expectedDate != null && !e.isCompletada()) {
+                            envioIds.add(p.getIdEnvio());
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
@@ -644,8 +644,10 @@ public class OpsService {
         List<EnvioDTO> result = new ArrayList<>();
         for (String idPedido : envioIds) {
             opsEnvioRepository.findByIdPedido(idPedido).ifPresent(ent -> {
-                PlanDeViaje plan = planesPorEnvio.get(ent.getIdPedido()).get(0);
-                result.add(toDto(ent, plan));
+                List<PlanDeViaje> planList = planesPorEnvio.get(ent.getIdPedido());
+                EnvioDTO dto = toDto(ent, planList.get(0));
+                dto.setPartes(buildPartes(ent, planList));
+                result.add(dto);
             });
         }
         return result;
@@ -731,6 +733,41 @@ public class OpsService {
     private PlanDeViaje loadPlanFromDb(String idPedido) {
         List<PlanDeViaje> planes = loadPlansFromDb(idPedido);
         return planes.isEmpty() ? null : planes.get(0);
+    }
+
+    /**
+     * Rehidrata los mapas en memoria desde la BD al arrancar. Sin esto, tras un reinicio del
+     * backend planesPorEnvio queda vacío y las vistas por-vuelo (ocupación, getEnviosByFlight)
+     * muestran 0% aunque los itinerarios sigan persistidos. Corre tras el @PostConstruct de
+     * DataLoaderService/OpsReferenceData, así opsReferenceData ya está poblado.
+     * ponytail: no restaura ordenActualByEnvio (progreso de tramo); escala.completada persistido
+     * cubre el detalle. Añadir persistencia de orden si el drain post-reinicio se desincroniza.
+     */
+    @org.springframework.context.event.EventListener(
+            org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    @Transactional(value = "opsTransactionManager", readOnly = true)
+    public void rehydratePlansFromDb() {
+        Set<String> pedidos = itinerarioRepository.findAll().stream()
+                .map(ItinerarioEntity::getIdPedido)
+                .collect(Collectors.toSet());
+        if (pedidos.isEmpty()) return;
+        Map<String, Integer> husoByIata = new HashMap<>();
+        for (Aeropuerto a : opsReferenceData.getAeropuertos()) {
+            husoByIata.put(a.getCodigoIATA(), a.getHuso());
+        }
+        int loaded = 0;
+        for (String idPedido : pedidos) {
+            List<PlanDeViaje> planes = loadPlansFromDb(idPedido);
+            if (planes.isEmpty()) continue;
+            planesPorEnvio.put(idPedido, planes);
+            opsEnvioRepository.findByIdPedido(idPedido).ifPresent(e -> {
+                husoPorEnvio.put(idPedido, husoByIata.getOrDefault(e.getIataOrigen(), 0));
+                maletasPorEnvio.put(idPedido, e.getCantidadMaletas());
+                ingresoPorEnvio.put(idPedido, e.getFechaHoraIngreso());
+            });
+            loaded++;
+        }
+        log.info("Rehydrated {} plan(s) from DB into memory at startup", loaded);
     }
 
     /** Todos los planes activos (partes del split) de un envío, ordenados por versión. */
