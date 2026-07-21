@@ -102,8 +102,6 @@ public class OpsService {
         for (Aeropuerto a : opsReferenceData.getAeropuertos()) {
             husoByIata.put(a.getCodigoIATA(), a.getHuso());
         }
-        int nowMin = from.toLocalTime().getHour() * 60 + from.toLocalTime().getMinute();
-
         // 2b. Collect flight codes currently used in planned routes
         Set<String> flightsInUso = new HashSet<>();
         for (List<PlanDeViaje> planList : planesPorEnvio.values()) {
@@ -127,25 +125,11 @@ public class OpsService {
         for (Vuelo v : opsReferenceData.getVuelos()) {
             if (dataLoaderService.isFlightCancelledForSession(v.getCodigoVuelo())) continue;
             int husoOrigenVuelo = husoByIata.getOrDefault(v.getOrigen(), 0);
-            int husoDestinoVuelo = husoByIata.getOrDefault(v.getDestino(), 0);
             husoOrigenByFlight.put(v.getCodigoVuelo(), husoOrigenVuelo);
-            int depUtcMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
-            int arrUtcMin = v.getHoraLlegada().getHour() * 60 + v.getHoraLlegada().getMinute();
-            int depLocalMin = Math.floorMod(depUtcMin + husoOrigenVuelo * 60, 1440);
-            int arrLocalMin = Math.floorMod(arrUtcMin + husoDestinoVuelo * 60, 1440);
-            boolean overnightUtc = depUtcMin > arrUtcMin;
-            boolean inFlight = overnightUtc
-                    ? (depUtcMin <= nowMin || nowMin <= arrUtcMin)
-                    : (depUtcMin <= nowMin && nowMin <= arrUtcMin);
-            int nowLocalMin = Math.floorMod(nowMin + husoOrigenVuelo * 60, 1440);
-            boolean isUpcoming = nowLocalMin < depLocalMin;
-            if (inFlight || isUpcoming) {
-                LocalDate expectedDate = from.plusHours(husoOrigenVuelo).toLocalDate();
-                boolean overnightLocal = depLocalMin > arrLocalMin;
-                if (inFlight && overnightLocal && nowLocalMin <= arrLocalMin) {
-                    expectedDate = expectedDate.minusDays(1); // departed yesterday before midnight
-                }
-                expectedDateByFlight.put(v.getCodigoVuelo(), expectedDate);
+            FlightOccurrence occ = occurrenceOf(from, v.getHoraSalida(), v.getHoraLlegada());
+            if (occ.inFlight() || occ.upcoming()) {
+                expectedDateByFlight.put(v.getCodigoVuelo(),
+                        occ.depUtc().plusHours(husoOrigenVuelo).toLocalDate());
             }
         }
 
@@ -186,36 +170,20 @@ public class OpsService {
             if (dataLoaderService.isFlightCancelledForSession(v.getCodigoVuelo())) {
                 continue;
             }
-            int husoOrigenVuelo = husoByIata.getOrDefault(v.getOrigen(), 0);
-            int husoDestinoVuelo = husoByIata.getOrDefault(v.getDestino(), 0);
-            
-            int depUtcMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
-            int arrUtcMin = v.getHoraLlegada().getHour() * 60 + v.getHoraLlegada().getMinute();
-            int depLocalMin = Math.floorMod(depUtcMin + husoOrigenVuelo * 60, 1440);
-            int arrLocalMin = Math.floorMod(arrUtcMin + husoDestinoVuelo * 60, 1440);
-            
-            boolean overnight = depUtcMin > arrUtcMin;
+            FlightOccurrence occ = occurrenceOf(from, v.getHoraSalida(), v.getHoraLlegada());
+            boolean inFlight = occ.inFlight();
 
-            // Currently airborne based on UTC times
-            boolean inFlight = overnight
-                    ? (depUtcMin <= nowMin || nowMin <= arrUtcMin)
-                    : (depUtcMin <= nowMin && nowMin <= arrUtcMin);
-            
-            int nowLocalMin = Math.floorMod(nowMin + husoOrigenVuelo * 60, 1440);
-            boolean isUpcoming = nowLocalMin < depLocalMin;
-            
             boolean enUso = flightsInUso.contains(v.getCodigoVuelo());
 
-            // Solo enviar vuelos que están volando AHORA (inFlight) o que van a salir después (isUpcoming)
-            if (!inFlight && !isUpcoming) {
+            // Solo enviar vuelos que están volando AHORA (inFlight) o que van a salir después (upcoming)
+            if (!inFlight && !occ.upcoming()) {
                 continue;
             }
 
-            int duration = (arrUtcMin - depUtcMin + 1440) % 1440;
             double fraction = 0.0;
-            if (duration > 0 && inFlight) {
-                int elapsed = (nowMin - depUtcMin + 1440) % 1440;
-                fraction = Math.max(0.0, Math.min(1.0, (double) elapsed / duration));
+            if (occ.durationMin() > 0 && inFlight) {
+                long elapsed = Duration.between(occ.depUtc(), from).toMinutes();
+                fraction = Math.max(0.0, Math.min(1.0, (double) elapsed / occ.durationMin()));
             }
 
             vueloDTOs.add(LiveVueloDTO.builder()
@@ -280,6 +248,24 @@ public class OpsService {
                 .build();
     }
 
+    /** A flight's daily schedule is time-of-day only (UTC). Given the current instant, this is the
+     *  occurrence to display: the one still airborne now, or the next upcoming one. Comparing full
+     *  instants (not minute-of-day) is what makes it correct across midnight — e.g. now=23:33 local
+     *  but the flight's next departure is tomorrow morning, which is upcoming, not "already gone". */
+    static FlightOccurrence occurrenceOf(LocalDateTime fromUtc, LocalTime depUtc, LocalTime arrUtc) {
+        int durationMin = Math.floorMod(
+                (arrUtc.getHour() * 60 + arrUtc.getMinute()) - (depUtc.getHour() * 60 + depUtc.getMinute()), 1440);
+        LocalDateTime dep = fromUtc.toLocalDate().atTime(depUtc);
+        if (dep.plusMinutes(durationMin).isBefore(fromUtc)) {
+            dep = dep.plusDays(1); // today's occurrence already landed → show the next one
+        }
+        boolean inFlight = !fromUtc.isBefore(dep) && fromUtc.isBefore(dep.plusMinutes(durationMin));
+        boolean upcoming = fromUtc.isBefore(dep);
+        return new FlightOccurrence(dep, durationMin, inFlight, upcoming);
+    }
+
+    record FlightOccurrence(LocalDateTime depUtc, int durationMin, boolean inFlight, boolean upcoming) {}
+
     @org.springframework.transaction.annotation.Transactional("opsTransactionManager")
     public void cancelFlight(String codigoVuelo, String aplicaDesde) {
         dataLoaderService.cancelFlightForSession(codigoVuelo, aplicaDesde);
@@ -311,6 +297,35 @@ public class OpsService {
 
     public void clearCancellations() {
         dataLoaderService.clearSessionCancellations();
+    }
+
+    /** Reset any PLANIFICADO shipment whose stored plan uses a flight that no longer exists
+     *  (deleted directly from the DB, bypassing cancel-flight) back to PENDIENTE. */
+    private void invalidatePlansWithMissingFlights() {
+        opsReferenceData.reload();
+        Set<String> vuelosVigentes = opsReferenceData.getVuelos().stream()
+                .map(Vuelo::getCodigoVuelo)
+                .collect(Collectors.toSet());
+        List<EnvioEntity> aReplanificar = new ArrayList<>();
+        for (EnvioEntity e : opsEnvioRepository.findAllByEstado("PLANIFICADO")) {
+            List<PlanDeViaje> planes = planesPorEnvio.get(e.getIdPedido());
+            if (planes == null) planes = loadPlansFromDb(e.getIdPedido());
+            boolean usaVueloInexistente = planes.stream()
+                    .filter(p -> p.getEscalas() != null)
+                    .flatMap(p -> p.getEscalas().stream())
+                    .anyMatch(esc -> esc.getCodigoVuelo() != null
+                            && !vuelosVigentes.contains(esc.getCodigoVuelo()));
+            if (usaVueloInexistente) {
+                e.setEstado("PENDIENTE");
+                planesPorEnvio.remove(e.getIdPedido());
+                aReplanificar.add(e);
+            }
+        }
+        if (!aReplanificar.isEmpty()) {
+            opsEnvioRepository.saveAll(aReplanificar);
+            log.info("Revalidación: {} envíos PLANIFICADO → PENDIENTE por vuelo inexistente",
+                    aReplanificar.size());
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -419,6 +434,10 @@ public class OpsService {
 
     @org.springframework.transaction.annotation.Transactional("opsTransactionManager")
     public PlanningResult planificar() {
+        // A flight deleted straight from the DB (not via cancel-flight) leaves PLANIFICADO plans
+        // pointing at a flight that no longer exists. Reset those to PENDIENTE so they replan below.
+        invalidatePlansWithMissingFlights();
+
         List<EnvioEntity> pendientes = opsEnvioRepository.findAllPendientesOrdenados();
         if (pendientes.isEmpty()) {
             log.info("No PENDIENTE envios to plan.");
@@ -596,27 +615,9 @@ public class OpsService {
                 husoByIata.put(a.getCodigoIATA(), a.getHuso());
             }
             int husoOrigenVuelo = husoByIata.getOrDefault(v.getOrigen(), 0);
-            int husoDestinoVuelo = husoByIata.getOrDefault(v.getDestino(), 0);
-            
-            int nowMin = nowUtc.toLocalTime().getHour() * 60 + nowUtc.toLocalTime().getMinute();
-            int depUtcMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
-            int arrUtcMin = v.getHoraLlegada().getHour() * 60 + v.getHoraLlegada().getMinute();
-            int depLocalMin = Math.floorMod(depUtcMin + husoOrigenVuelo * 60, 1440);
-            int arrLocalMin = Math.floorMod(arrUtcMin + husoDestinoVuelo * 60, 1440);
-            
-            boolean overnightUtc = depUtcMin > arrUtcMin;
-            boolean inFlight = overnightUtc
-                    ? (depUtcMin <= nowMin || nowMin <= arrUtcMin)
-                    : (depUtcMin <= nowMin && nowMin <= arrUtcMin);
-            
-            int nowLocalMin = Math.floorMod(nowMin + husoOrigenVuelo * 60, 1440);
-            
+            FlightOccurrence occ = occurrenceOf(nowUtc, v.getHoraSalida(), v.getHoraLlegada());
             flightOriginHuso = husoOrigenVuelo;
-            expectedDate = nowUtc.plusHours(husoOrigenVuelo).toLocalDate();
-            boolean overnightLocal = depLocalMin > arrLocalMin;
-            if (inFlight && overnightLocal && nowLocalMin <= arrLocalMin) {
-                expectedDate = expectedDate.minusDays(1);
-            }
+            expectedDate = occ.depUtc().plusHours(husoOrigenVuelo).toLocalDate();
         }
 
         Set<String> envioIds = new java.util.HashSet<>();
