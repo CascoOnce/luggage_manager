@@ -646,6 +646,9 @@ public class SimulationEngine {
             enviosParaPlanificar = afectados;
         }
 
+        // Floor departures at the CURRENT sim instant, not the stale value planificarLote left on
+        // params — otherwise a mid-day replan could route bags onto a flight that already departed.
+        params.setCurrentTimeUtc(fechaSimulada);
         PlanningResult result = porIncidencia
             ? planningService.planificarConIncidencia(enviosParaPlanificar, vuelos, aeropuertos, params)
             : planningService.planificar(enviosParaPlanificar, vuelos, aeropuertos, params);
