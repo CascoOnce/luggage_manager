@@ -33,4 +33,9 @@ public class ItinerarioEntity {
 
     @Column(name = "fecha_creacion", nullable = false)
     private LocalDateTime fechaCreacion;
+
+    /** Maletas que viajan por ESTE plan. En un envío partido (split) cada itinerario/versión
+     *  lleva una fracción; la suma de las versiones activas = total del envío. */
+    @Column(name = "cantidad_maletas", nullable = false)
+    private int cantidadMaletas;
 }

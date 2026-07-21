@@ -10,6 +10,7 @@ import com.tasf.backend.domain.PlanningResult;
 import com.tasf.backend.domain.Vuelo;
 import com.tasf.backend.dto.AirportInventoryDTO;
 import com.tasf.backend.dto.EnvioDTO;
+import com.tasf.backend.dto.ParteEnvioDTO;
 import com.tasf.backend.dto.EnvioSummaryDTO;
 import com.tasf.backend.dto.LiveStateDTO;
 import com.tasf.backend.dto.LiveStateDTO.LiveAeropuertoDTO;
@@ -22,6 +23,7 @@ import com.tasf.backend.entity.ItinerarioEntity;
 import com.tasf.backend.ops.repository.OpsEnvioRepository;
 import com.tasf.backend.ops.repository.OpsEscalaRepository;
 import com.tasf.backend.ops.repository.OpsItinerarioRepository;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -29,6 +31,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.Comparator;
@@ -115,57 +118,64 @@ public class OpsService {
             }
         }
 
+        // Which calendar occurrence of each flight is being shown right now (origin-local date).
+        // A daily-repeating flight has one occurrence per day; we attribute plan bags to a flight
+        // ONLY when the plan schedules them on the SAME occurrence being displayed — otherwise
+        // bags routed onto tomorrow's departure would pollute today's in-air/upcoming occurrence.
         Map<String, LocalDate> expectedDateByFlight = new HashMap<>();
+        Map<String, Integer> husoOrigenByFlight = new HashMap<>();
         for (Vuelo v : opsReferenceData.getVuelos()) {
             if (dataLoaderService.isFlightCancelledForSession(v.getCodigoVuelo())) continue;
-            
             int husoOrigenVuelo = husoByIata.getOrDefault(v.getOrigen(), 0);
             int husoDestinoVuelo = husoByIata.getOrDefault(v.getDestino(), 0);
+            husoOrigenByFlight.put(v.getCodigoVuelo(), husoOrigenVuelo);
             int depUtcMin = v.getHoraSalida().getHour() * 60 + v.getHoraSalida().getMinute();
             int arrUtcMin = v.getHoraLlegada().getHour() * 60 + v.getHoraLlegada().getMinute();
             int depLocalMin = Math.floorMod(depUtcMin + husoOrigenVuelo * 60, 1440);
             int arrLocalMin = Math.floorMod(arrUtcMin + husoDestinoVuelo * 60, 1440);
-            
             boolean overnightUtc = depUtcMin > arrUtcMin;
             boolean inFlight = overnightUtc
                     ? (depUtcMin <= nowMin || nowMin <= arrUtcMin)
                     : (depUtcMin <= nowMin && nowMin <= arrUtcMin);
-            
             int nowLocalMin = Math.floorMod(nowMin + husoOrigenVuelo * 60, 1440);
             boolean isUpcoming = nowLocalMin < depLocalMin;
-
             if (inFlight || isUpcoming) {
                 LocalDate expectedDate = from.plusHours(husoOrigenVuelo).toLocalDate();
                 boolean overnightLocal = depLocalMin > arrLocalMin;
                 if (inFlight && overnightLocal && nowLocalMin <= arrLocalMin) {
-                    // It departed yesterday before midnight
-                    expectedDate = expectedDate.minusDays(1);
+                    expectedDate = expectedDate.minusDays(1); // departed yesterday before midnight
                 }
                 expectedDateByFlight.put(v.getCodigoVuelo(), expectedDate);
             }
         }
 
+        // Flight loads: attribute each plan's maletas to every flight leg it uses (all legs, all
+        // split parts, per-plan quantity) — but only onto the occurrence currently shown, matching
+        // the leg's scheduled departure date (in the flight's own origin-local time) against the
+        // displayed occurrence. This keeps the Vuelos screen consistent with the envío detail while
+        // NOT loading bags onto a flight occurrence that already departed on a different day.
+        Map<String, EnvioEntity> envioById = opsEnvioRepository.findAll().stream()
+                .collect(Collectors.toMap(EnvioEntity::getIdPedido, e -> e, (a, b) -> a));
         Map<String, Integer> cargaPorVuelo = new HashMap<>();
-        for (EnvioEntity envio : opsEnvioRepository.findAll()) {
-            if (envio.getEstado().equals("ENTREGADO") || envio.getEstado().equals("CANCELADO")) continue;
-            List<PlanDeViaje> plans = planesPorEnvio.get(envio.getIdPedido());
-            if (plans == null || plans.isEmpty()) continue;
-            PlanDeViaje plan = plans.get(0);
-            if (plan.getEscalas() == null) continue;
-            int orden = ordenActualByEnvio.getOrDefault(envio.getIdPedido(), 1);
-            int husoEnvio = husoPorEnvio.getOrDefault(envio.getIdPedido(), 0);
-            plan.getEscalas().stream()
-                    .filter(e -> e.getOrden() == orden && e.getCodigoVuelo() != null)
-                    .findFirst()
-                    .ifPresent(e -> {
-                        LocalDate expected = expectedDateByFlight.get(e.getCodigoVuelo());
-                        // expectedDate is computed in origin-local time; convert UTC horaSalidaEst likewise.
-                        LocalDate salidaLocal = e.getHoraSalidaEst() != null
-                                ? e.getHoraSalidaEst().plusHours(husoEnvio).toLocalDate() : null;
-                        if (expected != null && salidaLocal != null && salidaLocal.equals(expected)) {
-                            cargaPorVuelo.merge(e.getCodigoVuelo(), envio.getCantidadMaletas(), Integer::sum);
-                        }
-                    });
+        for (List<PlanDeViaje> planList : planesPorEnvio.values()) {
+            for (PlanDeViaje plan : planList) {
+                EnvioEntity envio = envioById.get(plan.getIdEnvio());
+                if (envio == null) continue;
+                if (envio.getEstado().equals("ENTREGADO") || envio.getEstado().equals("CANCELADO")) continue;
+                if (plan.getEscalas() == null) continue;
+                int qty = plan.getCantidadMaletas() > 0 ? plan.getCantidadMaletas() : envio.getCantidadMaletas();
+                for (Escala e : plan.getEscalas()) {
+                    String code = e.getCodigoVuelo();
+                    if (code == null || e.getHoraSalidaEst() == null) continue;
+                    LocalDate expected = expectedDateByFlight.get(code);
+                    if (expected == null) continue; // flight not shown this cycle → don't attribute
+                    LocalDate salidaLocal = e.getHoraSalidaEst()
+                            .plusHours(husoOrigenByFlight.getOrDefault(code, 0)).toLocalDate();
+                    if (salidaLocal.equals(expected)) {
+                        cargaPorVuelo.merge(code, qty, Integer::sum);
+                    }
+                }
+            }
         }
 
         // 3. Show only flights currently airborne. Flight times are a daily-repeating
@@ -270,8 +280,33 @@ public class OpsService {
                 .build();
     }
 
+    @org.springframework.transaction.annotation.Transactional("opsTransactionManager")
     public void cancelFlight(String codigoVuelo, String aplicaDesde) {
         dataLoaderService.cancelFlightForSession(codigoVuelo, aplicaDesde);
+
+        // Reroute around the cancelled flight: any shipment whose current route uses it goes
+        // back to PENDIENTE so planificar() re-plans it (planificar now skips cancelled flights).
+        Set<String> afectados = new HashSet<>();
+        for (Map.Entry<String, List<PlanDeViaje>> en : planesPorEnvio.entrySet()) {
+            for (PlanDeViaje p : en.getValue()) {
+                if (p.getEscalas() != null && p.getEscalas().stream()
+                        .anyMatch(e -> codigoVuelo.equals(e.getCodigoVuelo()))) {
+                    afectados.add(en.getKey());
+                    break;
+                }
+            }
+        }
+        if (afectados.isEmpty()) return;
+
+        List<EnvioEntity> entidades = new ArrayList<>();
+        for (String id : afectados) {
+            opsEnvioRepository.findByIdPedido(id).ifPresent(e -> {
+                e.setEstado("PENDIENTE");
+                entidades.add(e);
+            });
+        }
+        opsEnvioRepository.saveAll(entidades);
+        planificar();
     }
 
     public void clearCancellations() {
@@ -382,6 +417,7 @@ public class OpsService {
     // 3. planificar
     // -------------------------------------------------------------------------
 
+    @org.springframework.transaction.annotation.Transactional("opsTransactionManager")
     public PlanningResult planificar() {
         List<EnvioEntity> pendientes = opsEnvioRepository.findAllPendientesOrdenados();
         if (pendientes.isEmpty()) {
@@ -421,9 +457,14 @@ public class OpsService {
         // currentTimeUtc as earliest-departure floor) — no flight assigned before this window closes.
         params.setCurrentTimeUtc(ahora.plusMinutes(params.getScMinutos()));
 
+        // Never route bags onto a flight cancelled this session.
+        Set<String> vuelosCancelados = dataLoaderService.getSessionCancelledFlightDates().keySet();
+        List<Vuelo> vuelosActivos = opsReferenceData.getVuelos().stream()
+                .filter(v -> !vuelosCancelados.contains(v.getCodigoVuelo()))
+                .toList();
         PlanningResult result = planningService.planificar(
                 domainEnvios,
-                opsReferenceData.getVuelos(),
+                vuelosActivos,
                 opsReferenceData.getAeropuertos(),
                 params);
 
@@ -440,6 +481,11 @@ public class OpsService {
         for (PlanDeViaje plan : result.getPlanes()) {
             planesPorEnvio.computeIfAbsent(plan.getIdEnvio(), id -> new ArrayList<>()).add(plan);
         }
+        // Clear stale persisted itinerarios for EVERY pedido being planned — including ones
+        // that end up sin-ruta — so loadPlanFromDb can't resurrect a ghost plan for them.
+        deleteItinerariosForPedidos(pendientes.stream()
+                .map(EnvioEntity::getIdPedido)
+                .collect(Collectors.toSet()));
         persistOpsPlans(result.getPlanes());
 
         // Mark envíos that got a route as PLANIFICADO (in warehouse, awaiting departure).
@@ -487,12 +533,49 @@ public class OpsService {
     public Optional<EnvioDTO> getEnvioById(String idPedido) {
         return opsEnvioRepository.findByIdPedido(idPedido).map(ent -> {
             List<PlanDeViaje> planList = planesPorEnvio.get(idPedido);
-            PlanDeViaje plan = (planList != null && !planList.isEmpty()) ? planList.get(0) : null;
-            if (plan == null) {
-                plan = loadPlanFromDb(idPedido);
+            if (planList == null || planList.isEmpty()) {
+                planList = loadPlansFromDb(idPedido);
             }
-            return toDto(ent, plan);
+            PlanDeViaje plan = (planList != null && !planList.isEmpty()) ? planList.get(0) : null;
+            EnvioDTO dto = toDto(ent, plan);
+            dto.setPartes(buildPartes(ent, planList));
+            return dto;
         });
+    }
+
+    /**
+     * Desglose de partes de un envío (split). Cada parte = un plan/versión, ordenadas por versión,
+     * con un rango contiguo de maletas asignado (parte 1: 1..q1, parte 2: q1+1..q1+q2, …). El
+     * envío conserva un solo id/código; las partes solo reparten el rango de maletas y la ruta.
+     */
+    private List<ParteEnvioDTO> buildPartes(EnvioEntity ent, List<PlanDeViaje> planList) {
+        if (planList == null || planList.isEmpty()) return null;
+        List<PlanDeViaje> ordenados = planList.stream()
+                .sorted(Comparator.comparingInt(PlanDeViaje::getVersion))
+                .toList();
+        int total = ordenados.size();
+        // Si por alguna razón las cantidades por-plan no están (planes viejos = 0), repartir el
+        // total del envío en la primera parte para no romper los rangos.
+        int cursor = 0;
+        List<ParteEnvioDTO> partes = new ArrayList<>();
+        for (int i = 0; i < total; i++) {
+            PlanDeViaje plan = ordenados.get(i);
+            int qty = plan.getCantidadMaletas() > 0 ? plan.getCantidadMaletas()
+                    : (total == 1 ? ent.getCantidadMaletas() : 0);
+            int desde = cursor + 1;
+            int hasta = cursor + qty;
+            cursor = hasta;
+            partes.add(ParteEnvioDTO.builder()
+                    .parteNo(i + 1)
+                    .totalPartes(total)
+                    .cantidadMaletas(qty)
+                    .maletaDesde(desde)
+                    .maletaHasta(hasta)
+                    .planResumen(buildPlanResumen(ent.getIataOrigen(), ent.getIataDestino(), plan))
+                    .planDetalle(plan)
+                    .build());
+        }
+        return partes;
     }
 
     @Transactional(value = "opsTransactionManager", readOnly = true)
@@ -599,6 +682,19 @@ public class OpsService {
             }
         }
         
+        // SLA deadline = ingreso + sla days (both UTC, same frame the planner uses). Remaining
+        // time counts down to that deadline from delivery (if entregado) else now.
+        String fechaLimiteSla = null;
+        String tiempoRestante = null;
+        if (ent.getFechaHoraIngreso() != null && ent.getSla() > 0) {
+            LocalDateTime deadline = ent.getFechaHoraIngreso().plusDays(ent.getSla());
+            fechaLimiteSla = deadline.toString();
+            LocalDateTime ref = ent.getFechaEntrega() != null
+                    ? ent.getFechaEntrega()
+                    : LocalDateTime.now(ZoneOffset.UTC);
+            tiempoRestante = formatDuracionRestante(Duration.between(ref, deadline).toMinutes());
+        }
+
         return EnvioDTO.builder()
             .idEnvio(ent.getIdPedido())
             .codigoAerolinea(ent.getCodigoAerolinea())
@@ -610,35 +706,81 @@ public class OpsService {
             .fechaHoraIngreso(ent.getFechaHoraIngreso() != null ? ent.getFechaHoraIngreso().toString() : null)
             .fechaSalidaPrimerVuelo(fechaSalidaPrimerVuelo)
             .fechaLlegadaUltimoVuelo(fechaLlegadaUltimoVuelo)
+            .fechaLimiteSla(fechaLimiteSla)
+            .tiempoRestante(tiempoRestante)
             .planResumen(buildPlanResumen(ent.getIataOrigen(), ent.getIataDestino(), plan))
             .fechaEntrega(ent.getFechaEntrega() != null ? ent.getFechaEntrega().toString() : null)
             .planDetalle(plan)
             .build();
     }
 
+    /** "1d 4h 30m" style remaining-time label; "Vencido" once the deadline has passed. */
+    private String formatDuracionRestante(long totalMin) {
+        if (totalMin < 0) return "Vencido";
+        long dias = totalMin / 1440;
+        long horas = (totalMin % 1440) / 60;
+        long minutos = totalMin % 60;
+        StringBuilder sb = new StringBuilder();
+        if (dias > 0) sb.append(dias).append("d ");
+        if (dias > 0 || horas > 0) sb.append(horas).append("h ");
+        sb.append(minutos).append("m");
+        return sb.toString();
+    }
+
     private PlanDeViaje loadPlanFromDb(String idPedido) {
-        List<ItinerarioEntity> itinerarios = itinerarioRepository.findByIdPedidoAndEsActivo(idPedido, true);
-        if (itinerarios.isEmpty()) return null;
-        ItinerarioEntity it = itinerarios.get(0);
-        List<Escala> escalas = escalaRepository.findByIdItinerarioOrderByOrden(it.getIdItinerario())
-            .stream()
-            .map(e -> Escala.builder()
-                .orden(e.getOrden())
-                .codigoAeropuerto(e.getIataEscala())
-                .codigoVuelo(e.getCodigoVuelo())
-                .horaSalidaEst(e.getHoraSalidaEst())
-                .horaLlegadaEst(e.getHoraLlegadaEst())
-                .completada(e.isCompletada())
-                .build())
+        List<PlanDeViaje> planes = loadPlansFromDb(idPedido);
+        return planes.isEmpty() ? null : planes.get(0);
+    }
+
+    /** Todos los planes activos (partes del split) de un envío, ordenados por versión. */
+    private List<PlanDeViaje> loadPlansFromDb(String idPedido) {
+        return itinerarioRepository.findByIdPedidoAndEsActivo(idPedido, true).stream()
+            .sorted(Comparator.comparingInt(ItinerarioEntity::getVersion))
+            .map(it -> {
+                List<Escala> escalas = escalaRepository.findByIdItinerarioOrderByOrden(it.getIdItinerario())
+                    .stream()
+                    .map(e -> Escala.builder()
+                        .orden(e.getOrden())
+                        .codigoAeropuerto(e.getIataEscala())
+                        .codigoVuelo(e.getCodigoVuelo())
+                        .horaSalidaEst(e.getHoraSalidaEst())
+                        .horaLlegadaEst(e.getHoraLlegadaEst())
+                        .completada(e.isCompletada())
+                        .build())
+                    .collect(Collectors.toList());
+                PlanDeViaje plan = PlanDeViaje.builder()
+                    .idPlan(it.getIdItinerario())
+                    .idEnvio(idPedido)
+                    .version(it.getVersion())
+                    .esActivo(true)
+                    .escalas(escalas)
+                    .fechaCreacion(it.getFechaCreacion())
+                    .build();
+                plan.setCantidadMaletas(it.getCantidadMaletas());
+                return plan;
+            })
             .collect(Collectors.toList());
-        return PlanDeViaje.builder()
-            .idPlan(it.getIdItinerario())
-            .idEnvio(idPedido)
-            .version(it.getVersion())
-            .esActivo(true)
-            .escalas(escalas)
-            .fechaCreacion(it.getFechaCreacion())
-            .build();
+    }
+
+    /**
+     * Delete every persisted itinerario (and its escalas) for the given pedidos. Called before
+     * (re)planning so no stale plan survives — whether the shipment gets a shorter new route
+     * (leftover higher-orden escalas would otherwise survive the saveAll upsert, producing
+     * phantom non-chaining legs) or ends up sin-ruta this time (an old itinerario would still
+     * be served by loadPlanFromDb as a ghost partial route).
+     */
+    @org.springframework.transaction.annotation.Transactional("opsTransactionManager")
+    public void deleteItinerariosForPedidos(Collection<String> pedidos) {
+        if (pedidos.isEmpty()) return;
+        List<ItinerarioEntity> previos = itinerarioRepository.findByIdPedidoIn(pedidos);
+        if (previos.isEmpty()) return;
+        List<String> idsItinerarioPrevios = previos.stream()
+                .map(ItinerarioEntity::getIdItinerario)
+                .toList();
+        escalaRepository.deleteByIdItinerarioIn(idsItinerarioPrevios);
+        itinerarioRepository.deleteAll(previos);
+        // Flush deletes before any re-insert that may reuse the same PKs.
+        itinerarioRepository.flush();
     }
 
     @org.springframework.transaction.annotation.Transactional("opsTransactionManager")
@@ -653,6 +795,7 @@ public class OpsService {
                 .version(plan.getVersion())
                 .esActivo(true)
                 .fechaCreacion(LocalDateTime.now())
+                .cantidadMaletas(plan.getCantidadMaletas())
                 .build());
             List<Escala> esc = plan.getEscalas();
             for (int i = 0; i < esc.size(); i++) {

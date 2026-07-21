@@ -199,6 +199,46 @@ export default function DrawerEnvio({ envioId, onClose, fetchEnvio = api.getEnvi
   const displayEstado = currentEstado || envio?.estado
   const eColor = estadoColor(displayEstado)
   const escalas = envio?.planDetalle?.escalas || []
+  const partes = envio?.partes || []
+  const isSplit = partes.length > 1
+
+  // Timeline de una ruta (reutilizado por la ruta única y por cada parte de un split).
+  function renderTimeline(legs) {
+    return legs.map((escala, idx) => {
+      const origenCod = idx === 0 ? envio.aeropuertoOrigen : legs[idx - 1].codigoAeropuerto
+      const destCod = escala.codigoAeropuerto
+      const origenHuso = apMap[origenCod]?.huso
+      const destHuso = apMap[destCod]?.huso
+      const dotColor = escalaDotColor(escala)
+      const isLast = idx === legs.length - 1
+      const dwell = !isLast ? dwellMinutes(escala.horaLlegadaEst, legs[idx + 1].horaSalidaEst) : 0
+      const salidaUtc = fmtUtc(escala.horaSalidaEst)
+      const salidaLcl = fmtLocal(escala.horaSalidaEst, origenHuso)
+      const llegadaUtc = fmtUtc(escala.horaLlegadaEst)
+      const llegadaLcl = fmtLocal(escala.horaLlegadaEst, destHuso)
+      return (
+        <React.Fragment key={`${escala.codigoVuelo}-${idx}`}>
+          <div style={s.tlRow}>
+            <div style={s.tlDotCol}>
+              <div style={s.tlDot(dotColor)} />
+              {!isLast && <div style={s.tlLine} />}
+            </div>
+            <div style={s.tlContent}>
+              <div style={s.tlCode}>{origenCod || '?'} → {destCod || '?'}</div>
+              {escala.codigoVuelo && <div style={s.tlVuelo}>{escala.codigoVuelo}</div>}
+              <div style={s.tlMeta}>Sale {salidaUtc || '—'} UTC{salidaLcl ? ` · ${salidaLcl} LCL` : ''}</div>
+              <div style={s.tlMeta}>Llega {llegadaUtc || '—'} UTC{llegadaLcl ? ` · ${llegadaLcl} LCL` : ''}</div>
+            </div>
+          </div>
+          {!isLast && dwell > 0 && (
+            <div style={{ padding: '2px 0 4px 26px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+              ⏱ {fmtDwell(dwell)} en {escala.codigoAeropuerto}
+            </div>
+          )}
+        </React.Fragment>
+      )
+    })
+  }
 
   return (
     <div style={s.overlay}>
@@ -293,54 +333,28 @@ export default function DrawerEnvio({ envioId, onClose, fetchEnvio = api.getEnvi
               </div>
             )}
 
-            {/* Ruta Asignada — timeline */}
-            {escalas.length > 0 && (
+            {/* Ruta Asignada — timeline. Un envío partido (split) muestra una ruta por parte. */}
+            {isSplit ? (
+              <div style={{ ...s.section, flex: 1 }}>
+                <span style={s.sectionTitle}>Ruta asignada · Partido en {partes.length} partes</span>
+                {partes.map((p) => (
+                  <div key={p.parteNo} style={{ marginBottom: 16, paddingLeft: 8, borderLeft: '2px solid var(--border)' }}>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-bright)', fontWeight: 600, marginBottom: 2 }}>
+                      Parte {p.parteNo}/{p.totalPartes}{p.cantidadMaletas > 0 ? ` · ${p.cantidadMaletas} maletas` : ''}
+                    </div>
+                    {p.cantidadMaletas > 0 && (
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
+                        Maletas {envio.idEnvio}-{p.maletaDesde} … {envio.idEnvio}-{p.maletaHasta}
+                      </div>
+                    )}
+                    <div>{renderTimeline(p.planDetalle?.escalas || [])}</div>
+                  </div>
+                ))}
+              </div>
+            ) : escalas.length > 0 && (
               <div style={{ ...s.section, flex: 1 }}>
                 <span style={s.sectionTitle}>Ruta asignada</span>
-                <div>
-                  {escalas.map((escala, idx) => {
-                    const origenCod = idx === 0 ? envio.aeropuertoOrigen : escalas[idx - 1].codigoAeropuerto
-                    const destCod = escala.codigoAeropuerto
-                    const origenHuso = apMap[origenCod]?.huso
-                    const destHuso = apMap[destCod]?.huso
-                    const dotColor = escalaDotColor(escala)
-                    const isLast = idx === escalas.length - 1
-                    const dwell = !isLast
-                      ? dwellMinutes(escala.horaLlegadaEst, escalas[idx + 1].horaSalidaEst)
-                      : 0
-                    const salidaUtc = fmtUtc(escala.horaSalidaEst)
-                    const salidaLcl = fmtLocal(escala.horaSalidaEst, origenHuso)
-                    const llegadaUtc = fmtUtc(escala.horaLlegadaEst)
-                    const llegadaLcl = fmtLocal(escala.horaLlegadaEst, destHuso)
-                    return (
-                      <React.Fragment key={`${escala.codigoVuelo}-${idx}`}>
-                        <div style={s.tlRow}>
-                          <div style={s.tlDotCol}>
-                            <div style={s.tlDot(dotColor)} />
-                            {!isLast && <div style={s.tlLine} />}
-                          </div>
-                          <div style={s.tlContent}>
-                            <div style={s.tlCode}>
-                              {origenCod || '?'} → {destCod || '?'}
-                            </div>
-                            {escala.codigoVuelo && <div style={s.tlVuelo}>{escala.codigoVuelo}</div>}
-                            <div style={s.tlMeta}>
-                              Sale {salidaUtc || '—'} UTC{salidaLcl ? ` · ${salidaLcl} LCL` : ''}
-                            </div>
-                            <div style={s.tlMeta}>
-                              Llega {llegadaUtc || '—'} UTC{llegadaLcl ? ` · ${llegadaLcl} LCL` : ''}
-                            </div>
-                          </div>
-                        </div>
-                        {!isLast && dwell > 0 && (
-                          <div style={{ padding: '2px 0 4px 26px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
-                            ⏱ {fmtDwell(dwell)} en {escala.codigoAeropuerto}
-                          </div>
-                        )}
-                      </React.Fragment>
-                    )
-                  })}
-                </div>
+                <div>{renderTimeline(escalas)}</div>
               </div>
             )}
 

@@ -552,8 +552,11 @@ export default function App() {
       return currentSimTime.getTime() < windowEndMs
     }
 
-    const withUt = (envio, overrides) =>
-      ({ ...envio, ...overrides, tiempoRestante: computeTiempoRestante(envio, currentSimTime) })
+    // clock defaults to currentSimTime; for ENTREGADO we pass the delivery instant so UT
+    // freezes at delivery — otherwise the advancing clock eventually crosses the deadline
+    // and a shipment delivered on time falsely reads "vencido".
+    const withUt = (envio, overrides, clock = currentSimTime) =>
+      ({ ...envio, ...overrides, tiempoRestante: computeTiempoRestante(envio, clock) })
 
     if (!displayState?.vuelos) return rawEnvios.filter(yaIngreso).map((envio) => withUt(envio))
 
@@ -583,7 +586,8 @@ export default function App() {
         const hasArrived = currentSimTime >= new Date(lastArrivalTime.getTime() + recogidaMs)
 
         if (hasArrived) {
-            return withUt(envio, { estado: 'ENTREGADO' })
+            const deliveredAt = new Date(lastArrivalTime.getTime() + recogidaMs)
+            return withUt(envio, { estado: 'ENTREGADO' }, deliveredAt)
         }
 
         if (hasDeparted) {

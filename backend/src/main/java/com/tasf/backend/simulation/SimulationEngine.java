@@ -1076,11 +1076,17 @@ public class SimulationEngine {
     }
 
     public synchronized Optional<EnvioDTO> getEnvioPorId(String idEnvio) {
-        Map<String, PlanDeViaje> latestPlanByEnvio = buildLatestPlanByEnvio();
+        // ponytail: single-id lookup — filter planes for this envío only instead of
+        // building the whole latest-plan map (O(all planes) + map alloc under the lock,
+        // which was slow enough to time out the /envios/{id} call during day transitions).
+        PlanDeViaje plan = planes.stream()
+            .filter(p -> p.getIdEnvio().equals(idEnvio))
+            .max(Comparator.comparingInt(PlanDeViaje::getVersion))
+            .orElse(null);
         return envios.stream()
             .filter(envio -> envio.getIdEnvio().equals(idEnvio))
             .findFirst()
-            .map(envio -> toEnvioDto(envio, true, latestPlanByEnvio.get(envio.getIdEnvio())));
+            .map(envio -> toEnvioDto(envio, true, plan));
     }
 
     /** All routes an envío's bags take. A split envío has several versions (one route each);

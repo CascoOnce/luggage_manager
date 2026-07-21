@@ -66,6 +66,7 @@ public class SimulationPersistenceService {
                 .version(plan.getVersion())
                 .esActivo(true)
                 .fechaCreacion(LocalDateTime.now())
+                .cantidadMaletas(plan.getCantidadMaletas())
                 .build());
 
             for (int i = 0; i < plan.getEscalas().size(); i++) {
