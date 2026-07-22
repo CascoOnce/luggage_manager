@@ -1,5 +1,6 @@
 package com.tasf.backend.service;
 
+import com.tasf.backend.algorithm.AirportTimeline;
 import com.tasf.backend.domain.Aeropuerto;
 import com.tasf.backend.domain.Envio;
 import com.tasf.backend.domain.Escala;
@@ -482,11 +483,41 @@ public class OpsService {
         List<Vuelo> vuelosActivos = opsReferenceData.getVuelos().stream()
                 .filter(v -> !vuelosCancelados.contains(v.getCodigoVuelo()))
                 .toList();
-        PlanningResult result = planningService.planificar(
+
+        // Seed flight loads with bags already committed by shipments we are NOT re-planning here.
+        // planificar() only replans PENDIENTE envíos; the PLANIFICADO ones keep their flights, so
+        // without this the planner sees every flight as empty and can over-fill one that already
+        // carries bags (e.g. a split part), producing 180/150 on a 150-seat flight. The key must
+        // match SimulatedAnnealingAlgorithm.flightDayKey exactly: "codigoVuelo|departureLocalDate",
+        // and Escala.horaSalidaEst is precisely the leg departure the planner used (RouteCandidate).
+        Set<String> replanIds = pendientes.stream()
+                .map(EnvioEntity::getIdPedido)
+                .collect(Collectors.toSet());
+        Map<String, Integer> flightLoadsSeed = new HashMap<>();
+        for (Map.Entry<String, List<PlanDeViaje>> en : planesPorEnvio.entrySet()) {
+            if (replanIds.contains(en.getKey())) continue; // being re-planned — its old plan is discarded
+            for (PlanDeViaje plan : en.getValue()) {
+                if (plan.getEscalas() == null) continue;
+                int qty = plan.getCantidadMaletas() > 0
+                        ? plan.getCantidadMaletas()
+                        : maletasPorEnvio.getOrDefault(en.getKey(), 0);
+                for (Escala e : plan.getEscalas()) {
+                    if (e.getCodigoVuelo() == null || e.getHoraSalidaEst() == null || e.isCompletada()) continue;
+                    String key = e.getCodigoVuelo() + "|" + e.getHoraSalidaEst().toLocalDate();
+                    flightLoadsSeed.merge(key, qty, Integer::sum);
+                }
+            }
+        }
+
+        // Warehouse timeline stays fresh (same as before) — only flight capacity is seeded, which
+        // is the constraint the over-fill bug violated. planificarLote honours the seeded loads.
+        PlanningResult result = planningService.planificarLote(
                 domainEnvios,
                 vuelosActivos,
                 opsReferenceData.getAeropuertos(),
-                params);
+                params,
+                new AirportTimeline(),
+                flightLoadsSeed);
 
         // Store each plan in the in-memory map, plus its bag count and entry time for the drain.
         for (EnvioEntity e : pendientes) {

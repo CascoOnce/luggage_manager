@@ -1381,9 +1381,10 @@ public class SimulationEngine {
                 }
                 if (!maletasEnvio.isEmpty()) {
                     vuelo.setCargaActual(vuelo.getCargaActual() + maletasEnvio.size());
-                    if (envio.getEstado() != EstadoEnvio.RETRASADO) {
-                        envio.setEstado(EstadoEnvio.EN_TRANSITO);
-                    }
+                    // Do not persist EN_TRANSITO here: the shipment's live state is derived from
+                    // its bags being on the flight. Persisting it at departure time advances the
+                    // DB ahead of the real intraday clock and makes the warehouse disappear too
+                    // early. The frontend and DTO projection compute transit reactively.
                     Aeropuerto originAirport = airportByCode.get(legOrigin);
                     if (originAirport != null) {
                         originAirport.setMaletasEnviadas(originAirport.getMaletasEnviadas() + maletasEnvio.size());

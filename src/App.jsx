@@ -35,6 +35,32 @@ function computeTiempoRestante(envio, currentSimTime) {
   return `${days}d ${hours}h`
 }
 
+function parseUtcDateTime(value) {
+  if (!value || typeof value !== 'string') return null
+  const iso = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value}Z`
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function deriveOpsEnvioEstado(envio, currentNow) {
+  const backendEstado = (envio.estado || '').toUpperCase()
+  if (['CANCELADO', 'RETRASADO', 'ENTREGADO'].includes(backendEstado)) return backendEstado
+
+  const firstDeparture = parseUtcDateTime(envio.fechaSalidaPrimerVuelo)
+  const lastArrival = parseUtcDateTime(envio.fechaLlegadaUltimoVuelo)
+  if (!currentNow || !firstDeparture || !lastArrival) return backendEstado || 'PENDIENTE'
+
+  if (currentNow < firstDeparture) {
+    return backendEstado === 'PENDIENTE' ? 'PENDIENTE' : 'PLANIFICADO'
+  }
+
+  if (currentNow >= lastArrival) {
+    return backendEstado || 'PLANIFICADO'
+  }
+
+  return 'EN_TRANSITO'
+}
+
 export default function App() {
   const ALGORITHM = 'SIMULATED_ANNEALING'
   const SIM_MINUTES_PER_REAL_SECOND = 1  // 1 min/tick @ 250ms = ~6min per simulated day → 30min for 5 days
@@ -1055,9 +1081,12 @@ export default function App() {
       aeropuertoOrigen: e.aeropuertoOrigen ?? e.iataOrigen,
       aeropuertoDestino: e.aeropuertoDestino ?? e.iataDestino,
       codigoAerolinea: e.codigoAerolinea ?? '--',
-      estado: e.estado,
+      estado: deriveOpsEnvioEstado(e, new Date()),
       cantidadMaletas: e.cantidadMaletas,
       sla: e.sla,
+      fechaHoraIngreso: e.fechaHoraIngreso,
+      fechaSalidaPrimerVuelo: e.fechaSalidaPrimerVuelo,
+      fechaLlegadaUltimoVuelo: e.fechaLlegadaUltimoVuelo,
       escalas: [],
       planResumen: e.planResumen ?? null,
       planDetalle: e.planDetalle ?? null,

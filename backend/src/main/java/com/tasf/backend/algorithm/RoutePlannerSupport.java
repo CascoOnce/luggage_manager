@@ -146,10 +146,10 @@ abstract class RoutePlannerSupport {
     }
 
     protected Optional<RouteCandidate> buildDirectCandidate(Envio envio, Vuelo flight, ParametrosSimulacion params, Map<String, Aeropuerto> airportByCode) {
-        // Enforce origin pickup time: bag must be collected before boarding.
-        LocalDateTime earliestDeparture = envio.getFechaHoraIngreso()
-            .plusMinutes(params.getMinutosPreparacionOrigen());
-            
+        // minutosPreparacionOrigen aplica solo entre escalas (ver buildOneStopCandidate);
+        // el ingreso inicial despacha directo, sin buffer.
+        LocalDateTime earliestDeparture = envio.getFechaHoraIngreso();
+
         // envio.getFechaHoraIngreso() and flight schedule times are both UTC (see
         // OpsService.toDomain / getLiveState) — compare directly, no huso shift.
         if (params.getCurrentTimeUtc() != null && earliestDeparture.isBefore(params.getCurrentTimeUtc())) {
@@ -161,9 +161,10 @@ abstract class RoutePlannerSupport {
     }
 
     protected Optional<RouteCandidate> buildOneStopCandidate(Envio envio, Vuelo first, Vuelo second, ParametrosSimulacion params, Map<String, Aeropuerto> airportByCode) {
-        LocalDateTime earliestDeparture = envio.getFechaHoraIngreso()
-            .plusMinutes(params.getMinutosPreparacionOrigen());
-            
+        // minutosPreparacionOrigen no aplica al ingreso inicial, solo entre escalas
+        // (ver minutosEscalaMinima abajo, entre firstArrival y secondDeparture).
+        LocalDateTime earliestDeparture = envio.getFechaHoraIngreso();
+
         // envio.getFechaHoraIngreso() and flight schedule times are both UTC (see
         // OpsService.toDomain / getLiveState) — compare directly, no huso shift.
         if (params.getCurrentTimeUtc() != null && earliestDeparture.isBefore(params.getCurrentTimeUtc())) {
