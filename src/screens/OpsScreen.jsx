@@ -234,6 +234,7 @@ export default function OpsScreen({ opsState, opsEnvios = [], theme, onBack, onR
           fraction: 0,
           enUso: v.enUso ?? false,
           inFlight: v.inFlight ?? false,
+          esDiaSiguiente: v.esDiaSiguiente ?? false,
           cancelacionProgramada: v.cancelacionProgramada ?? false,
         }
       })

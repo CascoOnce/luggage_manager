@@ -52,6 +52,7 @@ public class LiveStateDTO {
         private Integer husDestino;
         private boolean enUso;
         private boolean inFlight;
+        private boolean esDiaSiguiente;
         private boolean cancelacionProgramada;
     }
 

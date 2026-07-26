@@ -35,6 +35,11 @@ public class EnvioDTO {
     /** Desglose de partes cuando el envío está partido (split). Siempre tiene ≥1 elemento cuando
      *  hay plan; el frontend muestra el desglose solo si hay más de una parte. */
     private List<ParteEnvioDTO> partes;
+    /** Para consultas específicas por-vuelo: la parte y rango contiguo de maletas asignado a este vuelo. */
+    private Integer parteNo;
+    private Integer totalPartes;
+    private Integer maletaDesde;
+    private Integer maletaHasta;
     private List<EscalaResumenDTO> escalasResumen;
     private List<String> vuelosAsignados;
     /** Camino completo de la ruta: [origen, destino de cada escala…]. Permite al panel filtrar

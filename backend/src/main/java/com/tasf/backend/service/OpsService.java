@@ -95,6 +95,10 @@ public class OpsService {
 
     @Transactional(value = "opsTransactionManager", readOnly = true)
     public LiveStateDTO getLiveState(LocalDateTime from) {
+        if (planesPorEnvio.isEmpty()) {
+            rehydratePlansFromDb();
+        }
+
         // Warehouse occupation (cheap; reused by the lightweight occupancy endpoint).
         List<LiveAeropuertoDTO> aeropuertoDTOs = computeOccupation(from);
 
@@ -164,46 +168,80 @@ public class OpsService {
             int planificada = cargaPlanificada.getOrDefault(code, 0);
             int enTransito = cargaEnTransito.getOrDefault(code, 0);
 
-            // A flight carrying not-yet-departed bags is shown as an UPCOMING departure (out of the
-            // "en vuelo" tab) with that planned load, even if its today-occurrence is airborne now.
-            // Otherwise fall back to the natural live occurrence, carrying any in-transit bags.
-            boolean inFlight;
-            int cargaActual;
-            if (planificada > 0) {
-                inFlight = false;
-                cargaActual = planificada;
-            } else {
-                inFlight = occ.inFlight();
-                cargaActual = inFlight ? enTransito : 0;
-            }
-
-            // Solo enviar vuelos que están volando AHORA (inFlight) o que van a salir después (upcoming)
-            if (!inFlight && !occ.upcoming() && planificada == 0) {
-                continue;
-            }
-
+            boolean inFlight = occ.inFlight();
             double fraction = 0.0;
             if (occ.durationMin() > 0 && inFlight) {
                 long elapsed = Duration.between(occ.depUtc(), from).toMinutes();
                 fraction = Math.max(0.0, Math.min(1.0, (double) elapsed / occ.durationMin()));
             }
 
-            vueloDTOs.add(LiveVueloDTO.builder()
-                    .codigoVuelo(code)
-                    .origen(v.getOrigen())
-                    .destino(v.getDestino())
-                    .horaSalida(v.getHoraSalida().format(TIME_FMT))
-                    .horaLlegada(v.getHoraLlegada().format(TIME_FMT))
-                    .tipo(v.getTipo())
-                    .capacidadTotal(v.getCapacidadTotal())
-                    .cargaActual(cargaActual)
-                    .fraction(fraction)
-                    .husOrigen(husoByIata.get(v.getOrigen()))
-                    .husDestino(husoByIata.get(v.getDestino()))
-                    .enUso(enUso)
-                    .inFlight(inFlight)
-                    .cancelacionProgramada(dataLoaderService.isFlightCancellationProgramadaForSession(v.getCodigoVuelo()))
-                    .build());
+            if (inFlight) {
+                // 1. Emit today's airborne flight carrying in-transit cargo
+                vueloDTOs.add(LiveVueloDTO.builder()
+                        .codigoVuelo(code)
+                        .origen(v.getOrigen())
+                        .destino(v.getDestino())
+                        .horaSalida(v.getHoraSalida().format(TIME_FMT))
+                        .horaLlegada(v.getHoraLlegada().format(TIME_FMT))
+                        .tipo(v.getTipo())
+                        .capacidadTotal(v.getCapacidadTotal())
+                        .cargaActual(enTransito)
+                        .fraction(fraction)
+                        .husOrigen(husoByIata.get(v.getOrigen()))
+                        .husDestino(husoByIata.get(v.getDestino()))
+                        .enUso(enUso)
+                        .inFlight(true)
+                        .esDiaSiguiente(false)
+                        .cancelacionProgramada(dataLoaderService.isFlightCancellationProgramadaForSession(code))
+                        .build());
+
+                // 2. If there is also cargo planned for tomorrow's departure, emit tomorrow's planned flight
+                if (planificada > 0) {
+                    vueloDTOs.add(LiveVueloDTO.builder()
+                            .codigoVuelo(code)
+                            .origen(v.getOrigen())
+                            .destino(v.getDestino())
+                            .horaSalida(v.getHoraSalida().format(TIME_FMT))
+                            .horaLlegada(v.getHoraLlegada().format(TIME_FMT))
+                            .tipo(v.getTipo())
+                            .capacidadTotal(v.getCapacidadTotal())
+                            .cargaActual(planificada)
+                            .fraction(0.0)
+                            .husOrigen(husoByIata.get(v.getOrigen()))
+                            .husDestino(husoByIata.get(v.getDestino()))
+                            .enUso(enUso)
+                            .inFlight(false)
+                            .esDiaSiguiente(true)
+                            .cancelacionProgramada(dataLoaderService.isFlightCancellationProgramadaForSession(code))
+                            .build());
+                }
+            } else {
+                // Solo enviar vuelos que van a salir después (upcoming) o con carga
+                if (!occ.upcoming() && planificada == 0 && enTransito == 0) {
+                    continue;
+                }
+
+                int cargaActual = planificada > 0 ? planificada : enTransito;
+                boolean esDiaSiguiente = occ.depUtc().toLocalDate().isAfter(from.toLocalDate());
+
+                vueloDTOs.add(LiveVueloDTO.builder()
+                        .codigoVuelo(code)
+                        .origen(v.getOrigen())
+                        .destino(v.getDestino())
+                        .horaSalida(v.getHoraSalida().format(TIME_FMT))
+                        .horaLlegada(v.getHoraLlegada().format(TIME_FMT))
+                        .tipo(v.getTipo())
+                        .capacidadTotal(v.getCapacidadTotal())
+                        .cargaActual(cargaActual)
+                        .fraction(0.0)
+                        .husOrigen(husoByIata.get(v.getOrigen()))
+                        .husDestino(husoByIata.get(v.getDestino()))
+                        .enUso(enUso)
+                        .inFlight(false)
+                        .esDiaSiguiente(esDiaSiguiente)
+                        .cancelacionProgramada(dataLoaderService.isFlightCancellationProgramadaForSession(code))
+                        .build());
+            }
         }
 
         // 4. Build cancelaciones list from session-level cancellations
@@ -391,15 +429,23 @@ public class OpsService {
 
     @Transactional("opsTransactionManager")
     public EnvioEntity addEnvio(OpsEnvioRequestDTO dto) {
-        // Parse ISO-8601 with offset and convert to UTC
-        OffsetDateTime offsetDt = OffsetDateTime.parse(dto.getFechaHoraIngreso());
-        LocalDateTime fechaUtc = offsetDt.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime();
-
-        // Calculate SLA: 1 if same continent, 2 if different
         Map<String, String> continentByIata = new HashMap<>();
+        Map<String, Integer> husoByIata = new HashMap<>();
         for (Aeropuerto a : opsReferenceData.getAeropuertos()) {
             continentByIata.put(a.getCodigoIATA(), a.getContinente());
+            husoByIata.put(a.getCodigoIATA(), a.getHuso());
         }
+
+        LocalDateTime fechaUtc;
+        try {
+            OffsetDateTime offsetDt = OffsetDateTime.parse(dto.getFechaHoraIngreso());
+            fechaUtc = offsetDt.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime();
+        } catch (Exception ex) {
+            int husoOrigen = husoByIata.getOrDefault(dto.getIataOrigen(), 0);
+            fechaUtc = LocalDateTime.parse(dto.getFechaHoraIngreso()).minusHours(husoOrigen);
+        }
+
+        // Calculate SLA: 1 if same continent, 2 if different
         String continenteOrigen = continentByIata.get(dto.getIataOrigen());
         String continenteDestino = continentByIata.get(dto.getIataDestino());
         int sla = (continenteOrigen != null && continenteOrigen.equals(continenteDestino)) ? 1 : 2;
@@ -630,57 +676,50 @@ public class OpsService {
     }
 
     @Transactional(value = "opsTransactionManager", readOnly = true)
-    public List<EnvioDTO> getEnviosByFlight(String codigoVuelo) {
-        // Find expected departure date for this flight (same logic as getLiveState)
+    public List<EnvioDTO> getEnviosByFlight(String codigoVuelo, Boolean esDiaSiguiente) {
         LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
-        LocalDate expectedDate = null;
+        List<EnvioDTO> result = new ArrayList<>();
 
-        Optional<Vuelo> optVuelo = opsReferenceData.getVuelos().stream()
-            .filter(v -> v.getCodigoVuelo().equals(codigoVuelo))
-            .findFirst();
-
-        if (optVuelo.isPresent()) {
-            Vuelo v = optVuelo.get();
-            Map<String, Integer> husoByIata = new HashMap<>();
-            for (Aeropuerto a : opsReferenceData.getAeropuertos()) {
-                husoByIata.put(a.getCodigoIATA(), a.getHuso());
-            }
-            int husoOrigenVuelo = husoByIata.getOrDefault(v.getOrigen(), 0);
-            FlightOccurrence occ = occurrenceOf(nowUtc, v.getHoraSalida(), v.getHoraLlegada());
-            expectedDate = occ.depUtc().plusHours(husoOrigenVuelo).toLocalDate();
-        }
-
-        Set<String> envioIds = new java.util.HashSet<>();
-        // Iterate ALL plans (every split part), matching the occupancy calc in getLiveState.
-        // Only plan[0] would miss a split part routed on a different plan/version.
         for (List<PlanDeViaje> planes : planesPorEnvio.values()) {
-            for (PlanDeViaje p : planes) {
-                if (p.getEscalas() == null) continue;
-                for (Escala e : p.getEscalas()) {
-                    if (codigoVuelo.equals(e.getCodigoVuelo())) {
-                        // Mirror getLiveState: any pending (non-completed) leg on this flight
-                        // counts, regardless of the leg's calendar date — the displayed occurrence
-                        // may differ from the leg's date for a still-airborne daily flight.
-                        if (expectedDate != null && !e.isCompletada()) {
-                            envioIds.add(p.getIdEnvio());
+            if (planes == null || planes.isEmpty()) continue;
+            String idPedido = planes.get(0).getIdEnvio();
+            Optional<EnvioEntity> optEnt = opsEnvioRepository.findByIdPedido(idPedido);
+            if (optEnt.isEmpty()) continue;
+            EnvioEntity ent = optEnt.get();
+
+            List<ParteEnvioDTO> partes = buildPartes(ent, planes);
+            if (partes == null || partes.isEmpty()) continue;
+
+            for (int i = 0; i < planes.size(); i++) {
+                PlanDeViaje plan = planes.get(i);
+                if (plan.getEscalas() == null) continue;
+                ParteEnvioDTO parte = i < partes.size() ? partes.get(i) : null;
+
+                for (Escala e : plan.getEscalas()) {
+                    if (codigoVuelo.equals(e.getCodigoVuelo()) && !e.isCompletada()) {
+                        boolean isFuture = e.getHoraSalidaEst().isAfter(nowUtc);
+                        boolean matchesOccurrence = (esDiaSiguiente == null) ||
+                                (esDiaSiguiente && isFuture) ||
+                                (!esDiaSiguiente && !isFuture);
+
+                        if (matchesOccurrence) {
+                            EnvioDTO dto = toDto(ent, plan);
+                            dto.setPartes(partes);
+                            if (parte != null) {
+                                dto.setCantidadMaletas(parte.getCantidadMaletas());
+                                dto.setParteNo(parte.getParteNo());
+                                dto.setTotalPartes(parte.getTotalPartes());
+                                dto.setMaletaDesde(parte.getMaletaDesde());
+                                dto.setMaletaHasta(parte.getMaletaHasta());
+                            }
+                            result.add(dto);
                         }
                         break;
                     }
                 }
             }
         }
-        
-        if (envioIds.isEmpty()) return java.util.Collections.emptyList();
-        
-        List<EnvioDTO> result = new ArrayList<>();
-        for (String idPedido : envioIds) {
-            opsEnvioRepository.findByIdPedido(idPedido).ifPresent(ent -> {
-                List<PlanDeViaje> planList = planesPorEnvio.get(ent.getIdPedido());
-                EnvioDTO dto = toDto(ent, planList.get(0));
-                dto.setPartes(buildPartes(ent, planList));
-                result.add(dto);
-            });
-        }
+
         return result;
     }
 
@@ -930,8 +969,10 @@ public class OpsService {
     @Transactional("opsTransactionManager")
     public List<EnvioEntity> batchSave(List<OpsEnvioRequestDTO> dtos) {
         Map<String, String> continentByIata = new HashMap<>();
+        Map<String, Integer> husoByIata = new HashMap<>();
         for (Aeropuerto a : opsReferenceData.getAeropuertos()) {
             continentByIata.put(a.getCodigoIATA(), a.getContinente());
+            husoByIata.put(a.getCodigoIATA(), a.getHuso());
         }
 
         List<EnvioEntity> saved = new ArrayList<>();
@@ -944,8 +985,9 @@ public class OpsService {
                 // Store as UTC (consistent with addEnvio; downstream query/toDomain assume UTC)
                 fechaUtc = offsetDt.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime();
             } catch (Exception ex) {
-                // Already naive local time (from file preview) — treat as UTC
-                fechaUtc = LocalDateTime.parse(dto.getFechaHoraIngreso());
+                // Naive local time (from file preview) — convert to UTC using origin airport huso
+                int husoOrigen = husoByIata.getOrDefault(dto.getIataOrigen(), 0);
+                fechaUtc = LocalDateTime.parse(dto.getFechaHoraIngreso()).minusHours(husoOrigen);
             }
 
             String continenteOrigen = continentByIata.get(dto.getIataOrigen());
@@ -956,21 +998,45 @@ public class OpsService {
             if (hasId) {
                 idPedido = dto.getIdPedido();
             } else {
-                // Sequential ID per origin airport: IATA-000000001
+                // Sequential ID per origin airport: IATA-000000001.
+                // Count only envíos that do NOT yet exist to avoid gaps on re-upload.
                 long count = opsEnvioRepository.countByIataOrigen(dto.getIataOrigen().toUpperCase());
                 idPedido = dto.getIataOrigen().toUpperCase() + "-" + String.format("%09d", count + 1);
             }
 
-            EnvioEntity entity = EnvioEntity.builder()
-                    .idPedido(idPedido)
-                    .codigoAerolinea(validateCodigoAerolinea(dto.getCodigoAerolinea()))
-                    .iataOrigen(dto.getIataOrigen())
-                    .iataDestino(dto.getIataDestino())
-                    .cantidadMaletas(dto.getCantidadMaletas())
-                    .fechaHoraIngreso(fechaUtc)
-                    .sla(sla)
-                    .estado("PENDIENTE")
-                    .build();
+            // Upsert by idPedido: if the envío already exists (e.g. re-upload after a timezone fix)
+            // update it in place and clear its stale plan so planificar re-routes it fresh.
+            // Without this, batchSave inserts duplicates and the old EN_TRANSITO row with a stale
+            // past-departure plan keeps triggering procesarSalidas erroneously.
+            Optional<EnvioEntity> existing = opsEnvioRepository.findByIdPedido(idPedido);
+            EnvioEntity entity;
+            if (existing.isPresent()) {
+                entity = existing.get();
+                // Clear stale in-memory plan so planificar starts fresh for this envío.
+                planesPorEnvio.remove(idPedido);
+                maletasPorEnvio.remove(idPedido);
+                ingresoPorEnvio.remove(idPedido);
+                ordenActualByEnvio.remove(idPedido);
+                // Delete persisted itinerary from DB as well.
+                deleteItinerariosForPedidos(Set.of(idPedido));
+                // Update mutable fields; preserve PK (id) so no duplicate row is created.
+                entity.setFechaHoraIngreso(fechaUtc);
+                entity.setCantidadMaletas(dto.getCantidadMaletas());
+                entity.setSla(sla);
+                entity.setEstado("PENDIENTE");
+                entity.setFechaEntrega(null);
+            } else {
+                entity = EnvioEntity.builder()
+                        .idPedido(idPedido)
+                        .codigoAerolinea(validateCodigoAerolinea(dto.getCodigoAerolinea()))
+                        .iataOrigen(dto.getIataOrigen())
+                        .iataDestino(dto.getIataDestino())
+                        .cantidadMaletas(dto.getCantidadMaletas())
+                        .fechaHoraIngreso(fechaUtc)
+                        .sla(sla)
+                        .estado("PENDIENTE")
+                        .build();
+            }
 
             saved.add(opsEnvioRepository.save(entity));
         }
@@ -1100,6 +1166,9 @@ public class OpsService {
 
     @Transactional("opsTransactionManager")
     public void procesarSalidas() {
+        if (planesPorEnvio.isEmpty()) {
+            rehydratePlansFromDb();
+        }
         if (planesPorEnvio.isEmpty()) return;
         LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
 
@@ -1137,6 +1206,9 @@ public class OpsService {
 
     @Transactional("opsTransactionManager")
     public void procesarLlegadas() {
+        if (planesPorEnvio.isEmpty()) {
+            rehydratePlansFromDb();
+        }
         if (planesPorEnvio.isEmpty()) return;
         LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
 

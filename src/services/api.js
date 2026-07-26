@@ -280,8 +280,9 @@ export const api = {
     return request(`/maletas/${encodeURIComponent(id)}/ruta`)
   }),
 
-  getOpsEnviosByFlight: async (code) => withHandling('getOpsEnviosByFlight', async () => {
-    return request(`/ops/flights/${code}/envios`)
+  getOpsEnviosByFlight: async (code, esDiaSiguiente) => withHandling('getOpsEnviosByFlight', async () => {
+    const qs = esDiaSiguiente != null ? `?esDiaSiguiente=${esDiaSiguiente}` : ''
+    return request(`/ops/flights/${code}/envios${qs}`)
   }),
 
   getAirportInventory: async (iata, nowMin) => withHandling('getAirportInventory', async () => {

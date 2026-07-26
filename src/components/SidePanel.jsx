@@ -270,7 +270,7 @@ function VuelosSection({ flights, plannedFlights, cancelledFlights, selectedFlig
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                   {f.currentLoad}/{f.capacity} · {f.type === 'continental' ? 'CONT' : 'INT'}
                   {f.horaSalida && (
-                    <span style={{ marginLeft: 6 }}>· ✈ {f.horaSalida}{f.horaLlegada ? `→${f.horaLlegada}` : ''} UTC</span>
+                    <span style={{ marginLeft: 6 }}>· ✈ {f.horaSalida}{f.horaLlegada ? `→${f.horaLlegada}` : ''} UTC{f.esDiaSiguiente ? ' (+1d)' : ''}</span>
                   )}
                 </div>
                 <div style={{ height: 2, background: 'rgba(255,255,255,0.07)', borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>

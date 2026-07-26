@@ -21,9 +21,9 @@ public class OpsScheduler {
      * Two-phase departure/arrival tick for ops mode.
      * Phase 1 (salidas): PENDIENTE → EN_TRANSITO when horaSalidaEst <= now.
      * Phase 2 (llegadas): EN_TRANSITO → PENDIENTE (intermediate) or ENTREGADO (final).
-     * fixedDelay ensures phases run sequentially with no overlap between ticks.
+     * fixedDelay = 5s ensures departures trigger precisely when their departure minute arrives.
      */
-    @Scheduled(fixedDelay = 30_000)
+    @Scheduled(fixedDelay = 5_000)
     public void tick() {
         log.debug("OpsScheduler tick");
         opsService.procesarSalidas();

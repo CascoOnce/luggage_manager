@@ -165,10 +165,10 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvio
   useEffect(() => {
     if (!flightCode) { setEnviosAsignados([]); return }
     setMaletasPopup(null)
-    fetchEnvios(flightCode)
+    fetchEnvios(flightCode, vuelo?.esDiaSiguiente)
       .then((data) => setEnviosAsignados(Array.isArray(data) ? data : []))
       .catch(() => setEnviosAsignados([]))
-  }, [flightCode, fetchEnvios])
+  }, [flightCode, vuelo?.esDiaSiguiente, fetchEnvios])
 
   if (!vuelo) return null
 
@@ -294,15 +294,19 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvio
             )
           ) : (
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              {enviosAsignados.map((e) => (
+              {enviosAsignados.map((e, idx) => (
                 <div
-                  key={e.idEnvio}
-                  onClick={() => setMaletasPopup((p) => (p?.idEnvio === e.idEnvio ? null : { idEnvio: e.idEnvio, cantidadMaletas: e.cantidadMaletas || 0 }))}
+                  key={`${e.idEnvio}-${e.parteNo || idx}`}
+                  onClick={() => setMaletasPopup((p) => (p?.idEnvio === e.idEnvio && p?.parteNo === e.parteNo ? null : { idEnvio: e.idEnvio, cantidadMaletas: e.cantidadMaletas || 0, maletaDesde: e.maletaDesde || 1, maletaHasta: e.maletaHasta || e.cantidadMaletas || 0, parteNo: e.parteNo, totalPartes: e.totalPartes }))}
                   style={{ padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--blue)' }}>{e.idEnvio}</span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>{e.cantidadMaletas} maletas</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--blue)' }}>
+                      {e.idEnvio}{e.parteNo && e.totalPartes > 1 ? ` (Parte ${e.parteNo}/${e.totalPartes})` : ''}
+                    </span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>
+                      {e.cantidadMaletas} maletas{e.maletaDesde != null && e.totalPartes > 1 ? ` (#${e.maletaDesde}..#${e.maletaHasta})` : ''}
+                    </span>
                   </div>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                     {e.aeropuertoOrigen} → {e.aeropuertoDestino}
@@ -316,19 +320,24 @@ export default function DrawerVuelo({ vuelo, onClose, onCancelFlight, fetchEnvio
             <div style={s.maletasPopupOverlay} onClick={() => setMaletasPopup(null)}>
               <div style={s.maletasPopup} onClick={(ev) => ev.stopPropagation()}>
                 <div style={s.maletasPopupHeader}>
-                  <span style={{ color: 'var(--blue)' }}>{maletasPopup.idEnvio}</span>
+                  <span style={{ color: 'var(--blue)' }}>
+                    {maletasPopup.idEnvio}{maletasPopup.parteNo && maletasPopup.totalPartes > 1 ? ` (P${maletasPopup.parteNo}/${maletasPopup.totalPartes})` : ''}
+                  </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     🧳 {maletasPopup.cantidadMaletas}
                   </span>
                   <button style={s.closeBtn} onClick={() => setMaletasPopup(null)} aria-label="Cerrar">✕</button>
                 </div>
                 <div style={s.maletasPopupList}>
-                  {Array.from({ length: maletasPopup.cantidadMaletas }, (_, i) => (
-                    <div key={i} style={s.maletasPopupItem}>
-                      <span style={{ color: 'var(--blue)', fontSize: 18, lineHeight: 1 }}>•</span>
-                      <span>{maletasPopup.idEnvio}-{i + 1}</span>
-                    </div>
-                  ))}
+                  {Array.from({ length: maletasPopup.cantidadMaletas }, (_, i) => {
+                    const bagNum = (maletasPopup.maletaDesde || 1) + i
+                    return (
+                      <div key={bagNum} style={s.maletasPopupItem}>
+                        <span style={{ color: 'var(--blue)', fontSize: 18, lineHeight: 1 }}>•</span>
+                        <span>{maletasPopup.idEnvio}-{bagNum}</span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             </div>
